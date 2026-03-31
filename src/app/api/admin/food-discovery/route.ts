@@ -59,7 +59,7 @@ async function verifyMacrosWithUSDA(ingredients: string, geminiKey: string, usda
     // Step 1: Use Gemini to translate ingredients to English with gram weights
     const genAI = new GoogleGenerativeAI(geminiKey)
     const model = genAI.getGenerativeModel({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-1.5-flash',
         generationConfig: { temperature: 0.1, responseMimeType: 'application/json' }
     })
 
@@ -181,8 +181,20 @@ export async function POST(req: Request) {
                 .eq('key', 'discovery_search_sites')
                 .maybeSingle()
             
+            let activeSites = ""
             if (settingsData?.value) {
-                siteFilterMessage = `\n\n🔍 ARAŞTIRMA KAYNAKLARI: SADECE şu web sitelerindeki tarifleri ve gıda türlerini referans al: ${settingsData.value}. Diğer sitelerdeki tarifleri dikkate alma.`
+                if (Array.isArray(settingsData.value)) {
+                    activeSites = settingsData.value
+                        .filter((s: any) => s.enabled)
+                        .map((s: any) => s.url)
+                        .join(', ')
+                } else if (typeof settingsData.value === 'string') {
+                    activeSites = settingsData.value
+                }
+            }
+
+            if (activeSites) {
+                siteFilterMessage = `\n\n🔍 ARAŞTIRMA KAYNAKLARI: SADECE şu web sitelerindeki tarifleri ve gıda türlerini referans al: ${activeSites}. Diğer sitelerdeki tarifleri dikkate alma.`
             } else {
                 siteFilterMessage = `\n\n🔍 ARAŞTIRMA KAYNAKLARI: Türkiye'deki popüler yemek tarifi sitelerini (nefisyemektarifleri.com, lezzet.com.tr, yemek.com vb.) referans alabilirsin.`
             }
@@ -208,7 +220,7 @@ export async function POST(req: Request) {
             console.warn('Could not fetch existing foods for dedup:', e)
         }
 
-        const selectedModel = promptData.model || "gemini-2.5-flash"
+        const selectedModel = promptData.model || "gemini-1.5-flash"
         const selectedTemperature = promptData.temperature ?? 0.7
 
         const model = genAI.getGenerativeModel({

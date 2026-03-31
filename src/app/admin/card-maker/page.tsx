@@ -60,8 +60,6 @@ export default function CardMakerPage() {
     const [apiKeys, setApiKeys] = useState<{ geminiKey: string | null, githubPat: string | null, usdaKey: string | null } | null>(null)
     const [sysPrompts, setSysPrompts] = useState<any | null>(null)
     const [discoverySearchSites, setDiscoverySearchSites] = useState<string>("")
-    const [isSavingDiscovery, setIsSavingDiscovery] = useState(false)
-    const [showSettings, setShowSettings] = useState(false)
     const [githubData, setGithubData] = useState<{ publishedCards: { name: string, imageUrl: string }[], draftCards: { name: string, thumbUrl: string }[] }>({ publishedCards: [], draftCards: [] })
     const [deleteTarget, setDeleteTarget] = useState<FoodItem | null>(null)
     const [editFood, setEditFood] = useState<FoodItem | null>(null)
@@ -144,7 +142,15 @@ export default function CardMakerPage() {
 
     const fetchDiscoverySettings = async () => {
         const { data } = await supabase.from('system_settings').select('value').eq('key', 'discovery_search_sites').maybeSingle()
-        if (data) setDiscoverySearchSites(data.value)
+        if (data) {
+            let activeSites = ""
+            if (Array.isArray(data.value)) {
+                activeSites = data.value.filter((s: any) => s.enabled).map((s: any) => s.url).join(', ')
+            } else if (typeof data.value === 'string') {
+                activeSites = data.value
+            }
+            setDiscoverySearchSites(activeSites)
+        }
     }
 
     useEffect(() => {
@@ -158,7 +164,7 @@ export default function CardMakerPage() {
                 discoverySearchSites: discoverySearchSites
             }, '*')
         }
-    }, [iframeReady, apiKeys, sysPrompts])
+    }, [iframeReady, apiKeys, sysPrompts, discoverySearchSites])
 
     // Compute sync status + sort whenever foods or githubData changes
     const sortedFoods = useCallback(() => {
@@ -568,9 +574,6 @@ export default function CardMakerPage() {
                         )}
                     </div>
                     <div className="flex items-center gap-2">
-                        <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={() => setShowSettings(true)}>
-                            <Pencil size={14} /> Keşif Ayarları
-                        </Button>
                         <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={() => window.open('/kart-maker/index.html', '_blank')}>
                             <ExternalLink size={14} /> Yeni Sekmede Aç
                         </Button>
@@ -584,65 +587,6 @@ export default function CardMakerPage() {
                     title="Card Maker"
                 />
             </div>
-
-            {/* Global Settings Dialog */}
-            <AlertDialog open={showSettings} onOpenChange={setShowSettings}>
-                <AlertDialogContent className="sm:max-w-md">
-                    <AlertDialogHeader>
-                        <AlertDialogTitle>Küresel Kart Yapıcı Ayarları</AlertDialogTitle>
-                        <AlertDialogDescription>
-                            AI Keşif motorunun hangi web sitelerini referans alacağını buradan belirleyebilirsiniz.
-                        </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    
-                    <div className="space-y-4 py-4">
-                        <div className="space-y-2">
-                            <label className="text-sm font-medium">Keşif İçin Dahil Edilecek Siteler</label>
-                            <Input 
-                                placeholder="nefisyemektarifleri.com, yemek.com..." 
-                                value={discoverySearchSites}
-                                onChange={(e) => setDiscoverySearchSites(e.target.value)}
-                            />
-                            <p className="text-[10px] text-gray-500">
-                                Virgülle ayırarak birden fazla site ekleyebilirsiniz. Boş bırakılırsa tüm internette arama yapılır.
-                            </p>
-                        </div>
-                    </div>
-
-                    <AlertDialogFooter className="flex gap-2">
-                        <AlertDialogCancel className="flex-1">İptal</AlertDialogCancel>
-                        <Button 
-                            className="flex-1 bg-green-600 hover:bg-green-700" 
-                            disabled={isSavingDiscovery}
-                            onClick={async () => {
-                                setIsSavingDiscovery(true)
-                                try {
-                                    await supabase.from('system_settings').upsert({
-                                        key: 'discovery_search_sites',
-                                        value: discoverySearchSites,
-                                        updated_at: new Date().toISOString()
-                                    }, { onConflict: 'key' })
-                                    
-                                    // Also notify iframe immediately
-                                    iframeRef.current?.contentWindow?.postMessage({
-                                        type: 'discoverySettings',
-                                        sites: discoverySearchSites
-                                    }, '*')
-                                    
-                                    setShowSettings(false)
-                                } catch (e) {
-                                    console.error('Save settings error:', e)
-                                    alert('Ayarlar kaydedilemedi.')
-                                } finally {
-                                    setIsSavingDiscovery(false)
-                                }
-                            }}
-                        >
-                            {isSavingDiscovery ? 'Kaydediliyor...' : 'Değişiklikleri Kaydet'}
-                        </Button>
-                    </AlertDialogFooter>
-                </AlertDialogContent>
-            </AlertDialog>
 
             {/* Delete Confirmation Dialog */}
             <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>

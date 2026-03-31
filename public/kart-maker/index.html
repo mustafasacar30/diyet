@@ -1238,21 +1238,21 @@
           
           <div class="group">
             <label>Yeni Şablon Adı</label>
-            <div style="display:flex; gap:6px;">
-              <input id="visualTemplateName" placeholder="Örn: Modern Karanlık Stil" style="flex:1" />
-              <button id="saveVisualTemplateBtn" class="btn-primary" style="padding:0 12px; font-size:12px;">💾 Kaydet</button>
+            <div style="display:flex; flex-direction:column; gap:6px;">
+              <input id="visualTemplateName" placeholder="Örn: Modern Karanlık Stil" style="width:100%" />
+              <button id="saveVisualTemplateBtn" class="btn-primary" style="width:100%; font-size:12px; height: 36px;">💾 Şablonu Kaydet</button>
             </div>
           </div>
 
           <div class="group" style="margin-top:12px">
             <label>Kayıtlı Şablonlar</label>
-            <div style="display:flex; gap:6px;">
-              <select id="visualTemplateSelect" style="flex:1">
+            <div style="display:flex; flex-direction:column; gap:6px;">
+              <select id="visualTemplateSelect" style="width:100%">
                 <option value="">-- Şablon Seç --</option>
               </select>
-              <button id="deleteVisualTemplateBtn" class="btn-danger" style="padding:0 8px;" title="Şablonu Sil">✕</button>
+              <button id="deleteVisualTemplateBtn" class="btn-danger" style="width:100%; height: 32px; font-size: 11px;" title="Şablonu Sil">✕ Seçili Şablonu Sil</button>
             </div>
-            <button id="applyVisualTemplateBtn" class="btn" style="width:100%; margin-top:8px; background:#f0f7ff; color:#0052cc; border-color:#d0e7ff">✨ Stili Uygula</button>
+            <button id="applyVisualTemplateBtn" class="btn" style="width:100%; margin-top:8px; background:#f0f7ff; color:#0052cc; border-color:#d0e7ff; height: 38px;">✨ Stili Uygula</button>
           </div>
         </div>
       </details>
@@ -2351,82 +2351,97 @@ Servis sayısı: {{SERVINGS}}
      *   porsiyon, kişilik, kişi, kişiye, kase, kaseye, tabak, tabağa,
      *   dilim, dilime, parça, parçaya, adet, tane,
      *   kurabiye, köfte, poğaça, pankek, börek, gözleme, sarma, dolma, mücver, krep, toplam
+    }
+
+    /** 
+     * Smart Serving Post-Processor
+     * Scans AI-generated preparation text for serving patterns and extracts the actual serving count/unit.
      */
     function detectServingFromText(preparationText) {
       if (!preparationText || typeof preparationText !== "string") return null;
-
       const text = preparationText.toLowerCase();
 
-      // Comprehensive unit list (base forms + suffixed Turkish forms)
+      // Comprehensive unit list
       const units = [
         "porsiyon", "kişilik", "kişi", "kişiye", "kişinin",
         "kase", "kaseye", "kasede", "tabak", "tabağa", "tabakta",
         "dilim", "dilime", "dilimle", "parça", "parçaya",
-        "adet", "tane",
-        "kurabiye", "köfte", "poğaça", "pankek", "börek", "gözleme",
+        "adet", "tane", "kurabiye", "köfte", "poğaça", "pankek", "börek", "gözleme",
         "sarma", "dolma", "mücver", "krep", "kruvasan", "çörek",
         "muffin", "kek", "pasta", "baklava", "lokma", "pide", "lahmacun",
         "top", "rulo", "bar"
       ];
       const UP = units.join("|");
-
-      // ─── Serving-action verbs (Turkish stems) ───
       const verbs = "elde|çıkar|çıkacak|paylaştır|paylaştıra|bölü|böle|servis|sun|dağıt|hazırla|kesin|ayır|verin|verebil|yap|yeter|yetecek|yetişir";
+      
+      const numMap = {
+        "bir": 1, "iki": 2, "üç": 3, "dört": 4, "beş": 5, "altı": 6, "yedi": 7, "sekiz": 8, "dokuz": 9, "on": 10,
+        "on bir": 11, "on iki": 12, "on üç": 13, "on dört": 14, "on beş": 15, "on altı": 16, "on yedi": 17, "on sekiz": 18, "on dokuz": 19, "yirmi": 20,
+        "yirmi bir": 21, "yirmi iki": 22, "yirmi üç": 23, "yirmi dört": 24, "yirmi beş": 25, "otuz": 30, "kırk": 40, "elli": 50
+      };
+      const numWords = Object.keys(numMap).join("|");
+      const numPattern = `(\\d+|${numWords})`;
 
       const matches = [];
       let m;
 
-      // Strategy 1: "N unit ... verb" (up to 5 words gap)
-      // e.g. "10 adet poğaça elde edeceksiniz", "2 porsiyon elde edeceksiniz"
-      const re1 = new RegExp("(\\d+)\\s+(" + UP + ")(?:\\s+\\S+){0,5}?\\s+(?:" + verbs + ")", "gi");
+      // Strategy 1: "N unit ... verb"
+      const re1 = new RegExp(numPattern + "\\s+(" + UP + ")(?:\\s+\\S+){0,5}?\\s+(?:" + verbs + ")", "gi");
       while ((m = re1.exec(text)) !== null) {
-        matches.push({ count: parseInt(m[1]), unit: m[2], idx: m.index });
+        const count = isNaN(parseInt(m[1])) ? numMap[m[1].toLowerCase()] : parseInt(m[1]);
+        matches.push({ count, unit: m[2], idx: m.index });
       }
 
-      // Strategy 2: verb ... "N unit" (up to 3 words gap)
-      // e.g. "servis yapın. 2 porsiyon", "paylaştırarak 4 kaseye sunun"
-      const re2 = new RegExp("(?:" + verbs + ")\\S*(?:\\s+\\S+){0,3}?\\s+(\\d+)\\s+(" + UP + ")", "gi");
+      // Strategy 2: verb ... "N unit"
+      const re2 = new RegExp("(?:" + verbs + ")\\S*(?:\\s+\\S+){0,5}?\\s+" + numPattern + "\\s+(" + UP + ")", "gi");
       while ((m = re2.exec(text)) !== null) {
-        matches.push({ count: parseInt(m[1]), unit: m[2], idx: m.index });
+        const count = isNaN(parseInt(m[1])) ? numMap[m[1].toLowerCase()] : parseInt(m[1]);
+        matches.push({ count, unit: m[2], idx: m.index });
       }
 
-      // Strategy 3: "yaklaşık/toplam N unit ... verb"
-      const re3 = new RegExp("(?:yaklaşık|tahminen|toplam|kabaca|civarında?)\\s+(\\d+)\\s+(" + UP + ")(?:\\s+\\S+){0,5}?\\s+(?:" + verbs + ")", "gi");
-      while ((m = re3.exec(text)) !== null) {
-        matches.push({ count: parseInt(m[1]), unit: m[2], idx: m.index });
-      }
-
-      // Strategy 4: "N kişiye yeter/yetecek"
-      const re4 = /(\d+)\s*(kişiye|kişilik|kişi)\s+(?:yeter|yetecek|yetişir|servisi)/gi;
-      while ((m = re4.exec(text)) !== null) {
-        matches.push({ count: parseInt(m[1]), unit: "kişilik", idx: m.index });
-      }
-
-      // Strategy 5: Broad scan - any "N unit" in the last 250 chars (tail of prep text)
+      // Strategy 5: Broad scan tail
       const tail = text.slice(-250);
-      const re5 = new RegExp("(\\d+)\\s+(" + UP + ")", "gi");
+      const re5 = new RegExp(numPattern + "\\s+(" + UP + ")", "gi");
       while ((m = re5.exec(tail)) !== null) {
-        matches.push({ count: parseInt(m[1]), unit: m[2], idx: text.length - 250 + m.index });
+        const count = isNaN(parseInt(m[1])) ? numMap[m[1].toLowerCase()] : parseInt(m[1]);
+        matches.push({ count, unit: m[2], idx: text.length - 250 + m.index });
       }
 
       if (matches.length === 0) return null;
-
-      // Pick the LAST match (most likely the concluding serving statement)
       const best = matches[matches.length - 1];
       if (best.count < 1 || best.count > 100) return null;
 
-      // Normalize suffixed Turkish forms to base
       const norm = {
         "kişiye": "kişilik", "kişinin": "kişilik", "kişi": "kişilik",
-        "kaseye": "kase", "kasede": "kase",
-        "tabağa": "tabak", "tabakta": "tabak",
-        "dilime": "dilim", "dilimle": "dilim",
-        "parçaya": "parça"
+        "kaseye": "kase", "kasede": "kase", "tabağa": "tabak", "tabakta": "tabak",
+        "dilime": "dilim", "dilimle": "dilim", "parçaya": "parça"
       };
-
       const unit = norm[best.unit] || best.unit;
-      console.log("[ServingDetector] Detected: " + best.count + " " + unit + " from prep text");
       return { count: best.count, unit: unit };
+    }
+
+    /** 
+     * Helper to update the Servings field based on current preparation text
+     */
+    function syncServingFromPrep(text) {
+      const currentText = text || (els.preparationEditor ? els.preparationEditor.value : "");
+      if (!currentText) return;
+      const detected = detectServingFromText(currentText);
+      if (detected) {
+        const newValue = `${detected.count} ${detected.unit}`;
+        if (els.servings && els.servings.value !== newValue) {
+          console.log(`[AutoSync] Serving updated to: ${newValue}`);
+          els.servings.value = newValue;
+          state.recipe.servis = newValue;
+          const servingParsed = parseServing(newValue);
+          const newMacroTitle = buildMacroTitle(1, servingParsed.unit);
+          if (els.macroTitleEditor) els.macroTitleEditor.value = newMacroTitle;
+          state.recipe.macroTitle = newMacroTitle;
+          state.recipe.baseServingCount = servingParsed.count;
+          renderCardLayers();
+          saveState();
+        }
+      }
     }
 
     function buildMacroTitle(multiplier, unit) {
@@ -2443,6 +2458,7 @@ Servis sayısı: {{SERVINGS}}
       const r = state.recipe;
       els.ingredientsEditor.value = (r.ingredients || []).join("\n");
       els.preparationEditor.value = r.preparation || "";
+      els.servings.value = r.servis || "";
       els.macroTitleEditor.value = r.macroTitle || "1 porsiyon için\nmakro değerleri";
       els.imagePromptEditor.value = r.imagePrompt || "";
       els.carbEditor.value = r.macros?.karbonhidrat || "-";
@@ -4677,8 +4693,15 @@ ${ingredients.map((ing, i) => `${i + 1}. ${ing}`).join("\n")}`;
              padding: layer.padding, radius: layer.radius, textAlign: layer.textAlign, fontFamily: layer.fontFamily
            };
         });
+        // Always save as the last used (global) style for new cards
         localStorage.setItem("global_layer_styles_v1", JSON.stringify(styleMap));
-      } catch(e) { console.warn("Failed to save global layer styles", e); }
+        
+        // Also save it specifically for THIS recipe
+        if (state.recipe && state.recipe.title) {
+            const safeTitleKey = "local_card_style_" + encodeURIComponent(state.recipe.title.trim());
+            localStorage.setItem(safeTitleKey, JSON.stringify(styleMap));
+        }
+      } catch(e) { console.warn("Failed to save layer styles", e); }
 
       // Light local cache (NO base64 image to avoid quota issues)
       const name = els.templateName.value.trim();
@@ -5684,6 +5707,8 @@ Output JSON Format:
       }
       if (parsed.revised_preparation) {
         state.recipe.preparation = parsed.revised_preparation;
+        // Auto-detect serving from revised text using our helper
+        syncServingFromPrep(parsed.revised_preparation);
       }
       if (parsed.revised_macros) {
         state.recipe.macros.karbonhidrat = parsed.revised_macros.karbonhidrat || state.recipe.macros.karbonhidrat;
@@ -6032,11 +6057,15 @@ Output JSON Format:
       const pat = getGitHubPat();
       if (!pat) return;
       try {
-        const res = await fetch(`https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/templates`, {
+        const url = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/templates`;
+        const res = await fetch(url, {
           headers: { "Authorization": `Bearer ${pat}` }
         });
+        if (res.status === 404) {
+             console.log("[GitHub] Templates directory not found (404), skipping. This is normal for empty repos.");
+             return;
+        }
         if (!res.ok) {
-          if (res.status === 404) return; // Silent return for fresh repos
           throw new Error("GitHub error: " + res.status);
         }
         const files = await res.json();
@@ -6478,6 +6507,15 @@ Yanıtını KESİNLİKLE VE SADECE aşağıdaki gibi JSON olarak ver. Asla açı
       }, 300); // 300ms faster local debounce
     });
 
+    els.preparationEditor.addEventListener("input", () => {
+      syncServingFromPrep();
+      saveState();
+    });
+
+    els.ingredientsEditor.addEventListener("input", () => {
+      saveState();
+    });
+
     els.dishAiBtn.addEventListener("click", async () => {
       ensureDishesLoaded();
       const val = els.dishName.value.trim();
@@ -6748,10 +6786,12 @@ Yanıtını KESİNLİKLE VE SADECE aşağıdaki gibi JSON olarak ver. Asla açı
       if (!forceDefault && pat) {
         try {
           setStatus("GitHub'dan şablonlar yükleniyor...", "");
-          const res = await fetch(`https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${GITHUB_TEMPLATES_PATH}`, {
+          const url = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${GITHUB_TEMPLATES_PATH}`;
+          const res = await fetch(url, {
             headers: { "Authorization": `Bearer ${pat}` }
           });
           if (res.status === 404) {
+            console.log("[GitHub] Templates not found (404).");
             // Sessizce geç; yeni repo ise templates klasörü olmayabilir
           } else if (res.ok) {
             const files = await res.json();
@@ -6883,8 +6923,9 @@ Yanıtını KESİNLİKLE VE SADECE aşağıdaki gibi JSON olarak ver. Asla açı
             if (detected) {
               const currentParsed = parseServing(injectedServings);
               if (detected.count !== currentParsed.count) {
-                console.log(`[ServingDetector] Override (Admin Injected): "${injectedServings}" → "${detected.count} ${detected.unit}"`);
-                injectedServings = `${detected.count} ${detected.unit}`;
+                const newVal = `${detected.count} ${detected.unit || 'porsiyon'}`;
+                console.log(`[ServingDetector] Override (Admin Injected): "${injectedServings}" → "${newVal}"`);
+                injectedServings = newVal;
               }
             }
           }

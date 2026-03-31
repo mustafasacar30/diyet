@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import React, { useState, useEffect } from "react"
 import { supabase } from "@/lib/supabase"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -50,6 +50,7 @@ export default function FoodProposalsPage() {
 
     // Processing State
     const [processing, setProcessing] = useState(false)
+    const [expandedId, setExpandedId] = useState<string | null>(null)
 
     useEffect(() => {
         fetchProposals()
@@ -220,71 +221,109 @@ export default function FoodProposalsPage() {
                         </TableHeader>
                         <TableBody>
                             {filteredProposals.map((proposal) => (
-                                <TableRow key={proposal.id}>
-                                    <TableCell className="text-xs text-gray-500">
-                                        {new Date(proposal.created_at).toLocaleDateString('tr-TR')}
-                                    </TableCell>
-                                    <TableCell>
-                                        {proposal.image_url ? (
-                                            <div className="relative w-16 h-16 rounded-lg overflow-hidden border bg-gray-100 group">
-                                                <Image
-                                                    src={proposal.image_url}
-                                                    alt={proposal.suggested_name}
-                                                    fill
-                                                    sizes="64px"
-                                                    className="object-cover transition-transform group-hover:scale-110"
-                                                />
+                                <React.Fragment key={proposal.id}>
+                                    <TableRow 
+                                        className="cursor-pointer hover:bg-gray-50/50 transition-colors"
+                                        onClick={() => setExpandedId(expandedId === proposal.id ? null : proposal.id)}
+                                    >
+                                        <TableCell className="text-xs text-gray-500">
+                                            {new Date(proposal.created_at).toLocaleDateString('tr-TR')}
+                                        </TableCell>
+                                        <TableCell>
+                                            {proposal.image_url ? (
+                                                <div className="relative w-16 h-16 rounded-lg overflow-hidden border bg-gray-100 group">
+                                                    <Image
+                                                        src={proposal.image_url}
+                                                        alt={proposal.suggested_name}
+                                                        fill
+                                                        sizes="64px"
+                                                        className="object-cover transition-transform group-hover:scale-110"
+                                                    />
+                                                </div>
+                                            ) : (
+                                                <div className="w-16 h-16 rounded-lg bg-gray-100 flex items-center justify-center text-gray-400 text-xs text-center p-1 font-medium border border-dashed border-gray-300">
+                                                    Görsel Yok
+                                                </div>
+                                            )}
+                                        </TableCell>
+                                        <TableCell>
+                                            <div className="font-semibold text-gray-900">{proposal.suggested_name}</div>
+                                            <div className="text-xs text-gray-500 mt-1 space-x-2 font-medium">
+                                                <span>{Math.round(proposal.calories)} kcal</span>
+                                                <span className="text-blue-600">P: {Math.round(proposal.protein)}g</span>
+                                                <span className="text-orange-600">K: {Math.round(proposal.carbs)}g</span>
+                                                <span className="text-yellow-600">Y: {Math.round(proposal.fat)}g</span>
                                             </div>
-                                        ) : (
-                                            <div className="w-16 h-16 rounded-lg bg-gray-100 flex items-center justify-center text-gray-400 text-xs text-center p-1">
-                                                Foto Yok
-                                            </div>
-                                        )}
-                                    </TableCell>
-                                    <TableCell>
-                                        <div className="font-medium text-gray-900">{proposal.suggested_name}</div>
-                                        <div className="text-xs text-gray-500 mt-1 space-x-2">
-                                            <span>{Math.round(proposal.calories)} kcal</span>
-                                            <span className="text-blue-600">P: {Math.round(proposal.protein)}</span>
-                                            <span className="text-orange-600">K: {Math.round(proposal.carbs)}</span>
-                                            <span className="text-yellow-600">Y: {Math.round(proposal.fat)}</span>
-                                        </div>
-                                    </TableCell>
-                                    <TableCell>
-                                        <div className="text-sm">{proposal.profiles?.full_name || 'Bilinmeyen'}</div>
-                                    </TableCell>
-                                    <TableCell>
-                                        <Badge variant={
-                                            proposal.status === 'approved' ? 'default' :
-                                                proposal.status === 'rejected' ? 'destructive' : 'secondary'
-                                        }>
-                                            {proposal.status === 'approved' ? 'Onaylandı' :
-                                                proposal.status === 'rejected' ? 'Reddedildi' : 'Bekliyor'}
-                                        </Badge>
-                                    </TableCell>
-                                    <TableCell className="text-right">
-                                        {proposal.status === 'pending' && (
-                                            <div className="flex justify-end gap-2">
-                                                <Button
-                                                    size="sm"
-                                                    variant="outline"
-                                                    className="text-green-600 hover:text-green-700 hover:bg-green-50 px-2 h-8"
-                                                    onClick={() => openApproveDialog(proposal)}
-                                                >
-                                                    <Check className="h-4 w-4 mr-1" /> Onayla
-                                                </Button>
-                                                <Button
-                                                    size="sm"
-                                                    variant="ghost"
-                                                    className="text-red-500 hover:text-red-600 hover:bg-red-50 px-2 h-8"
-                                                    onClick={() => handleReject(proposal.id)}
-                                                >
-                                                    <X className="h-4 w-4" />
-                                                </Button>
-                                            </div>
-                                        )}
-                                    </TableCell>
-                                </TableRow>
+                                            {proposal.ai_analysis?.total_servings && (
+                                                <div className="text-[10px] text-gray-400 mt-1">
+                                                    🍽️ {proposal.ai_analysis.total_servings} {proposal.portion_unit || 'porsiyon'} üretir (Değerler 1 porsiyon içindir)
+                                                </div>
+                                            )}
+                                        </TableCell>
+                                        <TableCell>
+                                            <div className="text-sm font-medium text-gray-700">{proposal.profiles?.full_name || 'AI Keşif Motoru'}</div>
+                                        </TableCell>
+                                        <TableCell>
+                                            <Badge variant={
+                                                proposal.status === 'approved' ? 'default' :
+                                                    proposal.status === 'rejected' ? 'destructive' : 'secondary'
+                                            } className={proposal.status === 'pending' ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : ''}>
+                                                {proposal.status === 'approved' ? 'Onaylandı' :
+                                                    proposal.status === 'rejected' ? 'Reddedildi' : 'Onay Bekliyor'}
+                                            </Badge>
+                                        </TableCell>
+                                        <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                                            {proposal.status === 'pending' && (
+                                                <div className="flex justify-end gap-2">
+                                                    <Button
+                                                        size="sm"
+                                                        variant="outline"
+                                                        className="text-green-600 hover:text-green-700 hover:bg-green-50 px-3 h-8 border-green-200"
+                                                        onClick={(e) => { e.stopPropagation(); openApproveDialog(proposal); }}
+                                                    >
+                                                        <Check className="h-4 w-4 mr-1" /> Onayla
+                                                    </Button>
+                                                    <Button
+                                                        size="sm"
+                                                        variant="ghost"
+                                                        className="text-red-500 hover:text-red-600 flex-shrink-0 hover:bg-red-50 w-8 h-8 p-0 shrink-0"
+                                                        onClick={(e) => { e.stopPropagation(); handleReject(proposal.id); }}
+                                                    >
+                                                        <X className="h-4 w-4" />
+                                                    </Button>
+                                                </div>
+                                            )}
+                                        </TableCell>
+                                    </TableRow>
+
+                                    {/* Expanded State */}
+                                    {expandedId === proposal.id && (
+                                        <TableRow className="bg-gray-50/80 hover:bg-gray-50/80 border-b-2 border-gray-100">
+                                            <TableCell colSpan={6} className="p-0 border-0">
+                                                <div className="px-6 py-4 animate-in slide-in-from-top-2 duration-200">
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
+                                                        <div>
+                                                            <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                                                                <span className="text-orange-500">📝</span> Malzemeler
+                                                            </h4>
+                                                            <div className="text-sm text-gray-700 whitespace-pre-line leading-relaxed pl-1">
+                                                                {proposal.ingredients || <span className="text-gray-400 italic">Malzeme bilgisi yok.</span>}
+                                                            </div>
+                                                        </div>
+                                                        <div>
+                                                            <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                                                                <span className="text-blue-500">👨‍🍳</span> Hazırlanışı
+                                                            </h4>
+                                                            <div className="text-sm text-gray-700 whitespace-pre-line leading-relaxed pl-1">
+                                                                {proposal.recipe_text || <span className="text-gray-400 italic">Tarif bilgisi yok.</span>}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </TableCell>
+                                        </TableRow>
+                                    )}
+                                </React.Fragment>
                             ))}
                         </TableBody>
                     </Table>

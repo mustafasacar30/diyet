@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Loader2, Sparkles, ArrowRight, ChefHat, Leaf, DollarSign, MapPin, Clock } from "lucide-react"
 import Link from "next/link"
 import { supabase } from "@/lib/supabase"
-import { Settings, Save } from "lucide-react"
+import { Settings, Save, Trash2 } from "lucide-react"
 import { useEffect } from "react"
 
 const EXAMPLE_PROMPTS = [
@@ -20,9 +20,15 @@ export default function FoodDiscoveryPage() {
     const [loading, setLoading] = useState(false)
     const [result, setResult] = useState<{ success: boolean; count: number; proposals: any[] } | null>(null)
     const [error, setError] = useState<string | null>(null)
-    const [searchSites, setSearchSites] = useState("")
+    const [searchSites, setSearchSites] = useState<{ url: string; enabled: boolean }[]>([])
+    const [newSite, setNewSite] = useState("")
     const [savingSettings, setSavingSettings] = useState(false)
     const [showSettings, setShowSettings] = useState(false)
+
+    // New states for interaction
+    const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set())
+    const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
+    const [proceeding, setProceeding] = useState(false)
 
     useEffect(() => {
         fetchSettings()
@@ -30,7 +36,15 @@ export default function FoodDiscoveryPage() {
 
     const fetchSettings = async () => {
         const { data } = await supabase.from('system_settings').select('value').eq('key', 'discovery_search_sites').maybeSingle()
-        if (data) setSearchSites(data.value)
+        if (data) {
+            if (Array.isArray(data.value)) {
+                setSearchSites(data.value)
+            } else if (typeof data.value === 'string') {
+                // Migration from legacy string
+                const legacy = data.value.split(',').map(s => ({ url: s.trim(), enabled: true })).filter(s => s.url)
+                setSearchSites(legacy)
+            }
+        }
     }
 
     const saveSettings = async () => {
@@ -46,6 +60,27 @@ export default function FoodDiscoveryPage() {
         } finally {
             setSavingSettings(false)
         }
+    }
+
+    const addSite = () => {
+        if (!newSite.trim()) return
+        let url = newSite.trim().toLowerCase()
+        if (url.startsWith('http://')) url = url.replace('http://', '')
+        if (url.startsWith('https://')) url = url.replace('https://', '')
+        if (url.endsWith('/')) url = url.slice(0, -1)
+        
+        if (!searchSites.some(s => s.url === url)) {
+            setSearchSites([...searchSites, { url, enabled: true }])
+        }
+        setNewSite("")
+    }
+
+    const removeSite = (url: string) => {
+        setSearchSites(searchSites.filter(s => s.url !== url))
+    }
+
+    const toggleSite = (url: string) => {
+        setSearchSites(searchSites.map(s => s.url === url ? { ...s, enabled: !s.enabled } : s))
     }
 
     const handleDiscover = async () => {
@@ -69,6 +104,8 @@ export default function FoodDiscoveryPage() {
             }
 
             setResult(data)
+            setCheckedIds(new Set(data.proposals.map((p: any) => p.id)))
+            setExpandedIds(new Set())
         } catch (err: any) {
             setError(err.message)
         } finally {
@@ -141,28 +178,71 @@ export default function FoodDiscoveryPage() {
                 {/* Search Settings Toggle Area */}
                 {showSettings && (
                     <div className="mt-4 pt-4 border-t border-gray-100 animate-in fade-in slide-in-from-top-2 duration-300">
-                        <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-2">
+                        <label className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-3">
                             🔎 Dahil Edilecek Kaynaklar (Web Siteleri)
                         </label>
-                        <div className="flex gap-2">
+                        
+                        <div className="flex gap-2 mb-4">
                             <input
-                                value={searchSites}
-                                onChange={(e) => setSearchSites(e.target.value)}
-                                placeholder="Örn: nefisyemektarifleri.com, yemek.com, lezzet.com.tr"
+                                value={newSite}
+                                onChange={(e) => setNewSite(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && addSite()}
+                                placeholder="Örn: nefisyemektarifleri.com"
                                 className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-xs focus:ring-1 focus:ring-violet-500 outline-none"
                             />
                             <Button 
                                 size="sm" 
-                                onClick={saveSettings} 
-                                disabled={savingSettings}
-                                className="bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg px-3 h-auto"
+                                onClick={addSite}
+                                className="bg-violet-100 text-violet-700 hover:bg-violet-200 px-4"
                             >
-                                {savingSettings ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                                Ekle
                             </Button>
                         </div>
-                        <p className="text-[10px] text-gray-400 mt-1.5">
-                            Boş bırakırsanız AI genel bir araştırma yapar. Virgülle ayırarak alan adlarını ekleyebilirsiniz.
-                        </p>
+
+                        {searchSites.length > 0 ? (
+                            <div className="space-y-2 mb-4 max-h-[200px] overflow-y-auto pr-1">
+                                {searchSites.map((site) => (
+                                    <div key={site.url} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2 border border-gray-100">
+                                        <div className="flex items-center gap-3">
+                                            <input 
+                                                type="checkbox" 
+                                                checked={site.enabled} 
+                                                onChange={() => toggleSite(site.url)}
+                                                className="w-4 h-4 rounded border-gray-300 text-violet-600 focus:ring-violet-500 cursor-pointer"
+                                            />
+                                            <span className={`text-xs font-medium ${site.enabled ? 'text-gray-700' : 'text-gray-400 line-through'}`}>
+                                                {site.url}
+                                            </span>
+                                        </div>
+                                        <button 
+                                            onClick={() => removeSite(site.url)}
+                                            className="text-gray-400 hover:text-red-500 transition-colors"
+                                        >
+                                            <Trash2 size={14} />
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="text-center py-4 border-2 border-dashed border-gray-100 rounded-xl mb-4">
+                                <p className="text-[11px] text-gray-400 italic">Henüz site eklenmedi. Tüm internette arama yapılacak.</p>
+                            </div>
+                        )}
+
+                        <div className="flex justify-between items-center bg-violet-50/50 p-3 rounded-xl border border-violet-100/50">
+                            <p className="text-[10px] text-violet-600/70 max-w-[240px]">
+                                Seçili siteler veritabanına kaydedilir ve Keşif motoruna kısıt olarak gönderilir.
+                            </p>
+                            <Button 
+                                size="sm" 
+                                onClick={saveSettings} 
+                                disabled={savingSettings}
+                                className="bg-violet-600 hover:bg-violet-700 text-white rounded-lg px-6 h-9 flex gap-2"
+                            >
+                                {savingSettings ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                                Ayarları Kaydet
+                            </Button>
+                        </div>
                     </div>
                 )}
             </div>
@@ -220,39 +300,97 @@ export default function FoodDiscoveryPage() {
 
                     {/* Preview Cards */}
                     <div className="space-y-3 mb-6">
-                        {result.proposals.map((p: any) => (
-                            <div key={p.id} className="bg-white rounded-xl border border-green-200 p-4 shadow-sm">
-                                <div className="flex justify-between items-start">
-                                    <div>
-                                        <h3 className="font-semibold text-gray-900">{p.suggested_name}</h3>
-                                        <div className="flex gap-3 text-xs text-gray-500 mt-1">
-                                            <span>{Math.round(p.calories)} kcal</span>
-                                            <span className="text-blue-600">P: {p.protein}g</span>
-                                            <span className="text-orange-600">K: {p.carbs}g</span>
-                                            <span className="text-yellow-600">Y: {p.fat}g</span>
+                        <p className="text-xs text-gray-500 mb-2 font-medium">İstemediğiniz yemeklerin işaretini kaldırın. Çöpe atılacaklardır.</p>
+                        {result.proposals.map((p: any) => {
+                            const isChecked = checkedIds.has(p.id)
+                            const isExpanded = expandedIds.has(p.id)
+
+                            return (
+                                <div key={p.id} className={`bg-white rounded-xl border p-4 shadow-sm transition-all ${!isChecked ? 'opacity-50 border-gray-200 bg-gray-50' : 'border-green-200'}`}>
+                                    <div className="flex gap-3">
+                                        <input 
+                                            type="checkbox" 
+                                            checked={isChecked} 
+                                            onChange={() => {
+                                                const next = new Set(checkedIds)
+                                                if (next.has(p.id)) next.delete(p.id)
+                                                else next.add(p.id)
+                                                setCheckedIds(next)
+                                            }}
+                                            className="mt-1 w-5 h-5 rounded border-gray-300 text-green-600 focus:ring-green-500 cursor-pointer shrink-0"
+                                        />
+                                        <div className="flex-1 cursor-pointer" onClick={() => {
+                                                const next = new Set(expandedIds)
+                                                if (next.has(p.id)) next.delete(p.id)
+                                                else next.add(p.id)
+                                                setExpandedIds(next)
+                                        }}>
+                                            <div className="flex justify-between items-start">
+                                                <div>
+                                                    <h3 className={`font-semibold ${!isChecked ? 'text-gray-500 line-through' : 'text-gray-900'}`}>
+                                                        {p.suggested_name}
+                                                    </h3>
+                                                    <div className="flex gap-3 text-xs text-gray-500 mt-1">
+                                                        <span>{Math.round(p.calories)} kcal</span>
+                                                        <span className={isChecked ? "text-blue-600" : ""}>P: {p.protein}g</span>
+                                                        <span className={isChecked ? "text-orange-600" : ""}>K: {p.carbs}g</span>
+                                                        <span className={isChecked ? "text-yellow-600" : ""}>Y: {p.fat}g</span>
+                                                    </div>
+                                                </div>
+                                                <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${isChecked ? 'bg-amber-100 text-amber-700' : 'bg-gray-200 text-gray-500'}`}>
+                                                    {isChecked ? 'Onay Bekliyor' : 'Çöpe Atılacak'}
+                                                </span>
+                                            </div>
+
+                                            {isExpanded ? (
+                                                <div className="mt-3 pt-3 border-t border-gray-100 text-xs text-gray-600 space-y-2" onClick={e => e.stopPropagation()}>
+                                                    {p.ingredients && <p><span className="font-semibold text-gray-700">📝 Malzemeler:</span> {p.ingredients}</p>}
+                                                    {p.recipe_text && <p><span className="font-semibold text-gray-700">👨‍🍳 Tarif:</span> {p.recipe_text}</p>}
+                                                    {p.ai_analysis?.total_servings && <p><span className="font-semibold text-gray-700">🍽️ Servis:</span> {p.ai_analysis.total_servings} {p.portion_unit}</p>}
+                                                </div>
+                                            ) : (
+                                                p.ingredients && (
+                                                    <p className="text-xs text-gray-500 mt-2 truncate w-full max-w-xl">
+                                                        <span className="font-medium text-gray-600">📝 Detaylar için tıklayın...</span>
+                                                    </p>
+                                                )
+                                            )}
                                         </div>
                                     </div>
-                                    <span className="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">
-                                        Onay Bekliyor
-                                    </span>
                                 </div>
-                                {p.ingredients && (
-                                    <p className="text-xs text-gray-500 mt-2 border-t pt-2">
-                                        <span className="font-medium text-gray-600">📝 Malzemeler:</span> {p.ingredients}
-                                    </p>
-                                )}
-                            </div>
-                        ))}
+                            )
+                        })}
                     </div>
 
                     {/* Navigation */}
                     <div className="flex justify-center gap-3">
-                        <Link href="/admin/food-proposals">
-                            <Button className="bg-green-600 hover:bg-green-700 text-white rounded-xl px-6 flex items-center gap-2">
-                                Onay Bekleyenler Sayfasına Git
-                                <ArrowRight size={16} />
-                            </Button>
-                        </Link>
+                        <Button 
+                            onClick={async () => {
+                                if (!result) return
+                                const uncheckedIds = result.proposals.map((p: any) => p.id).filter((id: string) => !checkedIds.has(id))
+                                
+                                if (uncheckedIds.length > 0) {
+                                    setProceeding(true)
+                                    try {
+                                        await supabase.from('food_proposals').delete().in('id', uncheckedIds)
+                                    } catch(e) { console.error('Delete rejected items error:', e) }
+                                }
+                                
+                                if (uncheckedIds.length === result.proposals.length) {
+                                    setResult(null)
+                                    setProceeding(false)
+                                    setPrompt("")
+                                } else {
+                                    window.location.href = "/admin/food-proposals"
+                                }
+                            }}
+                            disabled={proceeding}
+                            className="bg-green-600 hover:bg-green-700 text-white rounded-xl px-6 flex items-center gap-2"
+                        >
+                            {proceeding ? <Loader2 size={16} className="animate-spin" /> : null}
+                            {checkedIds.size > 0 ? `Seçili ${checkedIds.size} Yemeği Onay Havuzunda Gör` : 'Seçimi İptal Et ve Temizle'}
+                            <ArrowRight size={16} />
+                        </Button>
                         <Button
                             variant="outline"
                             onClick={() => { setResult(null); setPrompt("") }}

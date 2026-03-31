@@ -557,36 +557,31 @@ export default function FoodsPage() {
             if (card && !results.includes(card.imageUrl)) results.push(card.imageUrl)
         }
 
-        // Then: fuzzy match, but exclude banned cards
-        const candidates = githubCards.map(c => {
-            const cn = normalize(c.name)
+        // Then: strict auto match algorithms (same as recipe-matcher.ts used in daily render)
+        const candidates = githubCards.filter(c => {
+            const rawFilename = c.name.replace(/\..+$/, '')
+            const cn = normalize(rawFilename)
+
             // Skip if this card is banned for this food
-            if (bannedFilenames.has(c.name.toLowerCase())) return { card: c, score: 0 }
-            if (bannedFilenames.has(cn)) return { card: c, score: 0 }
-            
-            let score = 0
-            if (cn === fn) score += 100
-            if (cn.includes(fn) || fn.includes(cn)) score += 50
+            if (bannedFilenames.has(c.name.toLowerCase())) return false
+            if (bannedFilenames.has(cn)) return false
 
-            if (foodTokens.length > 0) {
-                const cardTokens = (c.name.toLowerCase().replace(/[ıİşŞğĞüÜöÖçÇI]/g, m => ({
-                    'ı':'i','İ':'i','ş':'s','Ş':'s','ğ':'g','Ğ':'g','ü':'u','Ü':'u','ö':'o','Ö':'o','ç':'c','Ç':'c','I':'i'
-                } as any)[m] || m).match(/[a-z0-9]+/g) || []).filter(w => w.length > 2)
+            // Exact/Substring match
+            if (cn === fn) return true
+            if (cn.length > 3 && fn.includes(cn)) return true
 
-                const matchedTokens = foodTokens.filter(ft => cardTokens.some(ct => ct.includes(ft) || ft.includes(ct)))
-                const matchRatio = matchedTokens.length / foodTokens.length
-                
-                // Advanced fuzzy: ≥ 60% of original tokens must be found in card name
-                if (matchRatio >= 0.6) {
-                    score += matchRatio * 40
-                }
-                score += matchedTokens.length * 5
-            }
-            return { card: c, score }
-        }).filter(m => m.score > 25).sort((a, b) => b.score - a.score)
+            // Token match: ALL tokens of the card filename must be exactly contained in the food name input
+            const cardTokens = (rawFilename.toLowerCase().replace(/[ıİşŞğĞüÜöÖçÇI]/g, m => ({
+                'ı':'i','İ':'i','ş':'s','Ş':'s','ğ':'g','Ğ':'g','ü':'u','Ü':'u','ö':'o','Ö':'o','ç':'c','Ç':'c','I':'i'
+            } as any)[m] || m).match(/[a-z0-9]+/g) || []).filter(w => w.length > 2)
+
+            if (cardTokens.length === 0) return false
+
+            return cardTokens.every(t => fn.includes(t))
+        })
 
         for (const c of candidates) {
-            if (!results.includes(c.card.imageUrl)) results.push(c.card.imageUrl)
+            if (!results.includes(c.imageUrl)) results.push(c.imageUrl)
         }
 
         return results
