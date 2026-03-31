@@ -41,8 +41,8 @@ export async function POST(req: NextRequest) {
                     protein: foodData.protein,
                     carbs: foodData.carbs,
                     fat: foodData.fat,
-                    portion_unit: 'porsiyon',
-                    standard_amount: 1,
+                    portion_unit: foodData.unit || foodData.portion_unit || 'porsiyon',
+                    standard_amount: foodData.base_amount || foodData.standard_amount || 1,
                     category: foodData.category || 'Kullanıcı Önerisi',
                     role: foodData.role || 'mainDish',
                     // Add other fields from FoodEditDialog if needed
@@ -63,11 +63,14 @@ export async function POST(req: NextRequest) {
                     tags: foodData.tags,
                     compatibility_tags: foodData.compatibility_tags,
                     notes: foodData.notes,
+                    ingredients: foodData.ingredients || null,
+                    recipe_text: foodData.recipe_text || null,
                     meta: { 
                         source: 'user_proposal', 
                         original_proposal_id: id,
                         image_url: foodData.image_url 
-                    }
+                    },
+                    ai_analysis: foodData.ai_analysis || null
                 })
                 .select()
                 .single();

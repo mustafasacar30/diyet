@@ -16,6 +16,8 @@ export type SlotConfig = {
     maxItems: number
     requiredRoles: string[]
     optionalRoles: string[]
+    bannedRoles?: string[]
+    bannedTags?: string[]
 }
 
 const TAG_MAPPING: Record<string, (f: any) => boolean> = {
@@ -731,7 +733,9 @@ export class Planner {
                 minItems: conf.minItems,
                 maxItems: conf.maxItems,
                 requiredRoles: Array.isArray(conf.requiredRoles) ? [...conf.requiredRoles] : [],
-                optionalRoles: Array.isArray(conf.optionalRoles) ? [...conf.optionalRoles] : []
+                optionalRoles: Array.isArray(conf.optionalRoles) ? [...conf.optionalRoles] : [],
+                bannedRoles: Array.isArray(conf.bannedRoles) ? [...conf.bannedRoles] : [],
+                bannedTags: Array.isArray(conf.bannedTags) ? [...conf.bannedTags] : []
             }
         })
 
@@ -749,13 +753,18 @@ export class Planner {
                         effectiveSlotConfig[slotName] = {
                             minItems: conf.min_items ?? 2,
                             maxItems: conf.max_items ?? 4,
-                            requiredRoles: [],
+                            requiredRoles: conf.requiredRoles || [],
                             // Never auto-include mainDish as optional; this can create duplicates in one slot.
-                            optionalRoles: ['sideDish', 'soup', 'salad', 'bread']
+                            optionalRoles: ['sideDish', 'soup', 'salad', 'bread'],
+                            bannedRoles: conf.bannedRoles || [],
+                            bannedTags: conf.bannedTags || []
                         }
                     } else {
                         effectiveSlotConfig[slotName].minItems = conf.min_items ?? effectiveSlotConfig[slotName].minItems
                         effectiveSlotConfig[slotName].maxItems = conf.max_items ?? effectiveSlotConfig[slotName].maxItems
+                        if (conf.requiredRoles) effectiveSlotConfig[slotName].requiredRoles = conf.requiredRoles
+                        if (conf.bannedRoles) effectiveSlotConfig[slotName].bannedRoles = conf.bannedRoles
+                        if (conf.bannedTags) effectiveSlotConfig[slotName].bannedTags = conf.bannedTags
                     }
                 }
             })
@@ -2271,6 +2280,10 @@ export class Planner {
         const normalizedSlotName = normalizeSlotName(slotName)
         const category = SLOT_TO_CATEGORY[normalizedSlotName] || normalizedSlotName || slotName
 
+        // Pass slot configuration restrictions to context so child evaluation loops can respect them
+        context.currentBannedRoles = Array.isArray(config.bannedRoles) ? config.bannedRoles.map(r => this.getCanonicalLockRole(r) || r) : []
+        context.currentBannedTags = Array.isArray(config.bannedTags) ? config.bannedTags.map(t => typeof t === 'string' ? t.toLowerCase() : '') : []
+
         // Track slot macros
         let slotMacros = { calories: 0, protein: 0, carbs: 0, fat: 0 }
 
@@ -3012,7 +3025,7 @@ export class Planner {
                 mainDishExcludeIds.add(id)
             }
             const forcedMain = await this.selectBestFoodByRole(
-                category, 'mainDish', context, mainDishExcludeIds, new Set<string>(), null, 99999, true, true, true, true
+                category, 'mainDish', context, mainDishExcludeIds, new Set<string>(), null, 99999, true, true, true, true, true
             )
             if (forcedMain) {
                 const forcedRole = this.getCanonicalLockRole(forcedMain.role || '')
@@ -3163,7 +3176,8 @@ export class Planner {
         isRequired: boolean = true,
         ignoreRepetition: boolean = false,
         ignoreBudget: boolean = false,
-        allowWeeklyCapBypass: boolean = false
+        allowWeeklyCapBypass: boolean = false,
+        allowMealTypeBypass: boolean = false
     ): Promise<any | null> {
         // Normalize role names (e.g. 'corba' from UI -> 'soup' in DB)
         if (role === 'corba') role = 'soup'
@@ -3183,7 +3197,27 @@ export class Planner {
             }
             // If meal_types is defined and non-empty, food must match the slot
             if (foodMealTypes && foodMealTypes.length > 0) {
-                return foodMealTypes.includes(requiredMealType)
+                const reqLower = requiredMealType.toLowerCase().replace(/ğ/g, 'g').replace(/ı/g, 'i').replace(/ş/g, 's').replace(/\s+/g, '')
+                const hasMatch = foodMealTypes.some(t => {
+                    if (typeof t !== 'string') return false
+                    const normT = t.toLowerCase().replace(/ğ/g, 'g').replace(/ı/g, 'i').replace(/ş/g, 's').replace(/\s+/g, '')
+                    if (normT === reqLower) return true
+                    if (reqLower.includes('ogle') && normT.includes('ogle')) return true
+                    if (reqLower.includes('aksam') && normT.includes('aksam')) return true
+                    if (reqLower.includes('kahvalt') && normT.includes('kahvalt')) return true
+                    if (reqLower.includes('ara') && normT.includes('ara')) return true
+
+                    // Relax mainDish constraint: allow lunch/dinner mixing ONLY on absolute last resort fallback
+                    if (allowMealTypeBypass && role === 'mainDish') {
+                        const reqIsLunchOrDinner = reqLower === 'lunch' || reqLower === 'dinner' || reqLower.includes('ogle') || reqLower.includes('aksam')
+                        const normIsLunchOrDinner = normT === 'lunch' || normT === 'dinner' || normT.includes('ogle') || normT.includes('aksam')
+                        if (reqIsLunchOrDinner && normIsLunchOrDinner) return true
+                    }
+
+                    return false
+                })
+                // No debug logs needed anymore, the logic is sound.
+                return hasMatch
             }
             return true // No meal_types restriction
         }
@@ -3191,6 +3225,15 @@ export class Planner {
         // Helper: verify food's actual role matches the requested role
         // This prevents rotation/lock/consistency from returning bread for mainDish requests
         const isRoleMatch = (food: any): boolean => {
+            // Check slot-level bans passed via context BEFORE allowing a match
+            if (context.currentBannedRoles && context.currentBannedRoles.length > 0) {
+                const foodRoleNorm = this.getCanonicalLockRole(food.role || '')
+                if (context.currentBannedRoles.includes(foodRoleNorm)) return false
+            }
+            if (context.currentBannedTags && context.currentBannedTags.length > 0 && Array.isArray(food.tags)) {
+                if (food.tags.some((t: string) => typeof t === 'string' && context.currentBannedTags.includes(t.toLowerCase()))) return false
+            }
+
             if (!STANDARD_ROLES.includes(role)) return true // Skip check for non-standard roles
             const foodRoleNorm = this.getCanonicalLockRole(food.role || '')
             return foodRoleNorm === requestedRoleNorm
@@ -3301,14 +3344,32 @@ export class Planner {
                 if (!catMatch && !roleMatch) return false
             }
 
-            if (excludeIds.has(f.id)) return false
+            if (excludeIds.has(f.id)) {
+                return false
+            }
+            
+            // -- NEW: Slot Config Banned Checking (Passed via context from selectFoodsForSlot) --
+            if (context.currentBannedRoles && context.currentBannedRoles.length > 0) {
+                const foodRoleNorm = this.getCanonicalLockRole(f.role || '')
+                if (context.currentBannedRoles.includes(foodRoleNorm)) {
+                    return false
+                }
+            }
+            if (context.currentBannedTags && context.currentBannedTags.length > 0 && Array.isArray(f.tags)) {
+                if (f.tags.some((t: string) => typeof t === 'string' && context.currentBannedTags.includes(t.toLowerCase()))) {
+                    return false
+                }
+            }
+            // ---------------------------------------------------------------------------------
             
             // -- NEW: Exclusive Scope Daily Bans --
             const dayOfWeek = (context.dayIndex ?? 0) + 1
             if (this.dailyBannedTargetsMap?.has(dayOfWeek)) {
                 const dayBans = this.dailyBannedTargetsMap.get(dayOfWeek)!
                 for (const target of dayBans) {
-                    if (this.matchesTarget(f, target)) return false
+                    if (this.matchesTarget(f, target)) {
+                        return false
+                    }
                 }
             }
             // ------------------------------------
@@ -3325,12 +3386,24 @@ export class Planner {
             }
 
             // Normal filters
-            if (!ignoreRepetition && context.dailySelectedIds.has(f.id)) return false
-            if (this.hasTagConflict(f, slotTags)) return false
-            if (this.hasNameConflict(f, context)) return false
-            if (!this.checkSeasonalityHard(f, context.currentDate)) return false
-            if (this.hasReachedFrequencyRuleMaxForFood(f, context)) return false
-            if (!isMealTypeCompatible(f)) return false
+            if (!ignoreRepetition && context.dailySelectedIds.has(f.id)) {
+                return false
+            }
+            if (this.hasTagConflict(f, slotTags)) {
+                return false
+            }
+            if (this.hasNameConflict(f, context)) {
+                return false
+            }
+            if (!this.checkSeasonalityHard(f, context.currentDate)) {
+                return false
+            }
+            if (this.hasReachedFrequencyRuleMaxForFood(f, context)) {
+                return false
+            }
+            if (!isMealTypeCompatible(f)) {
+                return false
+            }
 
             return true
         })
@@ -4147,7 +4220,17 @@ export class Planner {
         if (!requiredMealType) return true
         const foodMealTypes = this.getMealTypesArray(food)
         if (foodMealTypes && foodMealTypes.length > 0) {
-            return foodMealTypes.includes(requiredMealType)
+            const reqLower = requiredMealType.toLowerCase().replace(/ğ/g, 'g').replace(/ı/g, 'i').replace(/ş/g, 's').replace(/\s+/g, '')
+            return foodMealTypes.some(t => {
+                if (typeof t !== 'string') return false
+                const normT = t.toLowerCase().replace(/ğ/g, 'g').replace(/ı/g, 'i').replace(/ş/g, 's').replace(/\s+/g, '')
+                if (normT === reqLower) return true
+                if (reqLower.includes('ogle') && normT.includes('ogle')) return true
+                if (reqLower.includes('aksam') && normT.includes('aksam')) return true
+                if (reqLower.includes('kahvalt') && normT.includes('kahvalt')) return true
+                if (reqLower.includes('ara') && normT.includes('ara')) return true
+                return false
+            })
         }
         return true
     }

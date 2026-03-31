@@ -889,6 +889,10 @@ export function FoodEditDialog({ food, isOpen, onClose, onUpdate, mode = 'edit',
     const [compatibilityTags, setCompatibilityTags] = useState(food.compatibility_tags?.join(', ') || '')
     const [notes, setNotes] = useState(food.notes || '')
 
+    // AI Recipe Fields
+    const [ingredients, setIngredients] = useState(food.ingredients || '')
+    const [recipeText, setRecipeText] = useState(food.recipe_text || '')
+
     // Micronutrients
     type KeywordEntry = { keyword: string; match_type: 'name' | 'tag' | 'both' }
     type MicronutrientWithKeywords = { id: string; name: string; compatible_keywords: KeywordEntry[] | null }
@@ -915,14 +919,74 @@ export function FoodEditDialog({ food, isOpen, onClose, onUpdate, mode = 'edit',
         b.food_pattern.toLowerCase() === name.toLowerCase()
     )
 
-    // Filter cards for search
-    const filteredCards = recipeSearch.length >= 2
-        ? cards.filter(c => {
-            const fn = c.filename.toLowerCase()
-            const search = recipeSearch.toLowerCase()
-            return fn.includes(search)
+    // Filter cards for search (multi-token smart search)
+    const filteredCards = useMemo(() => {
+        if (recipeSearch.length < 2) return []
+        
+        const trNorm = (s: string) => s.toLowerCase().replace(/[çğıöşüÇĞİÖŞÜ]/g, (ch: string) => ({
+            'ç':'c','ğ':'g','ı':'i','ö':'o','ş':'s','ü':'u',
+            'Ç':'c','Ğ':'g','İ':'i','Ö':'o','Ş':'s','Ü':'u'
+        } as any)[ch] || ch)
+        
+        const searchTokens = trNorm(recipeSearch).split(/\s+/).filter(t => t.length >= 2)
+        
+        return cards.filter(c => {
+            const fn = trNorm(c.filename)
+            const metadataText = c.metadata?.original_text ? trNorm(c.metadata.original_text) : ""
+            // All tokens must be found in either filename OR metadata original text
+            return searchTokens.every(token => fn.includes(token) || metadataText.includes(token))
         }).slice(0, 15)
-        : []
+    }, [recipeSearch, cards])
+
+    // Compute the currently active thumbnail for the header
+    const activeThumbnail = useMemo(() => {
+        if (!name || cards.length === 0) return null
+        
+        const trNorm = (s: string) => s.toLowerCase().replace(/[çğıöşüÇĞİÖŞÜ]/g, (ch: string) => ({
+            'ç':'c','ğ':'g','ı':'i','ö':'o','ş':'s','ü':'u',
+            'Ç':'c','Ğ':'g','İ':'i','Ö':'o','Ş':'s','Ü':'u'
+        } as any)[ch] || ch).replace(/[^a-z0-9]/g, '')
+        
+        const fn = trNorm(name)
+        const foodTokens = (name.toLowerCase().replace(/[çğıöşüÇĞİÖŞÜ]/g, (ch: string) => ({
+            'ç':'c','ğ':'g','ı':'i','ö':'o','ş':'s','ü':'u',
+            'Ç':'c','Ğ':'g','İ':'i','Ö':'o','Ş':'s','Ü':'u'
+        } as any)[ch] || ch) || "").match(/[a-z0-9]+/g) || []
+
+        // 1. Check manual matches first
+        if (foodMatches.length > 0) {
+            const firstMatch = foodMatches[0]
+            const card = cards.find(c => c.filename === firstMatch.card_filename)
+            if (card) return card.url
+        }
+
+        // 2. Fuzzy match (Simplified version of getCardUrls)
+        const candidates = cards.map(c => {
+            const cn = trNorm(c.filename.replace(/\..+$/, ''))
+            
+            // Skip if banned
+            if (foodBans.some(b => b.card_filename === c.filename)) return { url: c.url, score: 0 }
+            
+            let score = 0
+            if (cn === fn) score += 100
+            if (cn.includes(fn) || fn.includes(cn)) score += 50
+            
+            const cardTokens = (c.filename.toLowerCase().replace(/[çğıöşüÇĞİÖŞÜ]/g, (ch: string) => ({
+                'ç':'c','ğ':'g','ı':'i','ö':'o','ş':'s','ü':'u',
+                'Ç':'c','Ğ':'g','İ':'i','Ö':'o','Ş':'s','Ü':'u'
+            } as any)[ch] || ch) || "").match(/[a-z0-9]+/g) || []
+            
+            const matchedTokens = foodTokens.filter((ft: string) => ft.length > 2 && cardTokens.some((ct: string) => ct.includes(ft) || ft.includes(ct)))
+            if (foodTokens.length > 0) {
+                const ratio = matchedTokens.length / foodTokens.filter((ft: string) => ft.length > 2).length
+                if (ratio >= 0.6) score += ratio * 40
+            }
+            
+            return { url: c.url, score }
+        }).filter(c => c.score > 25).sort((a, b) => b.score - a.score)
+
+        return candidates.length > 0 ? candidates[0].url : null
+    }, [name, cards, foodMatches, foodBans])
 
     // Fetch all micronutrients with compatible_keywords on mount
     useEffect(() => {
@@ -1084,6 +1148,8 @@ export function FoodEditDialog({ food, isOpen, onClose, onUpdate, mode = 'edit',
         setTags(food.tags?.join(', ') || '')
         setCompatibilityTags(food.compatibility_tags?.join(', ') || '')
         setNotes(food.notes || '')
+        setIngredients(food.ingredients || '')
+        setRecipeText(food.recipe_text || '')
     }, [food])
 
     // Auto-calculate calories whenever macros change
@@ -1148,7 +1214,9 @@ export function FoodEditDialog({ food, isOpen, onClose, onUpdate, mode = 'edit',
             season_end: parseInt(seasonEnd) || 12,
             tags: parsedTags,
             compatibility_tags: parsedCompatTags,
-            notes
+            notes,
+            ingredients,
+            recipe_text: recipeText
         }
 
         console.log('Saving food:', updateData)
@@ -1283,10 +1351,24 @@ export function FoodEditDialog({ food, isOpen, onClose, onUpdate, mode = 'edit',
         <Dialog open={isOpen} onOpenChange={onClose}>
             <DialogContent className="w-[95vw] max-w-[95vw] sm:max-w-[95vw] h-auto max-h-[90vh] flex flex-col p-0 gap-0">
                 {/* Fixed Header */}
-                <div className="px-6 py-4 border-b shrink-0">
+                <div className="px-6 py-4 border-b shrink-0 flex items-center justify-between">
                     <DialogHeader>
                         <DialogTitle>{mode === 'create' ? 'Yeni Yemek Ekle' : 'Yemek Düzenle'}</DialogTitle>
                     </DialogHeader>
+                    {activeThumbnail && (
+                        <div className="flex items-center gap-3">
+                            <div className="text-right">
+                                <p className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">Eşleşen Kart</p>
+                                <p className="text-[11px] font-semibold text-green-600">Otomatik Bağlandı</p>
+                            </div>
+                            <div 
+                                className="w-12 h-12 rounded-lg border-2 border-green-100 overflow-hidden shadow-sm hover:scale-110 transition-transform cursor-zoom-in"
+                                onClick={() => window.open(activeThumbnail, '_blank')}
+                            >
+                                <img src={activeThumbnail} alt="Thumbnail" className="w-full h-full object-cover" />
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* Scrollable Content */}
@@ -1334,6 +1416,27 @@ export function FoodEditDialog({ food, isOpen, onClose, onUpdate, mode = 'edit',
                             <div>
                                 <Label className="text-xs">Notlar</Label>
                                 <Input value={notes} onChange={e => setNotes(e.target.value)} className="h-8" />
+                            </div>
+
+                            <div>
+                                <Label className="text-xs text-blue-600 flex items-center gap-1 mt-2"><span>📝</span> Malzemeler</Label>
+                                <textarea 
+                                    value={ingredients} 
+                                    onChange={e => setIngredients(e.target.value)} 
+                                    className="flex min-h-[60px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-xs shadow-sm mt-1 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500" 
+                                    placeholder="200g tavuk, 1 yk zeytinyağı..." 
+                                />
+                            </div>
+                            
+                            <div>
+                                <Label className="text-xs text-blue-600 flex items-center gap-1"><span>👨‍🍳</span> Tarif Adımları</Label>
+                                <textarea 
+                                    value={recipeText} 
+                                    onChange={e => setRecipeText(e.target.value)} 
+                                    className="flex min-h-[100px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-xs shadow-sm mt-1 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500" 
+                                    placeholder="1. Tavuğu doğrayın...&#10;2. Tavada soteleyin..." 
+                                />
+                                <p className="text-[10px] text-gray-400 mt-0.5">Eğer tarif kartı yoksa hastaya bu metin gösterilir.</p>
                             </div>
 
                             {/* Recipe Card Match/Ban Controls */}

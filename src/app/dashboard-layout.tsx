@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Users, FileText, LayoutDashboard, UtensilsCrossed, ClipboardList, Eye, Shield, UserCog, Stethoscope, MessageCircle, Activity, Sparkles } from 'lucide-react'
+import { Users, FileText, LayoutDashboard, UtensilsCrossed, ClipboardList, Eye, Shield, UserCog, Stethoscope, MessageCircle, Activity, Sparkles, ChefHat, Image as ImageIcon } from 'lucide-react'
 import { useAuth } from '@/contexts/auth-context'
 import { Button } from '@/components/ui/button'
 import React, { useState } from 'react'
@@ -154,6 +154,8 @@ export default function DashboardLayout({
         }
         tabs.push({ href: '/admin/recipes', label: 'Tarif Kartları', icon: UtensilsCrossed })
         tabs.push({ href: '/admin/food-proposals', label: 'Yemek Önerileri', icon: Sparkles })
+        tabs.push({ href: '/admin/food-discovery', label: 'AI Keşif', icon: ChefHat })
+        tabs.push({ href: '/admin/card-maker', label: 'Kart Maker', icon: ImageIcon })
         tabs.push({ href: '/admin/diseases', label: 'Hastalıklar', icon: Activity })
     }
 

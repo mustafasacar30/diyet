@@ -72,6 +72,7 @@ export interface Food {
     priority_score?: number
     max_weekly_freq?: number
     min_weekly_freq?: number
+    hidden_from_cardmaker?: boolean
 }
 
 interface FoodDialogProps {

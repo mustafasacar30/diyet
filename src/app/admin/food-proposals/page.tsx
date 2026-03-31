@@ -30,6 +30,9 @@ interface Proposal {
     status: 'pending' | 'approved' | 'rejected'
     ai_analysis: any
     admin_note: string | null
+    ingredients?: string
+    recipe_text?: string
+    portion_unit?: string
     profiles?: {
         full_name: string
     }
@@ -149,9 +152,13 @@ export default function FoodProposalsPage() {
             protein: p.protein,
             carbs: p.carbs,
             fat: p.fat,
-            portion_unit: 'porsiyon',
+            portion_unit: p.portion_unit || 'porsiyon',
+            unit: p.portion_unit || 'porsiyon',
             standard_amount: 1,
+            base_amount: 1,
             tags: [],
+            ingredients: p.ingredients || '',
+            recipe_text: p.recipe_text || '',
             // Defaults will be handled by FoodEditDialog state initialization
         }
     }

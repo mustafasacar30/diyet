@@ -24,7 +24,10 @@ import {
     CheckSquare,
     Square,
     Filter,
-    ChevronDown
+    ChevronDown,
+    ImageIcon,
+    Eye,
+    EyeOff
 } from "lucide-react"
 import {
     Dialog,
@@ -42,6 +45,8 @@ import { FoodDialog, Food, FoodFormValues } from "@/components/foods/food-dialog
 import { FoodEditDialog } from "@/components/diet/food-sidebar"
 import { FOOD_ROLES, ROLE_LABELS as SHARED_ROLE_LABELS } from "@/lib/constants/food-roles"
 import { FOOD_CATEGORIES } from "@/lib/constants/food-categories"
+import { useRecipeManager } from "@/hooks/use-recipe-manager"
+import { normalizeFoodName } from "@/utils/recipe-matcher"
 
 
 const ROLE_LABELS = SHARED_ROLE_LABELS
@@ -386,6 +391,7 @@ export default function FoodsPage() {
 
     // Sorting state
     const [sortConfig, setSortConfig] = useState<{ key: keyof Food; direction: 'asc' | 'desc' } | null>(null)
+    const [showHidden, setShowHidden] = useState(false)
 
     // Dialog state
     const [isDialogOpen, setIsDialogOpen] = useState(false)
@@ -429,6 +435,13 @@ export default function FoodsPage() {
 
     // Resizable Column State
     const [colWidths, setColWidths] = useState<Record<string, number>>({ name: 200, category: 100, role: 100, tags: 150, compatibility_tags: 150 })
+
+    // GitHub card thumbnails
+    const [githubCards, setGithubCards] = useState<{ name: string, imageUrl: string }[]>([])
+    const [imagePreview, setImagePreview] = useState<string | null>(null)
+
+    // Recipe match/ban management (for ban-aware card matching)
+    const { manualMatches: recipeMatches, bans: recipeBans } = useRecipeManager()
 
     // Extended Bulk Edit Options
     const seasonOptions = [
@@ -486,7 +499,98 @@ export default function FoodsPage() {
         loadFoods()
         loadCategories()
         loadRoles()
+        fetchGithubCards()
     }, [])
+
+    const fetchGithubCards = async () => {
+        try {
+            const res = await fetch('/api/admin/github-sync-check')
+            if (res.ok) {
+                const data = await res.json()
+                setGithubCards(data.publishedCards || [])
+            }
+        } catch (e) {
+            console.warn('GitHub cards fetch failed:', e)
+        }
+    }
+
+    // Helper: Find matching card URLs for a food name using advanced fuzzy matching
+    // Now respects recipe_match_bans and recipe_manual_matches from DB
+    const getCardUrls = (foodName: string): string[] => {
+        if (!foodName || githubCards.length === 0) return []
+        
+        const normalize = (s: string) => s.toLowerCase().replace(/[ıİşŞğĞüÜöÖçÇI]/g, m => ({
+            'ı':'i','İ':'i','ş':'s','Ş':'s','ğ':'g','Ğ':'g','ü':'u','Ü':'u','ö':'o','Ö':'o','ç':'c','Ç':'c','I':'i'
+        } as any)[m] || m).replace(/[^a-z0-9]/g, '')
+        
+        const fn = normalize(foodName)
+        const normalizedPattern = normalizeFoodName(foodName)
+        const foodTokens = (foodName.toLowerCase().replace(/[ıİşŞğĞüÜöÖçÇI]/g, m => ({
+            'ı':'i','İ':'i','ş':'s','Ş':'s','ğ':'g','Ğ':'g','ü':'u','Ü':'u','ö':'o','Ö':'o','ç':'c','Ç':'c','I':'i'
+        } as any)[m] || m).match(/[a-z0-9]+/g) || []).filter(w => w.length > 2)
+
+        // Get banned card filenames for this food
+        const bannedFilenames = new Set(
+            recipeBans
+                .filter(b => 
+                    b.food_pattern === normalizedPattern ||
+                    b.food_pattern.toLowerCase() === foodName.toLowerCase() ||
+                    normalizeFoodName(b.food_pattern) === normalizedPattern
+                )
+                .map(b => b.card_filename.replace(/\..+$/, '').toLowerCase())
+        )
+
+        // Get manually matched card filenames for this food  
+        const manualMatchFilenames = recipeMatches
+            .filter(m => 
+                m.food_pattern === normalizedPattern ||
+                m.food_pattern.toLowerCase() === foodName.toLowerCase() ||
+                normalizeFoodName(m.food_pattern) === normalizedPattern
+            )
+            .map(m => m.card_filename.replace(/\..+$/, '').toLowerCase())
+
+        const results: string[] = []
+
+        // First: add manually matched cards (highest priority)
+        for (const manualFn of manualMatchFilenames) {
+            const card = githubCards.find(c => normalize(c.name) === normalize(manualFn))
+            if (card && !results.includes(card.imageUrl)) results.push(card.imageUrl)
+        }
+
+        // Then: fuzzy match, but exclude banned cards
+        const candidates = githubCards.map(c => {
+            const cn = normalize(c.name)
+            // Skip if this card is banned for this food
+            if (bannedFilenames.has(c.name.toLowerCase())) return { card: c, score: 0 }
+            if (bannedFilenames.has(cn)) return { card: c, score: 0 }
+            
+            let score = 0
+            if (cn === fn) score += 100
+            if (cn.includes(fn) || fn.includes(cn)) score += 50
+
+            if (foodTokens.length > 0) {
+                const cardTokens = (c.name.toLowerCase().replace(/[ıİşŞğĞüÜöÖçÇI]/g, m => ({
+                    'ı':'i','İ':'i','ş':'s','Ş':'s','ğ':'g','Ğ':'g','ü':'u','Ü':'u','ö':'o','Ö':'o','ç':'c','Ç':'c','I':'i'
+                } as any)[m] || m).match(/[a-z0-9]+/g) || []).filter(w => w.length > 2)
+
+                const matchedTokens = foodTokens.filter(ft => cardTokens.some(ct => ct.includes(ft) || ft.includes(ct)))
+                const matchRatio = matchedTokens.length / foodTokens.length
+                
+                // Advanced fuzzy: ≥ 60% of original tokens must be found in card name
+                if (matchRatio >= 0.6) {
+                    score += matchRatio * 40
+                }
+                score += matchedTokens.length * 5
+            }
+            return { card: c, score }
+        }).filter(m => m.score > 25).sort((a, b) => b.score - a.score)
+
+        for (const c of candidates) {
+            if (!results.includes(c.card.imageUrl)) results.push(c.card.imageUrl)
+        }
+
+        return results
+    }
 
     const loadRoles = async () => {
         try {
@@ -573,6 +677,11 @@ export default function FoodsPage() {
     // Filter and Sort Data
     const filteredAndSortedFoods = useMemo(() => {
         let data = [...foods]
+
+        // 0. Hidden Filter (DB Column hidden_from_cardmaker)
+        if (!showHidden) {
+            data = data.filter(f => !f.hidden_from_cardmaker)
+        }
 
         if (searchQuery && searchQuery.trim().length > 0) {
             // Check for comma to determine OR logic
@@ -1176,16 +1285,33 @@ export default function FoodsPage() {
                         </div>
                     </div>
 
-                    <Button
-                        size="sm"
-                        onClick={() => {
-                            setEditingFood({} as any)
-                            setIsDialogOpen(true)
-                        }}
-                        className="bg-gradient-to-r from-green-600 to-teal-600 text-white h-7 text-xs px-3"
-                    >
-                        <Plus className="mr-1 h-3 w-3" /> Ekle
-                    </Button>
+                    <div className="flex gap-2">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className={`h-7 text-xs px-2 ${showHidden ? 'bg-orange-50' : ''}`}
+                            onClick={() => setShowHidden(!showHidden)}
+                            title={showHidden ? "Gizlenenleri Sakla" : "Gizlenenleri Göster"}
+                        >
+                            {showHidden ? <Eye className="h-3 w-3 mr-1" /> : <EyeOff className="h-3 w-3 mr-1" />}
+                            {showHidden ? "Gizlileri Sakla" : "Gizlileri Göster"}
+                            {!showHidden && foods.filter(f => f.hidden_from_cardmaker).length > 0 && (
+                                <span className="ml-1 bg-gray-200 px-1 rounded text-[10px]">
+                                    {foods.filter(f => f.hidden_from_cardmaker).length}
+                                </span>
+                            )}
+                        </Button>
+                        <Button
+                            size="sm"
+                            onClick={() => {
+                                setEditingFood({} as any)
+                                setIsDialogOpen(true)
+                            }}
+                            className="bg-gradient-to-r from-green-600 to-teal-600 text-white h-7 text-xs px-3"
+                        >
+                            <Plus className="mr-1 h-3 w-3" /> Ekle
+                        </Button>
+                    </div>
                 </div>
 
                 <div className="overflow-auto max-h-[80vh]">
@@ -1205,6 +1331,9 @@ export default function FoodsPage() {
                                     </div>
                                 </TableHead>
                                 <TableHead className="w-8 p-2 text-center sticky left-[32px] z-20 bg-gray-100 shadow-[1px_0_0_#e5e7eb]">#</TableHead>
+                                <TableHead className="w-10 p-1 text-center bg-gray-100" title="Tarif Kartı">
+                                    <ImageIcon className="h-3.5 w-3.5 mx-auto text-gray-500" />
+                                </TableHead>
                                 <SortableHeader label="Yemek Adı" columnKey="name" isResizable={true} stickyClass="sticky left-[64px] z-20 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]" />
                                 <SortableHeader label="Kategori" columnKey="category" bulkOptions={categories} isResizable={true} />
                                 <SortableHeader label="Rol" columnKey="role" bulkOptions={roleKeys} bulkLabels={roleLabels} isResizable={true} />
@@ -1224,6 +1353,9 @@ export default function FoodsPage() {
                                 <SortableHeader label="Dolgu" columnKey="filler_lunch" isMultiSelect={true} bulkOptions={fillerOptions.map(o => o.value)} bulkLabels={fillerOptions.reduce((acc, o) => ({ ...acc, [o.value]: o.label }), {})} />
                                 <SortableHeader label="Etiketler" columnKey="tags" isResizable={true} />
                                 <SortableHeader label="Uyumluluk" columnKey="compatibility_tags" isResizable={true} />
+                                <TableHead className="w-10 p-1 text-center bg-gray-100" title="Kart Yapıcı Görünürlüğü">
+                                    <Eye className="h-3.5 w-3.5 mx-auto text-gray-500" />
+                                </TableHead>
                                 <TableHead className="text-right p-2 bg-gray-100">İşlemler</TableHead>
                             </TableRow>
                         </TableHeader>
@@ -1257,6 +1389,26 @@ export default function FoodsPage() {
                                             </div>
                                         </TableCell>
                                         <TableCell className="p-2 text-xs text-gray-400 font-mono w-8 sticky left-[32px] z-10 bg-inherit shadow-[1px_0_0_#e5e7eb]">{index + 1}</TableCell>
+                                        <TableCell className="p-1 min-w-10 w-fit text-center">
+                                            {(() => {
+                                                const urls = getCardUrls(food.name)
+                                                if (urls.length === 0) return <span className="text-gray-200">—</span>
+                                                return (
+                                                    <div className="flex flex-row gap-1 items-center justify-center flex-wrap max-w-[80px]">
+                                                        {urls.map((url, i) => (
+                                                            <button
+                                                                key={i}
+                                                                onClick={(e) => { e.stopPropagation(); setImagePreview(url) }}
+                                                                className="inline-block rounded overflow-hidden border border-green-300 hover:border-green-500 hover:shadow-md transition-all shrink-0"
+                                                                title={`Tarif kartını görüntüle (${i+1})`}
+                                                            >
+                                                                <img src={url} alt="kart" className="w-6 h-6 object-cover" loading="lazy" />
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                )
+                                            })()}
+                                        </TableCell>
                                         <TableCell
                                             className="p-2 text-xs font-semibold whitespace-normal leading-tight text-gray-900 sticky left-[64px] z-10 bg-inherit shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]"
                                             style={{ width: colWidths['name'] || 200, minWidth: colWidths['name'] || 200, maxWidth: colWidths['name'] || 200 }}
@@ -1421,6 +1573,23 @@ export default function FoodsPage() {
                                                 classes="w-24"
                                             />
                                         </TableCell>
+                                        <TableCell className="p-1 text-center">
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className={`h-6 w-6 ${food.hidden_from_cardmaker ? 'text-orange-500' : 'text-gray-400 hover:text-green-500'}`}
+                                                onClick={async () => {
+                                                    const newVal = !food.hidden_from_cardmaker;
+                                                    const { error } = await supabase.from('foods').update({ hidden_from_cardmaker: newVal }).eq('id', food.id);
+                                                    if (!error) {
+                                                        setFoods(curr => curr.map(f => f.id === food.id ? { ...f, hidden_from_cardmaker: newVal } : f));
+                                                    }
+                                                }}
+                                                title={food.hidden_from_cardmaker ? "Kart yapıcıda gizli" : "Kart yapıcıda görünür"}
+                                            >
+                                                {food.hidden_from_cardmaker ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                                            </Button>
+                                        </TableCell>
 
                                         <TableCell className="text-right p-1">
                                             <div className="flex justify-end gap-1">
@@ -1490,6 +1659,26 @@ export default function FoodsPage() {
                     </DialogContent>
                 </Dialog>
             </div>
+
+            {/* Fullscreen Image Preview Overlay */}
+            {imagePreview && (
+                <div
+                    className="fixed inset-0 bg-black/80 z-[200] flex items-center justify-center p-8 cursor-pointer"
+                    onClick={() => setImagePreview(null)}
+                >
+                    <div className="relative max-w-2xl max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
+                        <button
+                            onClick={() => setImagePreview(null)}
+                            className="absolute -top-3 -right-3 bg-white rounded-full w-8 h-8 flex items-center justify-center shadow-lg text-gray-600 hover:text-gray-900 z-10"
+                        >✕</button>
+                        <img
+                            src={imagePreview}
+                            alt="Tarif Kartı"
+                            className="max-w-full max-h-[85vh] rounded-lg shadow-2xl object-contain"
+                        />
+                    </div>
+                </div>
+            )}
         </div>
     )
 }

@@ -97,7 +97,7 @@ export default function AppStartupLoader({
                     src={COVER_CANDIDATES[coverIndex]}
                     alt=""
                     aria-hidden="true"
-                    loading="eager"
+                    fetchPriority="high"
                     decoding="async"
                     onError={() => {
                         if (coverIndex < COVER_CANDIDATES.length - 1) {
@@ -119,7 +119,7 @@ export default function AppStartupLoader({
                                 src={LOGO_CANDIDATES[logoIndex]}
                                 alt=""
                                 aria-hidden="true"
-                                loading="eager"
+                                fetchPriority="high"
                                 decoding="async"
                                 onError={() => {
                                     if (logoIndex < LOGO_CANDIDATES.length - 1) {

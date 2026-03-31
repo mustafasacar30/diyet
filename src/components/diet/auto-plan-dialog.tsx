@@ -926,7 +926,7 @@ export function AutoPlanDialog({ open, onOpenChange, plan, onConfirm, loading, m
                     </Tabs>
 
                     {/* Footer - Fixed */}
-                    <DialogFooter className="px-4 py-3 border-t bg-white shrink-0 flex items-center justify-between">
+                    <DialogFooter className="px-4 pt-3 pb-8 sm:pb-3 border-t bg-white shrink-0 flex items-center justify-between">
                         <div className="flex items-center gap-2">
                             <button
                                 onClick={() => setSettingsOpen(true)}
@@ -936,7 +936,7 @@ export function AutoPlanDialog({ open, onOpenChange, plan, onConfirm, loading, m
                             </button>
                             <button
                                 onClick={recenterDialog}
-                                className="text-xs text-slate-500 hover:text-slate-700 flex items-center gap-1 hover:bg-slate-100 px-2 py-1 rounded transition-colors"
+                                className="text-xs text-slate-500 hover:text-slate-700 flex items-center gap-1 hover:bg-slate-100 px-2 py-1 rounded transition-colors hidden sm:flex"
                             >
                                 ⤢ Ortala
                             </button>
@@ -964,7 +964,7 @@ export function AutoPlanDialog({ open, onOpenChange, plan, onConfirm, loading, m
                     {/* Bottom-right resize handle (mouse drag) */}
                     <div
                         onMouseDown={handleResizeStart}
-                        className="absolute right-0 bottom-0 h-5 w-5 cursor-se-resize z-30 group"
+                        className="absolute right-0 bottom-0 h-5 w-5 cursor-se-resize z-30 group hidden sm:block"
                         title="Boyutlandır"
                     >
                         <div className="absolute right-1 bottom-1 h-3 w-3 border-r-2 border-b-2 border-slate-300 group-hover:border-slate-500" />
