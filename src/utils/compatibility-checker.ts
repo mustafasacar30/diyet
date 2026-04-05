@@ -150,9 +150,6 @@ export function checkCompatibility(food: any, rules?: DietRules, patientDiseases
 
     // 1. Check Micronutrient Labs (NEW)
     if (patientLabs && patientLabs.length > 0) {
-        // DEBUG: Check patientLabs structure
-        console.log(`[MicroDebug-START] Food: ${food.name}, patientLabs count: ${patientLabs.length}`, patientLabs.slice(0, 2))
-
         // Extract micronutrient IDs from multiple sources:
         // 1. food.micronutrients (direct array of IDs - used in meal render)
         // 2. food.food_micronutrients (relation data from join - used in sidebar)

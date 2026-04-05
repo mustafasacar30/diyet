@@ -23,6 +23,7 @@ type AuthContextType = {
     isDoctor: boolean
     isDietitian: boolean
     isPatient: boolean
+    isStaff: boolean
     refreshProfile: () => Promise<void>
     impersonateUser: (userId: string) => Promise<void>
     stopImpersonation: () => void
@@ -38,6 +39,7 @@ const AuthContext = createContext<AuthContextType>({
     isDoctor: false,
     isDietitian: false,
     isPatient: false,
+    isStaff: false,
     refreshProfile: async () => { },
     impersonateUser: async () => { },
     stopImpersonation: () => { },
@@ -189,6 +191,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isDoctor: profile?.role === 'doctor',
         isDietitian: profile?.role === 'dietitian',
         isPatient: profile?.role === 'patient',
+        isStaff: ['admin', 'doctor', 'dietitian'].includes(profile?.role || ''),
         refreshProfile: async () => {
             if (user) await fetchProfile(user.id)
         },

@@ -26,7 +26,7 @@ interface RuleListProps {
     rules: PlanningRule[]
     loading: boolean
     onEdit: (rule: PlanningRule) => void
-    onDelete: (id: string) => void
+    onDelete: (rule: PlanningRule) => void
     onDragEnd: (event: DragEndEvent) => void
 }
 
@@ -79,7 +79,7 @@ export function RuleList({ rules, loading, onEdit, onDelete, onDragEnd }: RuleLi
 interface SortableRuleCardProps {
     rule: PlanningRule;
     onEdit: (rule: PlanningRule) => void;
-    onDelete: (id: string) => void;
+    onDelete: (rule: PlanningRule) => void;
 }
 
 function SortableRuleCard({ rule, onEdit, onDelete }: SortableRuleCardProps) {
@@ -123,6 +123,21 @@ function SortableRuleCard({ rule, onEdit, onDelete }: SortableRuleCardProps) {
         }
     }
 
+    const scopeKey = rule.scope_source || rule.scope || 'global'
+    const scopeLabel =
+        scopeKey === 'team' ? 'Takım'
+            : scopeKey === 'program' ? 'Program'
+                : scopeKey === 'patient' ? 'Hasta'
+                    : 'Global'
+    const scopeBadgeClass =
+        scopeKey === 'team'
+            ? 'bg-violet-50 text-violet-700 border-violet-200'
+            : scopeKey === 'program'
+                ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                : scopeKey === 'patient'
+                    ? 'bg-amber-50 text-amber-700 border-amber-200'
+                    : 'bg-blue-50 text-blue-700 border-blue-200'
+
     return (
         <Card
             ref={setNodeRef}
@@ -134,6 +149,9 @@ function SortableRuleCard({ rule, onEdit, onDelete }: SortableRuleCardProps) {
                     {getTypeIcon(rule.rule_type)}
                     <Badge variant="outline" className="text-xs font-normal">
                         {getTypeLabel(rule.rule_type)}
+                    </Badge>
+                    <Badge variant="outline" className={`text-[10px] font-normal ${scopeBadgeClass}`}>
+                        {scopeLabel}
                     </Badge>
                 </div>
                 <div className="flex items-center gap-1">
@@ -166,7 +184,7 @@ function SortableRuleCard({ rule, onEdit, onDelete }: SortableRuleCardProps) {
                     <Button variant="ghost" size="icon" onClick={() => onEdit(rule)}>
                         <Pencil size={15} className="text-blue-600" />
                     </Button>
-                    <Button variant="ghost" size="icon" onClick={() => onDelete(rule.id)}>
+                    <Button variant="ghost" size="icon" onClick={() => onDelete(rule)}>
                         <Trash2 size={15} className="text-red-600" />
                     </Button>
                 </div>

@@ -32,6 +32,7 @@ import {
     useSortable
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { resolvePlannerScope, resolveTeamScopeContextFromAuth } from "@/lib/team-scope"
 
 interface SettingsDialogProps {
     open: boolean
@@ -43,6 +44,7 @@ interface SettingsDialogProps {
     defaultTab?: string // Tab to open by default
     hideRevertButton?: boolean // If true, hides the "Varsayılan Ayarlara Dön" button
     slotsOnly?: boolean // If true, hides the tab navigation and only allows interacting with the slots tab
+    forcedMode?: 'global' | 'team'
 }
 
 const defaultCriteria = [
@@ -85,14 +87,15 @@ const defaultSlotConfigs: MealSlotConfig[] = [
     { name: 'ARA ÖĞÜN', min_items: 1, max_items: 3 },
 ]
 
-// ─── SOURCE BADGE LABELS ───────────────────────────────────────────
+// â”€â”€â”€ SOURCE BADGE LABELS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const SOURCE_BADGE: Record<string, { label: string, className: string }> = {
     patient: { label: 'Hasta', className: 'bg-green-100 text-green-700 border-green-200' },
     program: { label: 'Program', className: 'bg-blue-100 text-blue-700 border-blue-200' },
+    team: { label: 'Takım', className: 'bg-violet-100 text-violet-700 border-violet-200' },
     global: { label: 'Global', className: 'bg-gray-100 text-gray-600 border-gray-200' },
 }
 
-const SourceBadge = ({ source }: { source?: 'global' | 'program' | 'patient' | string }) => {
+const SourceBadge = ({ source }: { source?: 'global' | 'team' | 'program' | 'patient' | string }) => {
     if (!source) return null;
     const badge = SOURCE_BADGE[source];
     if (!badge) return null;
@@ -103,11 +106,11 @@ const SourceBadge = ({ source }: { source?: 'global' | 'program' | 'patient' | s
     )
 }
 
-// ─── HELPER COMPONENT FOR FOOD SCORE ROW ───────────────────────────
+// â”€â”€â”€ HELPER COMPONENT FOR FOOD SCORE ROW â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const FoodScoreRow = ({ foodId, name, initialScore, onScoreChange, onRemove, source, inherited, onToggle }: {
     foodId: string, name: string, initialScore: number,
     onScoreChange?: (val: number) => void, onRemove?: () => void,
-    source?: 'global' | 'program' | 'patient',
+    source?: 'global' | 'team' | 'program' | 'patient',
     inherited?: boolean,
     onToggle?: (enabled: boolean) => void
 }) => {
@@ -157,14 +160,14 @@ const FoodScoreRow = ({ foodId, name, initialScore, onScoreChange, onRemove, sou
                     onClick={onRemove}
                     className="text-red-400 hover:text-red-600 px-1"
                     title="Kaldır"
-                >✕</button>
+                            >×</button>
             )}
         </div>
     )
 }
 
-// ─── MAIN COMPONENT ───────────────────────────────────────────────
-export function SettingsDialog({ open, onOpenChange, onSettingsChanged, patientId, programTemplateId, activeWeekId, defaultTab, hideRevertButton, slotsOnly }: SettingsDialogProps) {
+// â”€â”€â”€ MAIN COMPONENT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+export function SettingsDialog({ open, onOpenChange, onSettingsChanged, patientId, programTemplateId, activeWeekId, defaultTab, hideRevertButton, slotsOnly, forcedMode }: SettingsDialogProps) {
     const [loading, setLoading] = useState(false)
     const [items, setItems] = useState(defaultCriteria)
     const [exemptTags, setExemptTags] = useState<string[]>([])
@@ -184,13 +187,17 @@ export function SettingsDialog({ open, onOpenChange, onSettingsChanged, patientI
     const [overrideFoods, setOverrideFoods] = useState<any[]>([])
     const [overrideSort, setOverrideSort] = useState<'desc' | 'asc'>('desc')
     // Per-food-ID source tracking for inheritance display
-    const [foodScoreSources, setFoodScoreSources] = useState<Record<string, 'global' | 'program' | 'patient'>>({})
-    // Inherited scores from upper layers (not in current scope) — shown with toggles
-    const [inheritedScores, setInheritedScores] = useState<Record<string, { score: number, source: 'global' | 'program' }>>({})
+    const [foodScoreSources, setFoodScoreSources] = useState<Record<string, 'global' | 'team' | 'program' | 'patient'>>({})
+    // Inherited scores from upper layers (not in current scope) â€” shown with toggles
+    const [inheritedScores, setInheritedScores] = useState<Record<string, { score: number, source: 'global' | 'team' | 'program' }>>({})
     const [macroPriorities, setMacroPriorities] = useState(defaultMacroPriorities)
 
     // Tracks where each setting was inherited from: 'global', 'program', 'patient'
-    const [fieldSources, setFieldSources] = useState<Record<string, 'global' | 'program' | 'patient'>>({})
+    const [fieldSources, setFieldSources] = useState<Record<string, 'global' | 'team' | 'program' | 'patient'>>({})
+    const [activeScope, setActiveScope] = useState<'global' | 'team' | 'program' | 'patient'>('global')
+    const [layerRows, setLayerRows] = useState<Partial<Record<'global' | 'team' | 'program' | 'patient', any>>>({})
+    const [parentEffectiveValues, setParentEffectiveValues] = useState<Record<string, any>>({})
+    const [hasVarietyExemptColumn, setHasVarietyExemptColumn] = useState<boolean>(true)
 
     // Portion Settings State
     const [portionSettings, setPortionSettings] = useState(defaultPortionSettings)
@@ -202,8 +209,18 @@ export function SettingsDialog({ open, onOpenChange, onSettingsChanged, patientI
 
     const [varietyExemptWords, setVarietyExemptWords] = useState<string[]>([])
     const [newVarietyExemptWord, setNewVarietyExemptWord] = useState("")
+    const nameExemptWordsRef = useRef<string[]>([])
+    const varietyExemptWordsRef = useRef<string[]>([])
 
-    // ── DRAG FUNCTIONALITY ──
+    useEffect(() => {
+        nameExemptWordsRef.current = nameExemptWords
+    }, [nameExemptWords])
+
+    useEffect(() => {
+        varietyExemptWordsRef.current = varietyExemptWords
+    }, [varietyExemptWords])
+
+    // â”€â”€ DRAG FUNCTIONALITY â”€â”€
     const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
     const isDragging = useRef(false)
     const dragStart = useRef({ x: 0, y: 0 })
@@ -242,207 +259,339 @@ export function SettingsDialog({ open, onOpenChange, onSettingsChanged, patientI
         })
     );
 
+    const resolveEffectiveScopeContext = useCallback(async () => {
+        let ctx = await resolveTeamScopeContextFromAuth()
+
+        const canForceTeamModeForAdminDoctor =
+            forcedMode === 'team' &&
+            ctx.role === 'doctor' &&
+            ctx.canUseGlobal &&
+            !!ctx.userId
+
+        if (canForceTeamModeForAdminDoctor && ctx.userId) {
+            ctx = {
+                ...ctx,
+                canUseGlobal: false,
+                teamOwnerId: ctx.userId
+            }
+        }
+
+        return ctx
+    }, [forcedMode])
+
     useEffect(() => {
         if (open) {
             setDragOffset({ x: 0, y: 0 }) // Reset position when dialog opens
             setMealTypesKey(prev => prev + 1) // Increment key to force MealTypesEditor re-mount
             fetchSettings()
         }
-    }, [open, activeWeekId])
+    }, [open, activeWeekId, forcedMode])
+
+    const toComparableValue = (value: any): any => {
+        if (value === undefined) return null
+        if (value === null) return null
+        if (Array.isArray(value)) return value.map(toComparableValue)
+        if (typeof value === 'object') {
+            return Object.keys(value)
+                .sort()
+                .reduce((acc: Record<string, any>, key) => {
+                    acc[key] = toComparableValue(value[key])
+                    return acc
+                }, {})
+        }
+        return value
+    }
+
+    const areValuesEquivalent = (left: any, right: any) => {
+        return JSON.stringify(toComparableValue(left)) === JSON.stringify(toComparableValue(right))
+    }
+
+    const getRowVarietyExemptWords = (row: any): string[] | null => {
+        if (!row) return null
+        if (Array.isArray(row.variety_exempt_words)) return row.variety_exempt_words
+        if (Array.isArray(row?.portion_settings?.variety_exempt_words)) return row.portion_settings.variety_exempt_words
+        return null
+    }
+
+    const getFieldValueFromRow = (row: any, field: string): any => {
+        if (field === 'variety_exempt_words') {
+            return getRowVarietyExemptWords(row)
+        }
+        return row?.[field]
+    }
 
     async function fetchSettings() {
         setLoading(true)
         let mergedData: any = {}
-        let sources: Record<string, 'global' | 'program' | 'patient'> = {}
-        let finalSettingsId = null
+        let sources: Record<string, 'global' | 'team' | 'program' | 'patient'> = {}
+        let finalSettingsId: string | null = null
+        const fetchedLayerRows: Partial<Record<'global' | 'team' | 'program' | 'patient', any>> = {}
 
         try {
-            // Fetch Global first (Base layer)
-            const { data: globalSettings } = await supabase
-                .from('planner_settings')
-                .select('*')
-                .eq('scope', 'global')
-                .maybeSingle()
+            // Probe whether the variety_exempt_words column exists.
+            // If the column is missing, Supabase returns a 400 — we catch that silently.
+            let varietyColumnAvailable = false
+            try {
+                const { error: varietyColumnCheckError } = await supabase
+                    .from('planner_settings')
+                    .select('variety_exempt_words')
+                    .limit(1)
+                varietyColumnAvailable = !varietyColumnCheckError
+            } catch {
+                // Network or unexpected error — assume column not available
+            }
+            setHasVarietyExemptColumn(varietyColumnAvailable)
 
-            if (globalSettings) {
-                mergedData = { ...globalSettings }
-                Object.keys(globalSettings).forEach(k => {
-                    sources[k] = 'global'
+            const scopeCtx = await resolveEffectiveScopeContext()
+            const currentScope = resolvePlannerScope(patientId, programTemplateId, {
+                role: scopeCtx.role,
+                canUseGlobal: scopeCtx.canUseGlobal,
+                teamOwnerId: scopeCtx.teamOwnerId
+            })
+            setActiveScope(currentScope)
+
+            const scopedTeamOwnerId = (scopeCtx.teamOwnerId && !scopeCtx.canUseGlobal)
+                ? scopeCtx.teamOwnerId
+                : null
+
+            const mergeLayer = (row: any, layer: 'global' | 'team' | 'program' | 'patient') => {
+                if (!row) return
+                Object.keys(row).forEach((key) => {
+                    if (row[key] !== null) {
+                        mergedData[key] = row[key]
+                        sources[key] = layer
+                    }
                 })
-                if (!programTemplateId && !patientId) {
-                    finalSettingsId = globalSettings.id
+
+                const varietyWords = getRowVarietyExemptWords(row)
+                if (varietyWords !== null) {
+                    mergedData.variety_exempt_words = varietyWords
+                    sources.variety_exempt_words = layer
                 }
             }
 
-            // Fetch Program second (Middle layer)
+            const pickLatest = (rows: any[] | null | undefined) => (rows && rows.length > 0 ? rows[0] : null)
+
+            const { data: globalRows } = await supabase
+                .from('planner_settings')
+                .select('*')
+                .eq('scope', 'global')
+                .order('updated_at', { ascending: false })
+                .limit(1)
+            const globalSettings = pickLatest(globalRows)
+            if (globalSettings) {
+                fetchedLayerRows.global = globalSettings
+                mergeLayer(globalSettings, 'global')
+                if (currentScope === 'global') finalSettingsId = globalSettings.id
+            }
+
+            let teamSettings: any = null
+            if (scopedTeamOwnerId) {
+                const { data: teamRows } = await supabase
+                    .from('planner_settings')
+                    .select('*')
+                    .eq('scope', 'team')
+                    .eq('team_owner_id', scopedTeamOwnerId)
+                    .order('updated_at', { ascending: false })
+                    .limit(1)
+                teamSettings = pickLatest(teamRows)
+                if (teamSettings) {
+                    fetchedLayerRows.team = teamSettings
+                    mergeLayer(teamSettings, 'team')
+                    if (currentScope === 'team') finalSettingsId = teamSettings.id
+                }
+            }
+
+            let programSettings: any = null
             if (programTemplateId) {
-                const { data: programSettings } = await supabase
+                let programQuery = supabase
                     .from('planner_settings')
                     .select('*')
                     .eq('scope', 'program')
                     .eq('program_template_id', programTemplateId)
-                    .maybeSingle()
 
+                if (scopedTeamOwnerId) {
+                    programQuery = programQuery.eq('team_owner_id', scopedTeamOwnerId)
+                } else {
+                    programQuery = programQuery.is('team_owner_id', null)
+                }
+
+                const { data: programRows } = await programQuery
+                    .order('updated_at', { ascending: false })
+                    .limit(1)
+                programSettings = pickLatest(programRows)
                 if (programSettings) {
-                    // Merge fields that are not null
-                    Object.keys(programSettings).forEach(key => {
-                        if (programSettings[key] !== null) {
-                            mergedData[key] = programSettings[key]
-                            sources[key] = 'program'
-                        }
-                    })
-                    if (!patientId) {
-                        finalSettingsId = programSettings.id
-                    }
+                    fetchedLayerRows.program = programSettings
+                    mergeLayer(programSettings, 'program')
+                    if (currentScope === 'program') finalSettingsId = programSettings.id
                 }
             }
 
-            // Fetch Patient third (Top layer)
+            let patientSettings: any = null
             if (patientId) {
-                const { data: patientSettings } = await supabase
+                let patientQuery = supabase
                     .from('planner_settings')
                     .select('*')
                     .eq('scope', 'patient')
                     .eq('patient_id', patientId)
-                    .maybeSingle()
 
-                if (patientSettings) {
-                    // Merge fields that are not null
-                    Object.keys(patientSettings).forEach(key => {
-                        if (patientSettings[key] !== null) {
-                            mergedData[key] = patientSettings[key]
-                            sources[key] = 'patient'
-                        }
-                    })
-                    finalSettingsId = patientSettings.id
+                if (scopedTeamOwnerId) {
+                    patientQuery = patientQuery.eq('team_owner_id', scopedTeamOwnerId)
+                } else {
+                    patientQuery = patientQuery.is('team_owner_id', null)
                 }
+
+                const { data: patientRows } = await patientQuery
+                    .order('updated_at', { ascending: false })
+                    .limit(1)
+                patientSettings = pickLatest(patientRows)
+                if (patientSettings) {
+                    fetchedLayerRows.patient = patientSettings
+                    mergeLayer(patientSettings, 'patient')
+                    if (currentScope === 'patient') finalSettingsId = patientSettings.id
+                }
+            }
+
+            const parentMerged: Record<string, any> = {}
+            const mergeParentLayer = (row: any) => {
+                if (!row) return
+                Object.keys(row).forEach((key) => {
+                    if (row[key] !== null) {
+                        parentMerged[key] = row[key]
+                    }
+                })
+
+                const varietyWords = getRowVarietyExemptWords(row)
+                if (varietyWords !== null) {
+                    parentMerged.variety_exempt_words = varietyWords
+                }
+            }
+
+            if (currentScope === 'team') {
+                mergeParentLayer(globalSettings)
+            } else if (currentScope === 'program') {
+                mergeParentLayer(globalSettings)
+                mergeParentLayer(teamSettings)
+            } else if (currentScope === 'patient') {
+                mergeParentLayer(globalSettings)
+                mergeParentLayer(teamSettings)
+                mergeParentLayer(programSettings)
             }
 
             setSettingsId(finalSettingsId)
             setFieldSources(sources)
+            setLayerRows(fetchedLayerRows)
+            setParentEffectiveValues(parentMerged)
 
-        } catch (e) {
-            console.error("Fetch Error:", e)
-        }
+            const data = Object.keys(mergedData).length > 0 ? mergedData : null
 
-        const data = Object.keys(mergedData).length > 0 ? mergedData : null;
-
-        if (data) {
-            // Reset all state to defaults before hydrating
-            setItems(defaultCriteria)
-            setExemptTags([])
-            setEnableNameSimilarity(false)
-            setNameExemptWords([])
-            setVarietyPreference('balanced')
-            setVarietyMode('hybrid')
-            setCooldownStrength(5)
-            setLikedBoost(3000)
-            setMaxWeeklyDefault(3)
-            setFoodScoreOverrides({})
-            setFoodScoreNames({})
-            setMacroPriorities(defaultMacroPriorities)
-            setPortionSettings(defaultPortionSettings)
-            setMealTypesConfig(defaultSlotConfigs)
-
-            // 1. Process Weights
-            if (data.weights) {
-                let loadedWeights = data.weights
-
-                if (!Array.isArray(loadedWeights)) {
-                    // Legacy Object format
-                    const newItems = defaultCriteria.map(def => ({
-                        ...def,
-                        weight: (loadedWeights as any)[def.id] ?? def.weight
-                    }))
-                    setItems(newItems)
-                } else {
-                    // Array format
-                    const hydratedItems = (loadedWeights as any[]).map(w => {
-                        const def = defaultCriteria.find(d => d.id === w.id)
-                        return {
-                            id: w.id,
-                            weight: w.weight,
-                            label: def?.label || w.id
-                        }
-                    })
-
-                    // Add missing
-                    defaultCriteria.forEach(def => {
-                        if (!hydratedItems.find(h => h.id === def.id)) {
-                            hydratedItems.push(def)
-                        }
-                    })
-                    setItems(hydratedItems)
-                }
-            } else {
+            if (data) {
+                // Reset all state to defaults before hydrating
                 setItems(defaultCriteria)
-            }
+                setExemptTags([])
+                setEnableNameSimilarity(false)
+                setNameExemptWords([])
+                setVarietyPreference('balanced')
+                setVarietyMode('hybrid')
+                setCooldownStrength(5)
+                setLikedBoost(3000)
+                setMaxWeeklyDefault(3)
+                setVarietyExemptWords([])
+                setFoodScoreOverrides({})
+                setFoodScoreNames({})
+                setMacroPriorities(defaultMacroPriorities)
+                setPortionSettings(defaultPortionSettings)
+                setMealTypesConfig(defaultSlotConfigs)
 
-            // 2. Process Exempt Tags
-            if (data.exempt_tags && Array.isArray(data.exempt_tags)) {
-                setExemptTags(data.exempt_tags)
-            }
+                // 1. Process Weights
+                if (data.weights) {
+                    let loadedWeights = data.weights
 
-            // 2.1 Process Name Similarity
-            setEnableNameSimilarity(data.enable_name_similarity_check || false)
-            setNameExemptWords(data.name_similarity_exempt_words || [])
+                    if (!Array.isArray(loadedWeights)) {
+                        // Legacy object format
+                        const newItems = defaultCriteria.map(def => ({
+                            ...def,
+                            weight: (loadedWeights as any)[def.id] ?? def.weight
+                        }))
+                        setItems(newItems)
+                    } else {
+                        // Array format
+                        const hydratedItems = (loadedWeights as any[]).map(w => {
+                            const def = defaultCriteria.find(d => d.id === w.id)
+                            return {
+                                id: w.id,
+                                weight: w.weight,
+                                label: def?.label || w.id
+                            }
+                        })
 
-            // 2.2 Process Variety Preference
-            if (data.variety_preference) setVarietyPreference(data.variety_preference)
-            if (data.variety_mode) setVarietyMode(data.variety_mode)
-            if (data.cooldown_strength != null) setCooldownStrength(data.cooldown_strength)
-            if (data.liked_boost != null) setLikedBoost(data.liked_boost)
-            if (data.max_weekly_default != null) setMaxWeeklyDefault(data.max_weekly_default)
-            if (data.variety_exempt_words) setVarietyExemptWords(data.variety_exempt_words)
-            // ── Per-food-ID inheritance merge for food_score_overrides ──
-            {
-                // Determine current scope
-                const currentScope = patientId ? 'patient' : programTemplateId ? 'program' : 'global'
-
-                // Collect raw overrides per layer
-                const { data: globalFSO } = await supabase
-                    .from('planner_settings')
-                    .select('food_score_overrides')
-                    .eq('scope', 'global')
-                    .maybeSingle()
-                const globalOverrides: Record<string, number> = globalFSO?.food_score_overrides || {}
-
-                let programOverrides: Record<string, number> = {}
-                if (programTemplateId) {
-                    const { data: progSet } = await supabase
-                        .from('planner_settings')
-                        .select('food_score_overrides')
-                        .eq('scope', 'program')
-                        .eq('program_template_id', programTemplateId)
-                        .maybeSingle()
-                    programOverrides = progSet?.food_score_overrides || {}
+                        // Add missing defaults
+                        defaultCriteria.forEach(def => {
+                            if (!hydratedItems.find(h => h.id === def.id)) {
+                                hydratedItems.push(def)
+                            }
+                        })
+                        setItems(hydratedItems)
+                    }
+                } else {
+                    setItems(defaultCriteria)
                 }
 
-                let patientOverrides: Record<string, number> = {}
-                if (patientId) {
-                    const { data: patSet } = await supabase
-                        .from('planner_settings')
-                        .select('food_score_overrides')
-                        .eq('scope', 'patient')
-                        .eq('patient_id', patientId)
-                        .maybeSingle()
-                    patientOverrides = patSet?.food_score_overrides || {}
+                // 2. Process Exempt Tags
+                if (data.exempt_tags && Array.isArray(data.exempt_tags)) {
+                    setExemptTags(data.exempt_tags)
                 }
 
-                // Build current scope's own overrides and inherited ones
+                // 2.1 Process Name Similarity
+                setEnableNameSimilarity(data.enable_name_similarity_check || false)
+                setNameExemptWords(data.name_similarity_exempt_words || [])
+
+                // 2.2 Process Variety Preference
+                if (data.variety_preference) setVarietyPreference(data.variety_preference)
+                if (data.variety_mode) setVarietyMode(data.variety_mode)
+                if (data.cooldown_strength != null) setCooldownStrength(data.cooldown_strength)
+                if (data.liked_boost != null) setLikedBoost(data.liked_boost)
+                if (data.max_weekly_default != null) setMaxWeeklyDefault(data.max_weekly_default)
+                if (Array.isArray(data.variety_exempt_words)) {
+                    setVarietyExemptWords(data.variety_exempt_words)
+                } else if (Array.isArray(data?.portion_settings?.variety_exempt_words)) {
+                    setVarietyExemptWords(data.portion_settings.variety_exempt_words)
+                } else {
+                    setVarietyExemptWords([])
+                }
+
+                // Per-food-ID inheritance merge for food_score_overrides
+                const globalOverrides: Record<string, number> = globalSettings?.food_score_overrides || {}
+                const teamOverrides: Record<string, number> = teamSettings?.food_score_overrides || {}
+                const programOverrides: Record<string, number> = programSettings?.food_score_overrides || {}
+                const patientOverrides: Record<string, number> = patientSettings?.food_score_overrides || {}
+
                 let ownOverrides: Record<string, number> = {}
-                const inherited: Record<string, { score: number, source: 'global' | 'program' }> = {}
-                const perFoodSources: Record<string, 'global' | 'program' | 'patient'> = {}
+                const inherited: Record<string, { score: number, source: 'global' | 'team' | 'program' }> = {}
+                const perFoodSources: Record<string, 'global' | 'team' | 'program' | 'patient'> = {}
 
                 if (currentScope === 'global') {
                     ownOverrides = { ...globalOverrides }
                     Object.keys(ownOverrides).forEach(id => { perFoodSources[id] = 'global' })
+                } else if (currentScope === 'team') {
+                    ownOverrides = { ...teamOverrides }
+                    Object.keys(ownOverrides).forEach(id => { perFoodSources[id] = 'team' })
+                    Object.entries(globalOverrides).forEach(([id, score]) => {
+                        if (!(id in ownOverrides)) {
+                            inherited[id] = { score, source: 'global' }
+                        }
+                    })
                 } else if (currentScope === 'program') {
                     ownOverrides = { ...programOverrides }
                     Object.keys(ownOverrides).forEach(id => { perFoodSources[id] = 'program' })
-                    // Inherited from global (not already in program)
-                    Object.entries(globalOverrides).forEach(([id, score]) => {
+
+                    Object.entries(teamOverrides).forEach(([id, score]) => {
                         if (!(id in ownOverrides)) {
+                            inherited[id] = { score, source: 'team' }
+                        }
+                    })
+                    Object.entries(globalOverrides).forEach(([id, score]) => {
+                        if (!(id in ownOverrides) && !(id in inherited)) {
                             inherited[id] = { score, source: 'global' }
                         }
                     })
@@ -450,13 +599,17 @@ export function SettingsDialog({ open, onOpenChange, onSettingsChanged, patientI
                     // patient scope
                     ownOverrides = { ...patientOverrides }
                     Object.keys(ownOverrides).forEach(id => { perFoodSources[id] = 'patient' })
-                    // Inherited from program
+
                     Object.entries(programOverrides).forEach(([id, score]) => {
                         if (!(id in ownOverrides)) {
                             inherited[id] = { score, source: 'program' }
                         }
                     })
-                    // Inherited from global (not in program or patient)
+                    Object.entries(teamOverrides).forEach(([id, score]) => {
+                        if (!(id in ownOverrides) && !(id in inherited)) {
+                            inherited[id] = { score, source: 'team' }
+                        }
+                    })
                     Object.entries(globalOverrides).forEach(([id, score]) => {
                         if (!(id in ownOverrides) && !(id in inherited)) {
                             inherited[id] = { score, source: 'global' }
@@ -468,7 +621,7 @@ export function SettingsDialog({ open, onOpenChange, onSettingsChanged, patientI
                 setFoodScoreSources(perFoodSources)
                 setInheritedScores(inherited)
 
-                // Load food names for ALL referenced food IDs
+                // Load food names for all referenced food IDs
                 const allIds = [...new Set([...Object.keys(ownOverrides), ...Object.keys(inherited)])]
                 if (allIds.length > 0) {
                     const { data: foods } = await supabase.from('foods').select('id, name').in('id', allIds)
@@ -478,44 +631,47 @@ export function SettingsDialog({ open, onOpenChange, onSettingsChanged, patientI
                         setFoodScoreNames(nameMap)
                     }
                 }
-            }
 
-            // 2.3 Process Macro Priorities
-            if (data.macro_priorities) {
-                setMacroPriorities(data.macro_priorities)
+                // 2.3 Process Macro Priorities
+                if (data.macro_priorities) {
+                    setMacroPriorities(data.macro_priorities)
+                } else {
+                    setMacroPriorities({ protein: 5, carb: 5, fat: 5 })
+                }
+
+                // 3. Process Portion Settings
+                if (data.portion_settings) {
+                    setPortionSettings({
+                        global_min: data.portion_settings.global_min ?? 0.5,
+                        global_max: data.portion_settings.global_max ?? 2.0,
+                        step_value: data.portion_settings.step_value ?? 0.5,
+                        max_adjusted_items_per_day: data.portion_settings.max_adjusted_items_per_day ?? 5,
+                        max_calorie_percentage: data.portion_settings.max_calorie_percentage ?? 50,
+                        strategies: {
+                            macro_convergence: data.portion_settings.strategies?.macro_convergence ?? false,
+                            max_limit_protection: data.portion_settings.strategies?.max_limit_protection ?? true
+                        },
+                        scalable_units: data.portion_settings.scalable_units ?? [],
+                        macro_tolerances: data.portion_settings.macro_tolerances ?? defaultPortionSettings.macro_tolerances
+                    })
+                }
+
+                // 4. Set Meal Types (Slot Config)
+                if (data.slot_config && Array.isArray(data.slot_config)) {
+                    setMealTypesConfig(data.slot_config as MealSlotConfig[])
+                }
             } else {
-                setMacroPriorities({ protein: 5, carb: 5, fat: 5 })
+                // No settings yet
+                setItems(defaultCriteria)
+                setExemptTags([])
+                setVarietyExemptWords([])
             }
-
-            // 3. Process Portion Settings
-            if (data.portion_settings) {
-                setPortionSettings({
-                    global_min: data.portion_settings.global_min ?? 0.5,
-                    global_max: data.portion_settings.global_max ?? 2.0,
-                    step_value: data.portion_settings.step_value ?? 0.5,
-                    max_adjusted_items_per_day: data.portion_settings.max_adjusted_items_per_day ?? 5,
-                    max_calorie_percentage: data.portion_settings.max_calorie_percentage ?? 50,
-                    strategies: {
-                        macro_convergence: data.portion_settings.strategies?.macro_convergence ?? false,
-                        max_limit_protection: data.portion_settings.strategies?.max_limit_protection ?? true
-                    },
-                    scalable_units: data.portion_settings.scalable_units ?? [],
-                    macro_tolerances: data.portion_settings.macro_tolerances ?? defaultPortionSettings.macro_tolerances
-                })
-            }
-
-            // 4. Set Meal Types (Slot Config)
-            if (data.slot_config && Array.isArray(data.slot_config)) {
-                setMealTypesConfig(data.slot_config as MealSlotConfig[])
-            }
-        } else {
-            // No settings yet
-            setItems(defaultCriteria)
-            setExemptTags([])
+        } catch (e) {
+            console.error("Fetch Error:", e)
         }
+
         setLoading(false)
     }
-
     // Exempt Tag Handlers
     function handleAddTag() {
         if (!newTag.trim()) return
@@ -572,14 +728,22 @@ export function SettingsDialog({ open, onOpenChange, onSettingsChanged, patientI
     // Replaced by MealTypesEditor embedded component
 
     async function handleRevertToProgram() {
-        if (!confirm("Kişiselleştirmeleri iptal edip, mevcut diyet programının standart öğün yapılarına dönmek istediğinize emin misiniz?")) return
+        const scopeCtx = await resolveEffectiveScopeContext()
+        const hasTeamParent = !!scopeCtx.teamOwnerId && !scopeCtx.canUseGlobal
+        const targetLabel = programTemplateId
+            ? 'program ayarlarına'
+            : hasTeamParent
+                ? 'takım ayarlarına'
+                : 'global ayarlara'
+
+        if (!confirm(`Kişiselleştirmeleri iptal edip ${targetLabel} dönmek istediğinize emin misiniz?`)) return
 
         setLoading(true)
         if (settingsId && patientId) {
             await supabase.from('planner_settings').delete().eq('id', settingsId)
         }
 
-        // After deleting, refetch settings to inherit from program, then automatically save to active week
+        // After deleting, refetch settings to inherit from parent layer.
         await fetchSettings()
         setLoading(false)
     }
@@ -608,52 +772,125 @@ export function SettingsDialog({ open, onOpenChange, onSettingsChanged, patientI
 
         // 2. Continue with planner_settings save (for other settings like weights, portions, etc.)
         const payloadWeights = items.map(i => ({ id: i.id, weight: i.weight }))
+        const pendingNameWord = newNameExemptWord.trim().toLowerCase()
+        const normalizedNameExemptWords = Array.from(
+            new Set(
+                [...nameExemptWordsRef.current, ...(pendingNameWord ? [pendingNameWord] : [])]
+                    .map((word) => word.trim().toLowerCase())
+                    .filter(Boolean)
+            )
+        )
+        const pendingVarietyWord = newVarietyExemptWord.trim().toLowerCase()
+        const normalizedVarietyExemptWords = Array.from(
+            new Set(
+                [...varietyExemptWordsRef.current, ...(pendingVarietyWord ? [pendingVarietyWord] : [])]
+                    .map((word) => word.trim().toLowerCase())
+                    .filter(Boolean)
+            )
+        )
+        const payloadPortionSettings = {
+            ...portionSettings,
+            // Fallback persistence for deployments where variety_exempt_words column is missing.
+            variety_exempt_words: normalizedVarietyExemptWords
+        }
 
-        const payload = {
+        const scopeCtx = await resolveEffectiveScopeContext()
+        const currentScope = resolvePlannerScope(patientId, programTemplateId, {
+            role: scopeCtx.role,
+            canUseGlobal: scopeCtx.canUseGlobal,
+            teamOwnerId: scopeCtx.teamOwnerId
+        })
+        const scopedTeamOwnerId = (scopeCtx.teamOwnerId && !scopeCtx.canUseGlobal)
+            ? scopeCtx.teamOwnerId
+            : null
+
+        const payload: any = {
             user_id: user.id,
-            scope: patientId ? 'patient' : 'global',
-            patient_id: patientId ? patientId : null,
+            scope: currentScope,
+            team_owner_id: (currentScope === 'team' || currentScope === 'program' || currentScope === 'patient')
+                ? scopedTeamOwnerId
+                : null,
+            patient_id: currentScope === 'patient' ? patientId : null,
+            program_template_id: currentScope === 'program' ? programTemplateId : null,
             weights: payloadWeights,
             exempt_tags: exemptTags,
-            portion_settings: portionSettings,
+            portion_settings: payloadPortionSettings,
             // Save slot_config to planner_settings ALWAYS, ignoring activeWeekId conditionals, to ensure the profile is the source of truth
             slot_config: mealTypesConfig,
             enable_name_similarity_check: enableNameSimilarity,
-            name_similarity_exempt_words: nameExemptWords,
+            name_similarity_exempt_words: normalizedNameExemptWords,
             variety_preference: varietyPreference,
             variety_mode: varietyMode,
-            // variety_exempt_words is removed from payload to prevent 400 error until DB column is added
-            // variety_exempt_words: varietyExemptWords,
             cooldown_strength: cooldownStrength,
             liked_boost: likedBoost,
             max_weekly_default: maxWeeklyDefault,
             food_score_overrides: foodScoreOverrides,
             macro_priorities: macroPriorities
         }
+        if (hasVarietyExemptColumn) {
+            payload.variety_exempt_words = normalizedVarietyExemptWords
+        }
 
-        if (settingsId) {
-            const updatePayload = {
+        let targetSettingsId = settingsId
+
+        if (!targetSettingsId) {
+            let existingQuery = supabase
+                .from('planner_settings')
+                .select('id')
+                .eq('scope', currentScope)
+
+            if (currentScope === 'team' || currentScope === 'program' || currentScope === 'patient') {
+                if (scopedTeamOwnerId) {
+                    existingQuery = existingQuery.eq('team_owner_id', scopedTeamOwnerId)
+                } else {
+                    existingQuery = existingQuery.is('team_owner_id', null)
+                }
+            }
+
+            if (currentScope === 'program') {
+                existingQuery = existingQuery.eq('program_template_id', programTemplateId)
+            }
+            if (currentScope === 'patient') {
+                existingQuery = existingQuery.eq('patient_id', patientId)
+            }
+
+            const { data: existingRows } = await existingQuery
+                .order('updated_at', { ascending: false })
+                .limit(1)
+
+            targetSettingsId = existingRows?.[0]?.id || null
+        }
+
+        if (targetSettingsId) {
+            const updatePayload: any = {
+                scope: currentScope,
+                team_owner_id: (currentScope === 'team' || currentScope === 'program' || currentScope === 'patient')
+                    ? scopedTeamOwnerId
+                    : null,
+                patient_id: currentScope === 'patient' ? patientId : null,
+                program_template_id: currentScope === 'program' ? programTemplateId : null,
                 weights: payloadWeights,
                 exempt_tags: exemptTags,
-                portion_settings: portionSettings,
+                portion_settings: payloadPortionSettings,
                 slot_config: mealTypesConfig, // Always update slot config
                 enable_name_similarity_check: enableNameSimilarity,
-                name_similarity_exempt_words: nameExemptWords,
+                name_similarity_exempt_words: normalizedNameExemptWords,
                 variety_preference: varietyPreference,
                 variety_mode: varietyMode,
-                // variety_exempt_words is removed from payload to prevent 400 error until DB column is added
-                // variety_exempt_words: varietyExemptWords,
                 cooldown_strength: cooldownStrength,
                 liked_boost: likedBoost,
                 max_weekly_default: maxWeeklyDefault,
                 food_score_overrides: foodScoreOverrides,
                 macro_priorities: macroPriorities
             }
+            if (hasVarietyExemptColumn) {
+                updatePayload.variety_exempt_words = normalizedVarietyExemptWords
+            }
             console.log("Updating Planner Settings:", updatePayload);
             const { error } = await supabase
                 .from('planner_settings')
                 .update(updatePayload)
-                .eq('id', settingsId);
+                .eq('id', targetSettingsId);
 
             if (error) {
                 console.error("Error updating planner settings:", error);
@@ -661,13 +898,18 @@ export function SettingsDialog({ open, onOpenChange, onSettingsChanged, patientI
             }
         } else {
             console.log("Inserting Planner Settings:", payload);
-            const { error } = await supabase
+            const { data: insertedRows, error } = await supabase
                 .from('planner_settings')
-                .insert(payload);
+                .insert(payload)
+                .select('id');
 
             if (error) {
                 console.error("Error inserting planner settings:", error);
                 throw error;
+            }
+
+            if (insertedRows?.[0]?.id) {
+                setSettingsId(insertedRows[0].id)
             }
         }
 
@@ -707,38 +949,84 @@ export function SettingsDialog({ open, onOpenChange, onSettingsChanged, patientI
 
     // Helper component to render contextual Revert Button
     const RevertButton = ({ field }: { field: string | string[] }) => {
-        // If we are looking at a global context, no revert makes sense
-        if (!patientId && !programTemplateId) return null;
-
-        // If we don't have a specific setting row ID, we are already fully inheriting
-        if (!settingsId) return null;
-
         const fields = Array.isArray(field) ? field : [field]
-        // Get the source of the first overridden field in the group, defaulting to global
-        const currentSource = fields.map(f => fieldSources[f] || 'global').find(s => s !== 'global') || 'global'
+        const currentRow = layerRows[activeScope]
+        const label =
+            activeScope === 'team'
+                ? "Bu Bölümü Global'e Dön"
+                : activeScope === 'global'
+                    ? "Bu Bölümü Üst Katmana Dön"
+                    : "Bu Bölümü Üst Katmana Dön"
+        const icon = <RotateCcw size={14} className="mr-1" />
 
-        // If currently observing global values, nothing to revert
-        if (currentSource === 'global') return null;
+        const hasAnyLocalValue = fields.some((f) => currentRow?.[f] !== null && currentRow?.[f] !== undefined)
+        const hasMeaningfulOverride = fields.some((f) => {
+            const localValue = getFieldValueFromRow(currentRow, f)
+            if (localValue === null || localValue === undefined) return false
+            const parentValue = parentEffectiveValues[f]
+            if (
+                Array.isArray(localValue) &&
+                localValue.length === 0 &&
+                (parentValue === null || parentValue === undefined || (Array.isArray(parentValue) && parentValue.length === 0))
+            ) {
+                return false
+            }
+            return !areValuesEquivalent(localValue, parentValue)
+        })
+        const hasAnyLocalValueNormalized = fields.some((f) => {
+            const localValue = getFieldValueFromRow(currentRow, f)
+            const parentValue = parentEffectiveValues[f]
+            if (
+                Array.isArray(localValue) &&
+                localValue.length === 0 &&
+                (parentValue === null || parentValue === undefined || (Array.isArray(parentValue) && parentValue.length === 0))
+            ) {
+                return false
+            }
+            return localValue !== null && localValue !== undefined
+        })
 
-        // Determine what reverting means in this context
-        // If patient -> could revert to program (if exists) or global
-        // If program -> reverts to global
-        let label = "Varsayılana Dön"
-        let icon = <RotateCcw size={14} className="mr-1" />
-
-        if (patientId) {
-            label = programTemplateId ? "Programa Dön" : "Global'e Dön"
-        } else if (programTemplateId) {
-            label = "Global'e Dön"
+        let disabledReason: string | null = null
+        if (activeScope === 'global') {
+            disabledReason = 'Global katmanda üst katman bulunmuyor'
+        } else if (!settingsId) {
+            disabledReason = 'Bu katmanda kayıt yok, üst katman mirası aktif'
+        } else if (!hasAnyLocalValueNormalized) {
+            disabledReason = activeScope === 'team'
+                ? "Bu alan için global miras zaten aktif"
+                : 'Bu alan bu katmanda özelleştirilmemiş'
+        } else if (!hasMeaningfulOverride) {
+            disabledReason = 'Bu alan zaten üst katmanla aynı'
         }
 
-        // Only show if the current row explicitly overrides this field (source matches current layer)
-        const isLocallyOverridden = (patientId && currentSource === 'patient') || (!patientId && programTemplateId && currentSource === 'program')
-
-        if (!isLocallyOverridden) return null // Already inheriting from a parent
+        const isDisabled = loading || !!disabledReason
+        const activeReason = !isDisabled
+            ? (() => {
+                if (fields.length === 1 && fields[0] === 'variety_exempt_words') {
+                    const localValue = getFieldValueFromRow(currentRow, 'variety_exempt_words')
+                    const parentValue = parentEffectiveValues['variety_exempt_words']
+                    const localCount = Array.isArray(localValue) ? localValue.length : 0
+                    const parentCount = Array.isArray(parentValue) ? parentValue.length : 0
+                    if (localCount === 0 && parentCount > 0) {
+                        return `Bu katmanda istisna listesi bos. Ust katmanda ${parentCount} kelime var.`
+                    }
+                    return `Bu katmanda ${localCount} kelime kayitli ve ust katmandan farkli.`
+                }
+                return 'Bu bolumde ust katmandan farkli yerel ayar var.'
+            })()
+            : null
 
         return (
-            <Button variant="outline" size="sm" onClick={() => resetToGlobal(fields)} disabled={loading} className="text-orange-600 hover:text-orange-700 hover:bg-orange-50 ml-4 border-orange-200 flex-shrink-0 min-w-max">
+            <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                    if (!isDisabled) resetToGlobal(fields)
+                }}
+                disabled={isDisabled}
+                title={disabledReason || activeReason || label}
+                className="text-orange-600 hover:text-orange-700 hover:bg-orange-50 ml-4 border-orange-200 flex-shrink-0 min-w-max disabled:text-gray-400 disabled:border-gray-200 disabled:hover:bg-transparent"
+            >
                 {icon} {label}
             </Button>
         )
@@ -747,13 +1035,25 @@ export function SettingsDialog({ open, onOpenChange, onSettingsChanged, patientI
     const resetToGlobal = async (fields: string | string[]) => {
         if (!settingsId) return
 
-        if (!confirm(`Bu ayarı varsayılana sıfırlamak istediğinize emin misiniz?`)) return
+        if (!confirm("Bu ayarı üst katmandan miras alacak şekilde sıfırlamak istediğinize emin misiniz?")) return
 
         const fieldArray = Array.isArray(fields) ? fields : [fields]
-        const updatePayload: Record<string, null> = {}
+        const updatePayload: Record<string, any> = {}
         fieldArray.forEach(f => {
             updatePayload[f] = null
         })
+
+        if (fieldArray.includes('variety_exempt_words')) {
+            const currentScopeRow = layerRows[activeScope]
+            const currentScopePortion = (currentScopeRow?.portion_settings && typeof currentScopeRow.portion_settings === 'object')
+                ? currentScopeRow.portion_settings
+                : null
+
+            if (currentScopePortion && Object.prototype.hasOwnProperty.call(currentScopePortion, 'variety_exempt_words')) {
+                const { variety_exempt_words: _ignored, ...restPortion } = currentScopePortion
+                updatePayload.portion_settings = restPortion
+            }
+        }
 
         try {
             const { error } = await supabase
@@ -762,7 +1062,7 @@ export function SettingsDialog({ open, onOpenChange, onSettingsChanged, patientI
                 .eq('id', settingsId)
 
             if (error) throw error
-            fetchSettings() // Reload to get inherited global value
+            fetchSettings() // Reload to resolve inherited parent value
         } catch (e: any) {
             alert("Sıfırlama hatası: " + e.message)
         }
@@ -1185,7 +1485,7 @@ export function SettingsDialog({ open, onOpenChange, onSettingsChanged, patientI
                         <TabsContent value="scores" className="py-4 space-y-4">
                             <div className="flex justify-between items-center mb-4">
                                 <div className="bg-slate-50 p-3 rounded-md text-sm text-muted-foreground flex-1">
-                                    Bu {patientId ? 'hasta' : programTemplateId ? 'program' : 'global'} için yemek öncelik skorlarını özelleştirin.
+                                    Bu {activeScope === 'patient' ? 'hasta' : activeScope === 'program' ? 'program' : activeScope === 'team' ? 'takım' : 'global'} için yemek öncelik skorlarını özelleştirin.
                                     Alt katmanlar üst katmandaki atanmış skorları miras alır.
                                 </div>
                                 <RevertButton field="food_score_overrides" />
@@ -1231,7 +1531,7 @@ export function SettingsDialog({ open, onOpenChange, onSettingsChanged, patientI
                                                         <span className="text-[9px] text-slate-400">{f.category}</span>
                                                         <span className="text-[9px] text-slate-400">Skor:{f.priority_score ?? 5}</span>
                                                         {hasOverride ? (
-                                                            <span className="text-[9px] text-green-600 shrink-0">✅ Atandı</span>
+                                                                    <span className="text-[9px] text-green-600 shrink-0">✓ Atandı</span>
                                                         ) : (
                                                             <button
                                                                 onClick={() => {
@@ -1257,7 +1557,7 @@ export function SettingsDialog({ open, onOpenChange, onSettingsChanged, patientI
                                     <div className="space-y-1.5 max-h-48 overflow-y-auto mt-2">
                                         <div className="flex justify-between items-center mb-1">
                                             <span className="text-[9px] text-slate-500">
-                                                Bu {patientId ? 'hastaya' : programTemplateId ? 'programa' : 'globale'} ait skorlar
+                                                Bu {activeScope === 'patient' ? 'hastaya' : activeScope === 'program' ? 'programa' : activeScope === 'team' ? 'takıma' : 'globale'} ait skorlar
                                             </span>
                                             <button
                                                 onClick={() => setOverrideSort(s => s === 'desc' ? 'asc' : 'desc')}
@@ -1297,7 +1597,7 @@ export function SettingsDialog({ open, onOpenChange, onSettingsChanged, patientI
                                 {Object.keys(inheritedScores).length > 0 && (
                                     <div className="mt-4 border-t pt-3">
                                         <div className="flex items-center gap-2 mb-2">
-                                            <span className="text-xs font-semibold text-slate-600">📥 Miras Gelen Skorlar</span>
+                                        <span className="text-xs font-semibold text-slate-600">Miras Gelen Skorlar</span>
                                             <span className="text-[9px] text-slate-400">
                                                 ({Object.keys(inheritedScores).length} yemek)
                                             </span>
@@ -1322,7 +1622,7 @@ export function SettingsDialog({ open, onOpenChange, onSettingsChanged, patientI
                                                                 setFoodScoreOverrides(prev => ({ ...prev, [foodId]: score }))
                                                                 setFoodScoreSources(prev => ({
                                                                     ...prev,
-                                                                    [foodId]: patientId ? 'patient' : programTemplateId ? 'program' : 'global'
+                                                                    [foodId]: activeScope
                                                                 }))
                                                                 // Remove from inherited
                                                                 setInheritedScores(prev => {
@@ -1599,7 +1899,11 @@ export function SettingsDialog({ open, onOpenChange, onSettingsChanged, patientI
                                 disabled={loading}
                                 className="mr-auto"
                             >
-                                {programTemplateId ? "Programa Özel Ayarlara Dön" : "Global Ayarlara Dön"}
+                                {programTemplateId
+                                    ? "Programa Özel Ayarlara Dön"
+                                    : (Object.values(fieldSources).some((source) => source === 'team')
+                                        ? "Takım Ayarlarına Dön"
+                                        : "Global Ayarlara Dön")}
                             </Button>
                         )}
                         <Button variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>
@@ -1656,3 +1960,9 @@ function SortableCriterion({ id, item, index, onWeightChange }: any) {
         </div>
     )
 }
+
+
+
+
+
+

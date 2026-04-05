@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import { useState, useEffect } from "react"
 import { supabase } from "@/lib/supabase"
@@ -10,9 +10,12 @@ import { RuleDialog } from "@/components/planner/rule-dialog"
 import { SettingsDialog } from "@/components/planner/settings-dialog"
 import { DragEndEvent } from "@dnd-kit/core"
 import { arrayMove } from "@dnd-kit/sortable"
+import { Switch } from "@/components/ui/switch"
+import { resolveTeamScopeContextFromAuth } from "@/lib/team-scope"
 
 export default function RulesPage() {
     const [rules, setRules] = useState<PlanningRule[]>([])
+    const [inheritedGlobalRules, setInheritedGlobalRules] = useState<PlanningRule[]>([])
     const [suggestions, setSuggestions] = useState<PlanningRule[]>([])
     const [showSuggestions, setShowSuggestions] = useState(true)
     const [loading, setLoading] = useState(true)
@@ -20,68 +23,194 @@ export default function RulesPage() {
     const [settingsOpen, setSettingsOpen] = useState(false)
     const [editingRule, setEditingRule] = useState<PlanningRule | null>(null)
     const [isAcceptingSuggestion, setIsAcceptingSuggestion] = useState<string | null>(null)
+    const [scopeMode, setScopeMode] = useState<'global' | 'team'>('global')
+    const [scopeActionLoading, setScopeActionLoading] = useState(false)
+    const [teamRuleCount, setTeamRuleCount] = useState(0)
+    const [teamScope, setTeamScope] = useState<{
+        userId: string | null
+        role: string | null
+        canUseGlobal: boolean
+        teamOwnerId: string | null
+    }>({
+        userId: null,
+        role: null,
+        canUseGlobal: true,
+        teamOwnerId: null,
+    })
+
+    const canToggleScopeMode =
+        teamScope.role === 'doctor' &&
+        teamScope.canUseGlobal &&
+        !!teamScope.userId
+
+    const effectiveTeamOwnerId =
+        canToggleScopeMode && scopeMode === 'team'
+            ? teamScope.userId
+            : teamScope.teamOwnerId
+
+    const hasTeamScope =
+        (teamScope.role === 'doctor' || teamScope.role === 'dietitian') &&
+        !!effectiveTeamOwnerId &&
+        (!teamScope.canUseGlobal || (canToggleScopeMode && scopeMode === 'team'))
 
     useEffect(() => {
         fetchRules()
-    }, [])
+    }, [scopeMode])
 
     async function fetchRules() {
         setLoading(true)
-        // Fetch active global rules
-        const { data: globalData, error: globalError } = await supabase
-            .from('planning_rules')
-            .select('*')
-            .or('scope.is.null,scope.eq.global')
-            .order('sort_order', { ascending: true })
-            .order('priority', { ascending: false })
+        try {
+            const { userId, role, canUseGlobal, teamOwnerId } = await resolveTeamScopeContextFromAuth()
+            const hasTeamScopedRole = role === 'doctor' || role === 'dietitian'
+            setTeamScope({ userId, role, canUseGlobal, teamOwnerId })
 
-        if (globalError) {
-            console.error('Error fetching rules:', globalError)
-        } else {
-            setRules(globalData as unknown as PlanningRule[])
-        }
+            const canToggleForCurrentUser = role === 'doctor' && canUseGlobal && !!userId
+            const mergedTeamOwnerId =
+                canToggleForCurrentUser && scopeMode === 'team'
+                    ? userId
+                    : teamOwnerId
 
-        // Fetch suggested rules (pending approval) WITHOUT inner join first to avoid caching issues
-        const { data: suggestionData, error: suggestionError } = await supabase
-            .from('planning_rules')
-            .select('*')
-            .eq('pending_global_approval', true)
-            .order('created_at', { ascending: false })
+            const shouldUseTeamScope =
+                hasTeamScopedRole &&
+                !!mergedTeamOwnerId &&
+                (!canUseGlobal || (canToggleForCurrentUser && scopeMode === 'team'))
 
-        if (!suggestionError && suggestionData && suggestionData.length > 0) {
-            // Manually fetch patient details
-            const patientIds = Array.from(new Set(suggestionData.map((r: any) => r.patient_id).filter(Boolean)))
+            // Always keep global rules for inheritance preview / team bootstrap.
+            const { data: globalData, error: globalError } = await supabase
+                .from('planning_rules')
+                .select('*')
+                .or('scope.is.null,scope.eq.global')
+                .order('sort_order', { ascending: true })
+                .order('priority', { ascending: false })
 
-            let patientsMap: Record<string, any> = {}
-            if (patientIds.length > 0) {
-                const { data: patients } = await supabase
-                    .from('patients')
-                    .select('id, first_name, last_name')
-                    .in('id', patientIds)
+            if (globalError) {
+                console.error('Error fetching global rules:', globalError)
+            }
+            const globalRules = (globalData || []) as unknown as PlanningRule[]
+            setInheritedGlobalRules(globalRules)
 
-                if (patients) {
-                    patients.forEach(p => {
-                        patientsMap[p.id] = p
+            if (shouldUseTeamScope && mergedTeamOwnerId) {
+                const { data: teamData, error: teamError } = await supabase
+                    .from('planning_rules')
+                    .select('*')
+                    .eq('scope', 'team')
+                    .eq('team_owner_id', mergedTeamOwnerId)
+                    .order('sort_order', { ascending: true })
+                    .order('priority', { ascending: false })
+
+                if (teamError) {
+                    console.error('Error fetching team rules:', teamError)
+                    setTeamRuleCount(0)
+                    setRules([])
+                } else {
+                    const rawTeamRules = (teamData || []) as unknown as PlanningRule[]
+                    setTeamRuleCount(rawTeamRules.length)
+
+                    const teamRuleBySource = new Map<string, PlanningRule>()
+                    const customTeamRules: PlanningRule[] = []
+
+                    rawTeamRules.forEach((rule) => {
+                        if (rule.source_rule_id) {
+                            teamRuleBySource.set(rule.source_rule_id, rule)
+                        } else {
+                            customTeamRules.push(rule)
+                        }
                     })
+
+                    const mergedRules: PlanningRule[] = globalRules.map((globalRule) => {
+                        const teamOverride = teamRuleBySource.get(globalRule.id)
+                        if (teamOverride) {
+                            return {
+                                ...teamOverride,
+                                scope_source: 'team',
+                                base_rule_id: globalRule.id,
+                            }
+                        }
+                        return {
+                            ...globalRule,
+                            scope_source: 'global',
+                            base_rule_id: globalRule.id,
+                        }
+                    })
+
+                    customTeamRules.forEach((teamRule) => {
+                        mergedRules.push({
+                            ...teamRule,
+                            scope_source: 'team',
+                            base_rule_id: teamRule.id,
+                        })
+                    })
+
+                    setRules(mergedRules)
                 }
+
+                // Team mode: no pending-global approval workflow list.
+                setSuggestions([])
+                return
             }
 
-            // Combine data
-            const suggestionsWithPatient = suggestionData.map((r: any) => ({
-                ...r,
-                patients: patientsMap[r.patient_id] || { first_name: 'Bilinmeyen', last_name: 'Hasta' }
-            }))
+            // Global mode list
+            setTeamRuleCount(0)
+            setRules(globalRules.map((rule) => ({
+                ...rule,
+                scope_source: 'global',
+                base_rule_id: rule.id,
+            })))
 
-            setSuggestions(suggestionsWithPatient as unknown as PlanningRule[])
-        } else {
-            setSuggestions([])
+            // Pending approval list (global workflow only)
+            const { data: suggestionData, error: suggestionError } = await supabase
+                .from('planning_rules')
+                .select('*')
+                .eq('pending_global_approval', true)
+                .order('created_at', { ascending: false })
+
+            if (!suggestionError && suggestionData && suggestionData.length > 0) {
+                const patientIds = Array.from(new Set(suggestionData.map((r: any) => r.patient_id).filter(Boolean)))
+
+                let patientsMap: Record<string, any> = {}
+                if (patientIds.length > 0) {
+                    const { data: patients } = await supabase
+                        .from('patients')
+                        .select('id, first_name, last_name')
+                        .in('id', patientIds)
+
+                    if (patients) {
+                        patients.forEach(p => {
+                            patientsMap[p.id] = p
+                        })
+                    }
+                }
+
+                const suggestionsWithPatient = suggestionData.map((r: any) => ({
+                    ...r,
+                    patients: patientsMap[r.patient_id] || { first_name: 'Bilinmeyen', last_name: 'Hasta' }
+                }))
+
+                setSuggestions(suggestionsWithPatient as unknown as PlanningRule[])
+            } else {
+                setSuggestions([])
+            }
+        } finally {
+            setLoading(false)
         }
-
-        setLoading(false)
     }
 
     const handleEdit = (rule: PlanningRule) => {
-        setEditingRule(rule)
+        if (hasTeamScope && effectiveTeamOwnerId && rule.scope_source !== 'team') {
+            const baseRuleId = rule.base_rule_id || rule.id
+            const teamDraftRule = {
+                ...rule,
+                id: undefined,
+                scope: 'team' as const,
+                source_rule_id: baseRuleId,
+                team_owner_id: effectiveTeamOwnerId,
+                scope_source: 'team' as const,
+                base_rule_id: baseRuleId,
+            } as unknown as PlanningRule
+            setEditingRule(teamDraftRule)
+        } else {
+            setEditingRule(rule)
+        }
         setDialogOpen(true)
         setIsAcceptingSuggestion(null)
     }
@@ -90,6 +219,78 @@ export default function RulesPage() {
         setEditingRule(null)
         setDialogOpen(true)
         setIsAcceptingSuggestion(null)
+    }
+
+    const handleCloneGlobalToTeam = async () => {
+        if (!effectiveTeamOwnerId) return
+        if (inheritedGlobalRules.length === 0) {
+            alert("Takıma kopyalanacak global kural bulunamadı.")
+            return
+        }
+        if (!confirm("Global kurallar takım katmanına kopyalanacak. Devam edilsin mi?")) return
+
+        setScopeActionLoading(true)
+        try {
+            const { data: authData } = await supabase.auth.getUser()
+            const currentUserId = authData.user?.id || null
+            const existingTeamSources = new Set(
+                rules
+                    .filter((rule) => rule.scope_source === 'team' && rule.source_rule_id)
+                    .map((rule) => rule.source_rule_id as string)
+            )
+            const rulesToClone = inheritedGlobalRules.filter((rule) => !existingTeamSources.has(rule.id))
+
+            if (rulesToClone.length === 0) {
+                alert("Tüm global kurallar zaten takım katmanına kopyalanmış.")
+                return
+            }
+
+            const payload = rulesToClone.map((rule) => ({
+                name: rule.name,
+                description: rule.description,
+                rule_type: rule.rule_type,
+                priority: rule.priority,
+                sort_order: rule.sort_order,
+                is_active: rule.is_active,
+                definition: rule.definition,
+                scope: 'team',
+                team_owner_id: effectiveTeamOwnerId,
+                user_id: currentUserId,
+                source_rule_id: rule.id,
+                pending_global_approval: false,
+            }))
+
+            const { error } = await supabase.from('planning_rules').insert(payload)
+            if (error) throw error
+            await fetchRules()
+        } catch (error: any) {
+            console.error("Team clone error:", error)
+            alert("Takım katmanına kopyalama sırasında hata oluştu: " + (error.message || error))
+        } finally {
+            setScopeActionLoading(false)
+        }
+    }
+
+    const handleRevertTeamToGlobal = async () => {
+        if (!effectiveTeamOwnerId) return
+        if (!confirm("Takım kuralları silinip Global mirasa dönülecek. Devam edilsin mi?")) return
+
+        setScopeActionLoading(true)
+        try {
+            const { error } = await supabase
+                .from('planning_rules')
+                .delete()
+                .eq('scope', 'team')
+                .eq('team_owner_id', effectiveTeamOwnerId)
+
+            if (error) throw error
+            await fetchRules()
+        } catch (error: any) {
+            console.error("Team revert error:", error)
+            alert("Global mirasa dönüş sırasında hata oluştu: " + (error.message || error))
+        } finally {
+            setScopeActionLoading(false)
+        }
     }
 
     // Accept Suggestion: Open dialog as "New Rule" but pre-filled
@@ -139,6 +340,11 @@ export default function RulesPage() {
     }
 
     const handleDragEnd = async (event: DragEndEvent) => {
+        if (hasTeamScope && rules.some((rule) => rule.scope_source !== 'team')) {
+            alert("Sıralama için önce tüm global kuralları Takıma Özel Hale Getir ile takım katmanına kopyalayın.")
+            return
+        }
+
         const { active, over } = event;
         if (!over || active.id === over.id) return;
 
@@ -178,6 +384,21 @@ export default function RulesPage() {
                     <p className="text-muted-foreground">Otomatik planlayıcı için davranış kuralları tanımlayın.</p>
                 </div>
                 <div className="flex gap-2">
+                    {canToggleScopeMode && (
+                        <div className="flex items-center gap-3 rounded-md border bg-white px-3 py-2">
+                            <span className={`text-sm ${scopeMode === 'global' ? 'font-semibold text-gray-900' : 'text-gray-500'}`}>
+                                Global Mod
+                            </span>
+                            <Switch
+                                checked={scopeMode === 'team'}
+                                onCheckedChange={(checked) => setScopeMode(checked ? 'team' : 'global')}
+                                aria-label="Rules scope mode switch"
+                            />
+                            <span className={`text-sm ${scopeMode === 'team' ? 'font-semibold text-gray-900' : 'text-gray-500'}`}>
+                                Takım Modu
+                            </span>
+                        </div>
+                    )}
                     <Button variant="outline" className="gap-2" onClick={() => setSettingsOpen(true)}>
                         <Settings size={16} />
                         Planlayıcı Ayarları
@@ -201,7 +422,7 @@ export default function RulesPage() {
                             URL.revokeObjectURL(url);
                         }}
                     >
-                        📥 Kuralları Dışa Aktar
+                        Kuralları Dışa Aktar
                     </Button>
                     <Button
                         variant="outline"
@@ -231,7 +452,7 @@ export default function RulesPage() {
                             URL.revokeObjectURL(url);
                         }}
                     >
-                        🍽️ Yiyecekleri Dışa Aktar
+                        Yiyecekleri Dışa Aktar
                     </Button>
                     <Button onClick={handleCreate} className="gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white">
                         <Plus size={18} />
@@ -240,15 +461,44 @@ export default function RulesPage() {
                 </div>
             </div>
 
+            {hasTeamScope && (
+                <div className="rounded-lg border border-violet-200 bg-violet-50 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                        <div>
+                            <h3 className="text-sm font-semibold text-violet-900">
+                                Takım Scope Kuralları
+                            </h3>
+                            <p className="text-xs text-violet-700 mt-1">
+                                Bu modda yaptığınız tüm kural değişiklikleri yalnızca takımınıza ve takım hastalarınıza yansır.
+                            </p>
+                        </div>
+                        {teamRuleCount === 0 ? (
+                            <Button size="sm" onClick={handleCloneGlobalToTeam} disabled={scopeActionLoading} className="bg-violet-600 hover:bg-violet-700 text-white">
+                                {scopeActionLoading ? "Kopyalanıyor..." : "Takıma Özel Hale Getir"}
+                            </Button>
+                        ) : (
+                            <Button size="sm" variant="outline" onClick={handleRevertTeamToGlobal} disabled={scopeActionLoading} className="border-orange-300 text-orange-700 hover:bg-orange-50">
+                                {scopeActionLoading ? "İşleniyor..." : "Globalden Miras Al"}
+                            </Button>
+                        )}
+                    </div>
+                    {teamRuleCount === 0 && inheritedGlobalRules.length > 0 && (
+                        <div className="mt-3 text-xs text-violet-700">
+                            Şu an global kuralları miras alıyorsunuz ({inheritedGlobalRules.length} kural).
+                        </div>
+                    )}
+                </div>
+            )}
+
             {/* Suggestions Section */}
-            {suggestions.length > 0 && (
+            {!hasTeamScope && suggestions.length > 0 && (
                 <div className="bg-amber-50 border border-amber-200 rounded-lg overflow-hidden">
                     <div
                         className="p-4 flex items-center justify-between cursor-pointer hover:bg-amber-100/50 transition-colors"
                         onClick={() => setShowSuggestions(!showSuggestions)}
                     >
                         <h3 className="text-sm font-semibold text-amber-800 flex items-center gap-2">
-                            <span>🔔 Onay Bekleyen Öneriler</span>
+                            <span>Onay Bekleyen Öneriler</span>
                             <span className="bg-amber-200 text-amber-900 text-xs px-2 py-0.5 rounded-full">{suggestions.length}</span>
                         </h3>
                         <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-amber-800">
@@ -292,9 +542,13 @@ export default function RulesPage() {
                 loading={loading}
                 onEdit={handleEdit}
                 onDragEnd={handleDragEnd}
-                onDelete={async (id) => {
+                onDelete={async (rule) => {
+                    if (hasTeamScope && rule.scope_source !== 'team') {
+                        alert("Bu kural global mirastan geliyor. Takım katmanında silmek için önce düzenleyip takım override oluşturun ya da Globalden Miras Al kullanın.")
+                        return
+                    }
                     if (!confirm("Kuralı silmek istediğinize emin misiniz?")) return;
-                    await supabase.from('planning_rules').delete().eq('id', id);
+                    await supabase.from('planning_rules').delete().eq('id', rule.id);
                     fetchRules();
                 }}
             />
@@ -304,12 +558,16 @@ export default function RulesPage() {
                 onOpenChange={setDialogOpen}
                 initialData={editingRule}
                 onSuccess={handleSuccess}
+                teamOwnerId={hasTeamScope ? effectiveTeamOwnerId : null}
             />
 
             <SettingsDialog
                 open={settingsOpen}
                 onOpenChange={setSettingsOpen}
+                forcedMode={canToggleScopeMode ? scopeMode : undefined}
             />
         </div>
     )
 }
+
+

@@ -4,6 +4,15 @@ import { checkCompatibility, DietRules } from "@/utils/compatibility-checker"
 import { useState, useEffect, use, useMemo, useRef } from "react"
 import { createPortal } from "react-dom"
 import { supabase } from "@/lib/supabase"
+import { applyTeamFoodOverrides, upsertTeamFoodOverride } from "@/lib/team-food-overrides"
+import {
+    applyTeamFoodMicronutrientOverrides,
+    getFoodMicronutrientMapByScope,
+    saveFoodMicronutrientsByScope
+} from "@/lib/team-food-micronutrient-overrides"
+import { applyTeamDietTypeOverrides } from "@/lib/team-diet-type-overrides"
+import { applyProgramDietTypeOverrides } from "@/lib/program-diet-type-overrides"
+import { resolveTeamScopeContextForUser } from "@/lib/team-scope"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -346,6 +355,8 @@ export default function PatientDetailPage({ params }: { params: Promise<{ id: st
     const [weeklyAvgStats, setWeeklyAvgStats] = useState<any>(null)
     const [patientProgram, setPatientProgram] = useState<any>(null)
     const [allPatientMeals, setAllPatientMeals] = useState<any[]>([])
+    const isFetchingAllPatientMealsRef = useRef(false)
+    const pendingAllPatientMealsFetchRef = useRef(false)
     const [showMealBadges, setShowMealBadges] = useState<boolean>(true)
     const [sidebarSortPreference, setSidebarSortPreference] = useState<'asc' | 'desc' | null>(null)
     const [patientLabs, setPatientLabs] = useState<any[]>([])
@@ -388,7 +399,54 @@ export default function PatientDetailPage({ params }: { params: Promise<{ id: st
     const [generatedPlan, setGeneratedPlan] = useState<any>(null)
     const [isGeneratingPlan, setIsGeneratingPlan] = useState(false)
     const [isApplyingPlan, setIsApplyingPlan] = useState(false)
-    const { user } = useAuth()
+    const { user, profile } = useAuth()
+
+    async function resolveFoodTeamOwnerId(): Promise<string | null> {
+        if (!user?.id) return null
+        const scope = await resolveTeamScopeContextForUser(user.id, {
+            role: profile?.role || null,
+            is_global_access: (profile as any)?.is_global_access === true
+        })
+        return scope.teamOwnerId
+    }
+
+    async function saveFoodByScope(
+        foodId: string,
+        updates: Record<string, any>,
+        teamOwnerIdOverride?: string | null
+    ) {
+        const teamOwnerId = teamOwnerIdOverride ?? await resolveFoodTeamOwnerId()
+
+        if (teamOwnerId && user?.id) {
+            const { error } = await upsertTeamFoodOverride({
+                teamOwnerId,
+                baseFoodId: foodId,
+                createdBy: user.id,
+                updates
+            })
+            if (error) throw error
+
+            const { data: baseFood, error: baseFoodError } = await supabase
+                .from('foods')
+                .select('*')
+                .eq('id', foodId)
+                .single()
+            if (baseFoodError) throw baseFoodError
+
+            const scopedFoods = await applyTeamFoodOverrides(baseFood ? [baseFood] : [], teamOwnerId)
+            const effectiveFoods = await applyTeamFoodMicronutrientOverrides(scopedFoods, teamOwnerId)
+            return effectiveFoods[0] || scopedFoods[0] || baseFood
+        }
+
+        const { data, error } = await supabase
+            .from('foods')
+            .update(updates)
+            .eq('id', foodId)
+            .select()
+            .single()
+        if (error) throw error
+        return data
+    }
 
     async function handleAutoGenerate(macroAdjustments?: Record<string, number>) {
         if (!activeWeekId || !patient || !user) return
@@ -834,7 +892,35 @@ export default function PatientDetailPage({ params }: { params: Promise<{ id: st
             .select('*, banned_details') // Explicitly select banned_details
             .or(`patient_id.is.null,patient_id.eq.${id}`)
             .order('name')
-        if (data) setDietTypesList(data)
+        if (data) {
+            const teamOwnerId = await resolveFoodTeamOwnerId()
+            let programTemplateId =
+                patient?.program_template_id ||
+                patient?.program_templates?.id ||
+                null
+
+            if (!programTemplateId && id) {
+                const { data: patientProgramRef } = await supabase
+                    .from('patients')
+                    .select('program_template_id')
+                    .eq('id', id)
+                    .maybeSingle()
+                programTemplateId = patientProgramRef?.program_template_id || null
+            }
+
+            let globalAndTeamMerged = await applyTeamDietTypeOverrides(
+                data.filter((dt: any) => !dt.patient_id),
+                teamOwnerId
+            )
+            if (programTemplateId) {
+                globalAndTeamMerged = await applyProgramDietTypeOverrides(globalAndTeamMerged, {
+                    programTemplateId,
+                    teamOwnerId
+                })
+            }
+            const patientSpecific = data.filter((dt: any) => !!dt.patient_id)
+            setDietTypesList([...globalAndTeamMerged, ...patientSpecific])
+        }
     }
 
     async function fetchSlotSettings() {
@@ -877,8 +963,13 @@ export default function PatientDetailPage({ params }: { params: Promise<{ id: st
         }
     }
 
+    function isAbortLikeError(error: any): boolean {
+        const text = `${error?.message || ''} ${error?.details || ''} ${error || ''}`.toLowerCase()
+        return text.includes('aborterror') || text.includes('aborted')
+    }
+
     async function fetchPatientLabs() {
-        const { data, error } = await supabase
+        const { data } = await supabase
             .from('patient_lab_results')
             .select(`
                 id, patient_id, micronutrient_id, value, measured_at, ref_min, ref_max, note,
@@ -889,13 +980,6 @@ export default function PatientDetailPage({ params }: { params: Promise<{ id: st
             .eq('patient_id', id)
             .order('measured_at', { ascending: false })
 
-        // DEBUG: Log raw data from Supabase
-        console.log('[fetchPatientLabs] Raw data from Supabase:', data)
-        console.log('[fetchPatientLabs] Error:', error)
-        if (data && data.length > 0) {
-            console.log('[fetchPatientLabs] First item micronutrients:', JSON.stringify(data[0].micronutrients, null, 2))
-        }
-
         if (data) {
             // Group by micronutrient_id and keep only the latest one
             const latestLabs: Record<string, any> = {}
@@ -904,9 +988,7 @@ export default function PatientDetailPage({ params }: { params: Promise<{ id: st
                     latestLabs[lab.micronutrient_id] = lab
                 }
             })
-            const result = Object.values(latestLabs)
-            console.log('[fetchPatientLabs] Processed patientLabs:', result)
-            setPatientLabs(result)
+            setPatientLabs(Object.values(latestLabs))
         }
     }
 
@@ -942,7 +1024,6 @@ export default function PatientDetailPage({ params }: { params: Promise<{ id: st
                 ...rule,
                 medication_name: rule.medications?.name || patientMeds.find(pm => pm.medication_id === rule.medication_id)?.medication_name
             }))
-            console.log('[fetchPatientMedicationRules] Rules:', enrichedRules)
             setPatientMedicationRules(enrichedRules)
         }
     }
@@ -1154,10 +1235,6 @@ export default function PatientDetailPage({ params }: { params: Promise<{ id: st
         }
     }, [visibleWeeks, isPatient, activeWeekId])
 
-
-    // Debug: Log mealCounts size
-    console.log('mealCounts size:', mealCounts.size, 'allPatientMeals:', allPatientMeals.length)
-
     useEffect(() => {
         if (activeWeekId) {
             calculateWeeklyAverage()
@@ -1324,23 +1401,31 @@ export default function PatientDetailPage({ params }: { params: Promise<{ id: st
     }
 
     async function fetchFoods() {
-        const { data } = await supabase.from('foods').select('*').order('name')
-        if (data) setFoods(data)
-
-        // Fetch food-micronutrient associations
-        const { data: foodM } = await supabase.from('food_micronutrients').select('*')
-        if (foodM) {
-            const mapping: Record<string, string[]> = {}
-            foodM.forEach(fm => {
-                if (!mapping[fm.food_id]) mapping[fm.food_id] = []
-                mapping[fm.food_id].push(fm.micronutrient_id)
-            })
-            setFoodMicronutrients(mapping)
+        try {
+            const { data } = await supabase.from('foods').select('*').order('name')
+            let teamOwnerId: string | null = null
+            if (data) {
+                teamOwnerId = await resolveFoodTeamOwnerId()
+                const effectiveFoods = await applyTeamFoodOverrides(data, teamOwnerId)
+                setFoods(effectiveFoods)
+                const baseFoodIds = effectiveFoods.map((food: any) => food.base_food_id || food.id)
+                const mapping = await getFoodMicronutrientMapByScope(baseFoodIds, teamOwnerId)
+                setFoodMicronutrients(mapping)
+            }
+        } catch (error) {
+            if (!isAbortLikeError(error)) {
+                console.error('[fetchFoods] failed to load scoped micronutrient map:', error)
+            }
         }
     }
 
     async function fetchAllPatientMeals() {
         if (!dietPlanId || weeks.length === 0) return
+        if (isFetchingAllPatientMealsRef.current) {
+            pendingAllPatientMealsFetchRef.current = true
+            return
+        }
+        isFetchingAllPatientMealsRef.current = true
 
         try {
             // Batch weeks into smaller groups to avoid URL length limits
@@ -1374,7 +1459,9 @@ export default function PatientDetailPage({ params }: { params: Promise<{ id: st
                         .in('diet_day_id', dayIds)
 
                     if (mealsError) {
-                        console.error('Meals query error:', mealsError)
+                        if (!isAbortLikeError(mealsError)) {
+                            console.error('Meals query error:', mealsError)
+                        }
                         continue
                     }
                     if (!meals) continue
@@ -1389,11 +1476,18 @@ export default function PatientDetailPage({ params }: { params: Promise<{ id: st
                 }
             }
 
-            console.log('fetchAllPatientMeals success:', allMeals.length, 'meals')
             setAllPatientMeals(allMeals)
         } catch (err) {
-            console.error('fetchAllPatientMeals exception:', err)
+            if (!isAbortLikeError(err)) {
+                console.error('fetchAllPatientMeals exception:', err)
+            }
             setAllPatientMeals([])
+        } finally {
+            isFetchingAllPatientMealsRef.current = false
+            if (pendingAllPatientMealsFetchRef.current) {
+                pendingAllPatientMealsFetchRef.current = false
+                void fetchAllPatientMeals()
+            }
         }
     }
 
@@ -1465,7 +1559,6 @@ export default function PatientDetailPage({ params }: { params: Promise<{ id: st
             // 2. Set Diseases
             if (diseasesData) {
                 const mapped = diseasesData.map((d: any) => d.disease).filter(Boolean)
-                console.log('Mapped Patient Diseases:', mapped)
                 setPatientDiseases(mapped)
             } else {
                 setPatientDiseases([])
@@ -1473,13 +1566,11 @@ export default function PatientDetailPage({ params }: { params: Promise<{ id: st
 
             // 3. Set Labs
             if (labsData) {
-                console.log('[LABS DEBUG] Raw labsData[0]:', JSON.stringify(labsData[0], null, 2))
                 const latestLabs: Record<string, any> = {}
                 labsData.forEach((lab: any) => {
                     if (!latestLabs[lab.micronutrient_id]) latestLabs[lab.micronutrient_id] = lab
                 })
                 const result = Object.values(latestLabs)
-                console.log('[LABS DEBUG] patientLabs first item:', JSON.stringify(result[0]?.micronutrients, null, 2))
                 setPatientLabs(result)
             }
 
@@ -1497,7 +1588,6 @@ export default function PatientDetailPage({ params }: { params: Promise<{ id: st
                             ...rule,
                             medication_name: rule.medications?.name
                         }))
-                        console.log('[MEDS DEBUG] Medication Rules:', enrichedRules)
                         setPatientMedicationRules(enrichedRules)
                     }
                 }
@@ -1505,7 +1595,6 @@ export default function PatientDetailPage({ params }: { params: Promise<{ id: st
 
             // 5. Handle Plan & Weeks (Dependent on Plan)
             if (planData) {
-                console.log('Found diet plan:', planData.id)
                 setDietPlanId(planData.id)
                 if (planData.meal_types) {
                     setMealTypes(planData.meal_types as string[])
@@ -4045,7 +4134,67 @@ function DroppableMealSlot({ dayId, dayDate, mealType, meals, onUpdate, onToggle
     days?: any[],
     patientDietType?: string | null
 }) {
-    const { profile } = useAuth()
+    const { user, profile } = useAuth()
+
+    async function resolveFoodTeamOwnerId(): Promise<string | null> {
+        if (!user?.id) return null
+        const scope = await resolveTeamScopeContextForUser(user.id, {
+            role: profile?.role || null,
+            is_global_access: (profile as any)?.is_global_access === true
+        })
+        return scope.teamOwnerId
+    }
+
+    async function saveFoodByScope(
+        foodId: string,
+        updates: Record<string, any>,
+        teamOwnerIdOverride?: string | null
+    ) {
+        const teamOwnerId = teamOwnerIdOverride ?? await resolveFoodTeamOwnerId()
+
+        if (teamOwnerId && user?.id) {
+            const { error } = await upsertTeamFoodOverride({
+                teamOwnerId,
+                baseFoodId: foodId,
+                createdBy: user.id,
+                updates
+            })
+            if (error) throw error
+
+            const { data: baseFood, error: baseFoodError } = await supabase
+                .from('foods')
+                .select('*')
+                .eq('id', foodId)
+                .single()
+            if (baseFoodError) throw baseFoodError
+
+            const scopedFoods = await applyTeamFoodOverrides(baseFood ? [baseFood] : [], teamOwnerId)
+            const effectiveFoods = await applyTeamFoodMicronutrientOverrides(scopedFoods, teamOwnerId)
+            return effectiveFoods[0] || scopedFoods[0] || baseFood
+        }
+
+        const { data, error } = await supabase
+            .from('foods')
+            .update(updates)
+            .eq('id', foodId)
+            .select()
+            .single()
+        if (error) throw error
+        return data
+    }
+
+    const [foodTeamOwnerId, setFoodTeamOwnerId] = useState<string | null>(null)
+
+    useEffect(() => {
+        let mounted = true
+        resolveFoodTeamOwnerId().then((teamOwnerId) => {
+            if (mounted) setFoodTeamOwnerId(teamOwnerId)
+        })
+        return () => {
+            mounted = false
+        }
+    }, [user?.id, profile?.role, (profile as any)?.is_global_access])
+
     const hasLockedMeal = meals.some(m => m.is_locked)
     const { setNodeRef, isOver } = useDroppable({
         id: `slot-${dayId}-${mealType}`,
@@ -4538,6 +4687,7 @@ function DroppableMealSlot({ dayId, dayDate, mealType, meals, onUpdate, onToggle
                             isOpen={!!editingMeal}
                             onClose={() => setEditingMeal(null)}
                             onUpdate={onUpdate}
+                            teamOwnerId={foodTeamOwnerId}
                             mode="create"
                             onCreate={async (newFood) => {
                                 if (editingMeal.id) {
@@ -4585,24 +4735,24 @@ function DroppableMealSlot({ dayId, dayDate, mealType, meals, onUpdate, onToggle
                                 onClose={() => setEditingMeal(null)}
                                 onUpdate={onUpdate}
                                 patientId={patientId}
+                                teamOwnerId={foodTeamOwnerId}
                                 onSave={async (updatedFoodData) => {
                                     const { micronutrients, ...foodsPayload } = updatedFoodData
-                                    const { data: globalData, error: globalError } = await supabase.from('foods').update(foodsPayload).eq('id', editingMeal.foods.id).select().single()
-                                    if (globalError) throw globalError
+                                    const teamOwnerId = await resolveFoodTeamOwnerId()
+                                    const savedFood = await saveFoodByScope(editingMeal.foods.id, foodsPayload, teamOwnerId)
 
-                                    if (micronutrients && Array.isArray(micronutrients)) {
-                                        await supabase.from('food_micronutrients').delete().eq('food_id', editingMeal.foods.id)
-                                        if (micronutrients.length > 0) {
-                                            const associations = micronutrients.map((microId: string) => ({
-                                                food_id: editingMeal.foods.id,
-                                                micronutrient_id: microId
-                                            }))
-                                            await supabase.from('food_micronutrients').insert(associations)
-                                        }
+                                    if (Array.isArray(micronutrients)) {
+                                        const { error: microError } = await saveFoodMicronutrientsByScope({
+                                            baseFoodId: editingMeal.foods.id,
+                                            teamOwnerId,
+                                            micronutrients,
+                                            createdBy: user?.id || null
+                                        })
+                                        if (microError) throw microError
                                     }
 
                                     await supabase.from('diet_meals').update({ calories: null, protein: null, carbs: null, fat: null }).eq('food_id', editingMeal.foods.id)
-                                    return globalData
+                                    return savedFood
                                 }}
                             />
                         )
@@ -5230,7 +5380,67 @@ function ListViewMealSlot({ dayId, mealType, meals, mealTotals, onUpdate, onTogg
     scalableUnits?: string[],
     patientDietType?: string
 }) {
-    const { profile } = useAuth()
+    const { user, profile } = useAuth()
+
+    async function resolveFoodTeamOwnerId(): Promise<string | null> {
+        if (!user?.id) return null
+        const scope = await resolveTeamScopeContextForUser(user.id, {
+            role: profile?.role || null,
+            is_global_access: (profile as any)?.is_global_access === true
+        })
+        return scope.teamOwnerId
+    }
+
+    async function saveFoodByScope(
+        foodId: string,
+        updates: Record<string, any>,
+        teamOwnerIdOverride?: string | null
+    ) {
+        const teamOwnerId = teamOwnerIdOverride ?? await resolveFoodTeamOwnerId()
+
+        if (teamOwnerId && user?.id) {
+            const { error } = await upsertTeamFoodOverride({
+                teamOwnerId,
+                baseFoodId: foodId,
+                createdBy: user.id,
+                updates
+            })
+            if (error) throw error
+
+            const { data: baseFood, error: baseFoodError } = await supabase
+                .from('foods')
+                .select('*')
+                .eq('id', foodId)
+                .single()
+            if (baseFoodError) throw baseFoodError
+
+            const scopedFoods = await applyTeamFoodOverrides(baseFood ? [baseFood] : [], teamOwnerId)
+            const effectiveFoods = await applyTeamFoodMicronutrientOverrides(scopedFoods, teamOwnerId)
+            return effectiveFoods[0] || scopedFoods[0] || baseFood
+        }
+
+        const { data, error } = await supabase
+            .from('foods')
+            .update(updates)
+            .eq('id', foodId)
+            .select()
+            .single()
+        if (error) throw error
+        return data
+    }
+
+    const [foodTeamOwnerId, setFoodTeamOwnerId] = useState<string | null>(null)
+
+    useEffect(() => {
+        let mounted = true
+        resolveFoodTeamOwnerId().then((teamOwnerId) => {
+            if (mounted) setFoodTeamOwnerId(teamOwnerId)
+        })
+        return () => {
+            mounted = false
+        }
+    }, [user?.id, profile?.role, (profile as any)?.is_global_access])
+
     const hasLockedMeal = meals.some(m => m.is_locked)
     const { setNodeRef, isOver } = useDroppable({
         id: `list-slot-${dayId}-${mealType}`,
@@ -5720,6 +5930,7 @@ function ListViewMealSlot({ dayId, mealType, meals, mealTotals, onUpdate, onTogg
                         isOpen={!!editingMeal}
                         onClose={() => setEditingMeal(null)}
                         onUpdate={onUpdate}
+                        teamOwnerId={foodTeamOwnerId}
                         mode="create"
                         onCreate={async (newFood) => {
                             if (editingMeal.id) {
@@ -5769,25 +5980,30 @@ function ListViewMealSlot({ dayId, mealType, meals, mealTotals, onUpdate, onTogg
                         // Pass merged data for better consistency inside dialog
                         onSave={async (data) => {
                             // Custom save handler that clears overrides
-                            const { micronutrients, ...foodsPayload } = data
-                            const { error } = await supabase.from('foods').update(foodsPayload).eq('id', data.id)
-                            if (!error) {
-                                if (micronutrients && Array.isArray(micronutrients)) {
-                                    await supabase.from('food_micronutrients').delete().eq('food_id', data.id)
-                                    if (micronutrients.length > 0) {
-                                        const associations = micronutrients.map((microId: string) => ({
-                                            food_id: data.id,
-                                            micronutrient_id: microId
-                                        }))
-                                        await supabase.from('food_micronutrients').insert(associations)
-                                    }
+                            try {
+                                const { micronutrients, ...foodsPayload } = data
+                                const teamOwnerId = await resolveFoodTeamOwnerId()
+                                const savedFood = await saveFoodByScope(data.id, foodsPayload, teamOwnerId)
+
+                                if (Array.isArray(micronutrients)) {
+                                    const { error: microError } = await saveFoodMicronutrientsByScope({
+                                        baseFoodId: data.id,
+                                        teamOwnerId,
+                                        micronutrients,
+                                        createdBy: user?.id || null
+                                    })
+                                    if (microError) throw microError
                                 }
+
                                 // Clear overrides for ALL meals with this food
                                 await supabase.from('diet_meals')
                                     .update({ calories: null, protein: null, carbs: null, fat: null })
                                     .eq('food_id', data.id)
+
+                                return { error: null, data: savedFood }
+                            } catch (error: any) {
+                                return { error, data: null }
                             }
-                            return { error, data }
                         }}
                     />
                 ) : (
@@ -5804,24 +6020,24 @@ function ListViewMealSlot({ dayId, mealType, meals, mealTotals, onUpdate, onTogg
                             onClose={() => setEditingMeal(null)}
                             onUpdate={onUpdate}
                             patientId={patientId}
+                            teamOwnerId={foodTeamOwnerId}
                             onSave={async (updatedFoodData) => {
                                 const { micronutrients, ...foodsPayload } = updatedFoodData
-                                const { data: globalData, error: globalError } = await supabase.from('foods').update(foodsPayload).eq('id', editingMeal.foods.id).select().single()
-                                if (globalError) throw globalError
+                                const teamOwnerId = await resolveFoodTeamOwnerId()
+                                const savedFood = await saveFoodByScope(editingMeal.foods.id, foodsPayload, teamOwnerId)
 
-                                if (micronutrients && Array.isArray(micronutrients)) {
-                                    await supabase.from('food_micronutrients').delete().eq('food_id', editingMeal.foods.id)
-                                    if (micronutrients.length > 0) {
-                                        const associations = micronutrients.map((microId: string) => ({
-                                            food_id: editingMeal.foods.id,
-                                            micronutrient_id: microId
-                                        }))
-                                        await supabase.from('food_micronutrients').insert(associations)
-                                    }
+                                if (Array.isArray(micronutrients)) {
+                                    const { error: microError } = await saveFoodMicronutrientsByScope({
+                                        baseFoodId: editingMeal.foods.id,
+                                        teamOwnerId,
+                                        micronutrients,
+                                        createdBy: user?.id || null
+                                    })
+                                    if (microError) throw microError
                                 }
 
                                 await supabase.from('diet_meals').update({ calories: null, protein: null, carbs: null, fat: null }).eq('food_id', editingMeal.foods.id)
-                                return globalData
+                                return savedFood
                             }}
                         />
                     )

@@ -20,7 +20,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 export default function AdminDashboard() {
-    const { isAdmin, loading, profile } = useAuth()
+    const { isAdmin, isStaff, loading, profile } = useAuth()
     const router = useRouter()
     const [stats, setStats] = useState({
         doctors: 0,
@@ -33,11 +33,11 @@ export default function AdminDashboard() {
     const [inviteOpen, setInviteOpen] = useState(false)
 
     useEffect(() => {
-        // Only redirect if loading done AND profile loaded AND not admin
-        if (!loading && profile && !isAdmin) {
-            router.push("/") // Redirect unauthorized
+        // Only redirect if loading done AND profile loaded AND not staff (Admin, Doctor, Dietitian)
+        if (!loading && profile && !isStaff) {
+            router.push("/") // Redirect unauthorized (patients or others)
         }
-    }, [isAdmin, loading, router, profile])
+    }, [isStaff, loading, router, profile])
 
     useEffect(() => {
         if (isAdmin) loadStats()
@@ -70,7 +70,7 @@ export default function AdminDashboard() {
         })
     }
 
-    if (loading || !isAdmin) return <div className="p-10 text-center">Yükleniyor...</div>
+    if (loading || !isStaff) return <div className="p-10 text-center">Yükleniyor...</div>
 
     return (
         <div className="p-6 space-y-6 max-w-7xl mx-auto">
@@ -85,62 +85,64 @@ export default function AdminDashboard() {
             </div>
 
             {/* Stats Cards - Clickable for Navigation */}
-            <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-6">
-                <Card className="hover:bg-gray-50 cursor-pointer transition-colors" onClick={() => router.push('/admin/users?role=patient')}>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">Toplam Hasta</CardTitle>
-                        <Users className="h-4 w-4 text-muted-foreground" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">{stats.patients}</div>
-                    </CardContent>
-                </Card>
-                <Card className="hover:bg-gray-50 cursor-pointer transition-colors" onClick={() => router.push('/programs?tab=programs')}>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">Aktif Programlar</CardTitle>
-                        <Activity className="h-4 w-4 text-muted-foreground" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">{stats.activePrograms}</div>
-                    </CardContent>
-                </Card>
-                <Card className="hover:bg-gray-50 cursor-pointer transition-colors" onClick={() => router.push('/programs?tab=diet-types')}>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">Diyet Türleri</CardTitle>
-                        <Shield className="h-4 w-4 text-muted-foreground" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">{stats.totalDietTypes}</div>
-                    </CardContent>
-                </Card>
-                <Card className="hover:bg-gray-50 cursor-pointer transition-colors" onClick={() => router.push('/admin/recipes')}>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">Yemek Veritabanı</CardTitle>
-                        <Utensils className="h-4 w-4 text-muted-foreground" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">{stats.totalFoods}</div>
-                    </CardContent>
-                </Card>
-                <Card className="hover:bg-gray-50 cursor-pointer transition-colors" onClick={() => router.push('/admin/users?role=doctor')}>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">Doktorlar</CardTitle>
-                        <Shield className="h-4 w-4 text-muted-foreground" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">{stats.doctors}</div>
-                    </CardContent>
-                </Card>
-                <Card className="hover:bg-gray-50 cursor-pointer transition-colors" onClick={() => router.push('/admin/users?role=dietitian')}>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">Diyetisyenler</CardTitle>
-                        <UserCog className="h-4 w-4 text-muted-foreground" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">{stats.dietitians}</div>
-                    </CardContent>
-                </Card>
-            </div>
+            {isAdmin && (
+                <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-6">
+                    <Card className="hover:bg-gray-50 cursor-pointer transition-colors" onClick={() => router.push('/admin/users?role=patient')}>
+                        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                            <CardTitle className="text-sm font-medium">Toplam Hasta</CardTitle>
+                            <Users className="h-4 w-4 text-muted-foreground" />
+                        </CardHeader>
+                        <CardContent>
+                            <div className="text-2xl font-bold">{stats.patients}</div>
+                        </CardContent>
+                    </Card>
+                    <Card className="hover:bg-gray-50 cursor-pointer transition-colors" onClick={() => router.push('/programs?tab=programs')}>
+                        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                            <CardTitle className="text-sm font-medium">Aktif Programlar</CardTitle>
+                            <Activity className="h-4 w-4 text-muted-foreground" />
+                        </CardHeader>
+                        <CardContent>
+                            <div className="text-2xl font-bold">{stats.activePrograms}</div>
+                        </CardContent>
+                    </Card>
+                    <Card className="hover:bg-gray-50 cursor-pointer transition-colors" onClick={() => router.push('/programs?tab=diet-types')}>
+                        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                            <CardTitle className="text-sm font-medium">Diyet Türleri</CardTitle>
+                            <Shield className="h-4 w-4 text-muted-foreground" />
+                        </CardHeader>
+                        <CardContent>
+                            <div className="text-2xl font-bold">{stats.totalDietTypes}</div>
+                        </CardContent>
+                    </Card>
+                    <Card className="hover:bg-gray-50 cursor-pointer transition-colors" onClick={() => router.push('/admin/recipes')}>
+                        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                            <CardTitle className="text-sm font-medium">Yemek Veritabanı</CardTitle>
+                            <Utensils className="h-4 w-4 text-muted-foreground" />
+                        </CardHeader>
+                        <CardContent>
+                            <div className="text-2xl font-bold">{stats.totalFoods}</div>
+                        </CardContent>
+                    </Card>
+                    <Card className="hover:bg-gray-50 cursor-pointer transition-colors" onClick={() => router.push('/admin/users?role=doctor')}>
+                        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                            <CardTitle className="text-sm font-medium">Doktorlar</CardTitle>
+                            <Shield className="h-4 w-4 text-muted-foreground" />
+                        </CardHeader>
+                        <CardContent>
+                            <div className="text-2xl font-bold">{stats.doctors}</div>
+                        </CardContent>
+                    </Card>
+                    <Card className="hover:bg-gray-50 cursor-pointer transition-colors" onClick={() => router.push('/admin/users?role=dietitian')}>
+                        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                            <CardTitle className="text-sm font-medium">Diyetisyenler</CardTitle>
+                            <UserCog className="h-4 w-4 text-muted-foreground" />
+                        </CardHeader>
+                        <CardContent>
+                            <div className="text-2xl font-bold">{stats.dietitians}</div>
+                        </CardContent>
+                    </Card>
+                </div>
+            )}
 
             {/* Actions Grid - Removed Redundant Active Program/Diet Types Cards */}
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Plus, Pencil, Trash2, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -8,6 +8,11 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { TagInput } from '@/components/ui/tag-input'
 import { RichTagInput, RichTag } from '@/components/ui/rich-tag-input'
+import { resolveTeamScopeContextFromAuth } from '@/lib/team-scope'
+import {
+    deleteProgramDietTypeOverride,
+    saveProgramDietTypeOverride,
+} from '@/lib/program-diet-type-overrides'
 
 const AVAILABLE_DIET_TAGS = [
     { id: 'KETOGENIC', label: 'Ketojenik' },
@@ -22,7 +27,19 @@ const AVAILABLE_DIET_TAGS = [
 
 // ... (imports remain)
 
-export function DietTypesEditor({ dietTypes, onUpdate, patientId = null }: { dietTypes: any[], onUpdate: () => void, patientId?: string | null }) {
+export function DietTypesEditor({
+    dietTypes,
+    onUpdate,
+    patientId = null,
+    programTemplateId = null,
+    forcedMode
+}: {
+    dietTypes: any[],
+    onUpdate: () => void,
+    patientId?: string | null,
+    programTemplateId?: string | null,
+    forcedMode?: 'global' | 'team'
+}) {
     // const supabase = createClientComponentClient()
     const [editingId, setEditingId] = useState<string | null>(null)
     const [editForm, setEditForm] = useState({
@@ -41,12 +58,64 @@ export function DietTypesEditor({ dietTypes, onUpdate, patientId = null }: { die
         banned_tags: [] as RichTag[]
     })
     const [saving, setSaving] = useState(false)
+    const [teamOwnerId, setTeamOwnerId] = useState<string | null>(null)
+    const [isTeamScopedContext, setIsTeamScopedContext] = useState(false)
+    const [isProgramScopedContext, setIsProgramScopedContext] = useState(false)
+
+    useEffect(() => {
+        setIsProgramScopedContext(!!programTemplateId)
+
+        if (patientId) {
+            setTeamOwnerId(null)
+            setIsTeamScopedContext(false)
+            return
+        }
+
+        let mounted = true
+        const resolveScope = async () => {
+            try {
+                let ctx = await resolveTeamScopeContextFromAuth()
+                const canForceTeamModeForAdminDoctor =
+                    forcedMode === 'team' &&
+                    ctx.role === 'doctor' &&
+                    ctx.canUseGlobal &&
+                    !!ctx.userId
+
+                if (canForceTeamModeForAdminDoctor && ctx.userId) {
+                    ctx = {
+                        ...ctx,
+                        canUseGlobal: false,
+                        teamOwnerId: ctx.userId
+                    }
+                }
+
+                const isTeamScoped =
+                    (ctx.role === 'doctor' || ctx.role === 'dietitian') &&
+                    !!ctx.teamOwnerId &&
+                    !ctx.canUseGlobal
+
+                if (!mounted) return
+                setIsTeamScopedContext(isTeamScoped)
+                setTeamOwnerId(isTeamScoped ? ctx.teamOwnerId : null)
+            } catch (error) {
+                console.warn('DietTypesEditor team scope resolve failed:', error)
+                if (!mounted) return
+                setIsTeamScopedContext(false)
+                setTeamOwnerId(null)
+            }
+        }
+
+        resolveScope()
+        return () => {
+            mounted = false
+        }
+    }, [patientId, forcedMode, programTemplateId])
 
     // ... (helpers remain: stringToKeywords, normalizeForTag, uniqueTags, toggleTag)
     const normalizeForTag = (text: string) => {
         let t = text.toUpperCase()
-            .replace(/Ğ/g, 'G').replace(/Ü/g, 'U').replace(/Ş/g, 'S')
-            .replace(/İ/g, 'I').replace(/Ö/g, 'O').replace(/Ç/g, 'C')
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
             .replace(/[\s\-]/g, '_').replace(/[^A-Z0-9_]/g, '')
 
         const MAPPING: Record<string, string> = {
@@ -158,8 +227,55 @@ export function DietTypesEditor({ dietTypes, onUpdate, patientId = null }: { die
                 banned_details: mergedDetails // New column
             }
 
-            // 1) Shadow Copy or 2) Update
-            if (patientId && !original.patient_id) {
+            // 1) Program override, 2) Team override, 3) Patient shadow copy, 4) Direct update
+            if (isProgramScopedContext && programTemplateId) {
+                const { data: authData } = await supabase.auth.getUser()
+                const currentUserId = authData.user?.id
+                if (!currentUserId) throw new Error('Oturum bulunamadı.')
+
+                const baseDietTypeId = original.base_diet_type_id || original.id
+                const { error } = await saveProgramDietTypeOverride({
+                    programTemplateId,
+                    teamOwnerId: isTeamScopedContext ? teamOwnerId : null,
+                    baseDietTypeId,
+                    payload: updatePayload,
+                    createdBy: currentUserId
+                })
+
+                if (error) throw new Error(error.message)
+                setEditingId(null)
+                onUpdate()
+            } else if (isTeamScopedContext && teamOwnerId) {
+                const { data: authData } = await supabase.auth.getUser()
+                const currentUserId = authData.user?.id
+                if (!currentUserId) throw new Error('Oturum bulunamadı.')
+
+                const baseDietTypeId = original.base_diet_type_id || original.id
+                const { error } = await supabase
+                    .from('team_diet_type_overrides')
+                    .upsert(
+                        {
+                            team_owner_id: teamOwnerId,
+                            base_diet_type_id: baseDietTypeId,
+                            name: updatePayload.name,
+                            abbreviation: updatePayload.abbreviation,
+                            description: updatePayload.description,
+                            carb_factor: updatePayload.carb_factor,
+                            protein_factor: updatePayload.protein_factor,
+                            fat_factor: updatePayload.fat_factor,
+                            allowed_tags: updatePayload.allowed_tags,
+                            banned_keywords: updatePayload.banned_keywords,
+                            banned_tags: updatePayload.banned_tags,
+                            banned_details: updatePayload.banned_details,
+                            created_by: currentUserId
+                        },
+                        { onConflict: 'team_owner_id,base_diet_type_id' }
+                    )
+
+                if (error) throw new Error(error.message)
+                setEditingId(null)
+                onUpdate()
+            } else if (patientId && !original.patient_id) {
                 // Shadow Copy Logic
                 const { data: newDietType, error } = await supabase.from('diet_types').insert({
                     patient_id: patientId,
@@ -193,8 +309,18 @@ export function DietTypesEditor({ dietTypes, onUpdate, patientId = null }: { die
     }
 
     const addNew = async () => {
+        if (isProgramScopedContext) {
+            alert('Program modunda yeni diyet turu eklenemez. Mevcut turleri programa ozel duzenleyebilirsiniz.')
+            return
+        }
+
+        if (isTeamScopedContext) {
+            alert('Takım modunda yeni diyet türü ekleme henüz açık değil. Mevcut global diyet türlerini düzenleyerek takımınıza özel hale getirebilirsiniz.')
+            return
+        }
+
         if (!newForm.name.trim()) {
-            alert('Diyet türü adı gerekli')
+            alert('Diyet türü adı gerekli.')
             return
         }
         setSaving(true)
@@ -231,6 +357,16 @@ export function DietTypesEditor({ dietTypes, onUpdate, patientId = null }: { die
     }
 
     const deleteDietType = async (id: string, name: string) => {
+        if (isProgramScopedContext) {
+            alert('Program modunda diyet turu silinemez. Geri donmek icin ust katmana don butonunu kullanin.')
+            return
+        }
+
+        if (isTeamScopedContext) {
+            alert('Takım modunda global diyet türü silinemez. Geri dönmek için "Globale Dön" ikonunu kullanın.')
+            return
+        }
+
         if (!confirm(`"${name}" diyet türünü silmek istediğinize emin misiniz?`)) return
         setSaving(true)
         const { error } = await supabase.from('diet_types').delete().eq('id', id)
@@ -239,7 +375,53 @@ export function DietTypesEditor({ dietTypes, onUpdate, patientId = null }: { die
     }
 
     const handleReset = async (dt: any) => {
-        if (!confirm(`"${dt.name}" için yaptığınız özelleştirmeler silinecek ve orijinal Global ayarlara dönülecek. Onaylıyor musunuz?`)) return
+        if (isProgramScopedContext && programTemplateId) {
+            if (dt.scope_source !== 'program') {
+                alert('Bu diyet türü zaten üst katmandan miras geliyor.')
+                return
+            }
+
+            if (!confirm(`"${dt.name}" için program özelleştirmesi silinecek ve üst katman mirasına dönülecek. Onaylıyor musunuz?`)) return
+
+            const baseDietTypeId = dt.base_diet_type_id || dt.id
+            const { error } = await deleteProgramDietTypeOverride({
+                programTemplateId,
+                teamOwnerId: isTeamScopedContext ? teamOwnerId : null,
+                baseDietTypeId
+            })
+
+            if (error) {
+                alert('Hata (program özelleştirmesini silme): ' + error.message)
+            } else {
+                onUpdate()
+            }
+            return
+        }
+
+        if (isTeamScopedContext && teamOwnerId) {
+            if (dt.scope_source !== 'team') {
+                alert('Bu diyet türü zaten global mirastan geliyor.')
+                return
+            }
+
+            if (!confirm(`"${dt.name}" için takım özelleştirmesi silinecek ve global mirasa dönülecek. Onaylıyor musunuz?`)) return
+
+            const baseDietTypeId = dt.base_diet_type_id || dt.id
+            const { error } = await supabase
+                .from('team_diet_type_overrides')
+                .delete()
+                .eq('team_owner_id', teamOwnerId)
+                .eq('base_diet_type_id', baseDietTypeId)
+
+            if (error) {
+                alert('Hata (takım özelleştirmesini silme): ' + error.message)
+            } else {
+                onUpdate()
+            }
+            return
+        }
+
+        if (!confirm(`"${dt.name}" için yaptığınız özelleştirmeler silinecek ve orijinal global ayarlara dönülecek. Onaylıyor musunuz?`)) return
 
         // 1. Revert weeks to parent ID
         const { error: updateError } = await supabase
@@ -248,7 +430,7 @@ export function DietTypesEditor({ dietTypes, onUpdate, patientId = null }: { die
             .eq('assigned_diet_type_id', dt.id)
 
         if (updateError) {
-            alert('Hata (Haftaları güncelleme): ' + updateError.message)
+            alert('Hata (haftaları güncelleme): ' + updateError.message)
             return
         }
 
@@ -259,7 +441,7 @@ export function DietTypesEditor({ dietTypes, onUpdate, patientId = null }: { die
             .eq('id', dt.id)
 
         if (deleteError) {
-            alert('Hata (Özelleştirmeyi silme): ' + deleteError.message)
+            alert('Hata (özelleştirmeyi silme): ' + deleteError.message)
         } else {
             onUpdate()
         }
@@ -270,15 +452,21 @@ export function DietTypesEditor({ dietTypes, onUpdate, patientId = null }: { die
             {/* Add Button */}
             <div className="flex justify-between items-center">
                 <p className="text-sm text-gray-500">
-                    {patientId ? 'Bu hastaya özel veya genel diyet türlerini yönetin' : 'Sistem genelindeki diyet türlerini yönetin'}
+                    {patientId
+                        ? 'Bu hastaya özel veya genel diyet türlerini yönetin'
+                        : isProgramScopedContext
+                            ? 'Program katmanında diyet türlerini üst katmandan miras alarak özelleştiriyorsunuz'
+                            : isTeamScopedContext
+                            ? 'Takım katmanında global diyet türlerinin özelleştirmelerini yönetiyorsunuz'
+                            : 'Sistem genelindeki diyet türlerini yönetin'}
                 </p>
-                <Button size="sm" onClick={() => setIsAdding(true)} disabled={isAdding}>
-                    <Plus size={14} className="mr-1" /> {patientId ? 'Hastaya Özel Ekle' : 'Yeni Ekle'}
+                <Button size="sm" onClick={() => setIsAdding(true)} disabled={isAdding || isTeamScopedContext || isProgramScopedContext}>
+                    <Plus size={14} className="mr-1" /> {patientId ? 'Hastaya Özel Ekle' : isProgramScopedContext ? 'Programda Kapalı' : isTeamScopedContext ? 'Takımda Kapalı' : 'Yeni Ekle'}
                 </Button>
             </div>
 
             {/* New Diet Type Form */}
-            {isAdding && (
+            {isAdding && !isTeamScopedContext && !isProgramScopedContext && (
                 <div className={`border rounded-lg p-4 space-y-3 ${patientId ? 'bg-amber-50 border-amber-200' : 'bg-blue-50 border-blue-200'}`}>
                     <h4 className="font-medium text-sm flex items-center gap-2">
                         {patientId ? <span className="text-[10px] bg-amber-200 px-1 rounded text-amber-800">Kişisel</span> : <span className="text-[10px] bg-blue-200 px-1 rounded text-blue-800">Global</span>}
@@ -288,11 +476,11 @@ export function DietTypesEditor({ dietTypes, onUpdate, patientId = null }: { die
                     <div className="grid grid-cols-2 gap-3">
                         <div>
                             <Label className="text-xs">Adı *</Label>
-                            <Input value={newForm.name} onChange={e => setNewForm({ ...newForm, name: e.target.value })} placeholder="ör: Eliminasyonlu Ketojenik" />
+                            <Input value={newForm.name} onChange={e => setNewForm({ ...newForm, name: e.target.value })} placeholder="Örn: Eliminasyonlu Ketojenik" />
                         </div>
                         <div>
                             <Label className="text-xs">Kısaltma</Label>
-                            <Input value={newForm.abbreviation} onChange={e => setNewForm({ ...newForm, abbreviation: e.target.value })} placeholder="ör: EK" maxLength={3} />
+                            <Input value={newForm.abbreviation} onChange={e => setNewForm({ ...newForm, abbreviation: e.target.value })} placeholder="Örn: EK" maxLength={3} />
                         </div>
                     </div>
                     <div>
@@ -332,7 +520,7 @@ export function DietTypesEditor({ dietTypes, onUpdate, patientId = null }: { die
                     <div>
                         <Label className="text-xs">Yasaklı Kelimeler (Yemek İsminde Geçen)</Label>
                         <RichTagInput
-                            placeholder="ör: Şeker; Uyarı Mesajı; Ekstra Bilgi (Enter ile ekle)"
+                            placeholder="Örn: Şeker; Uyarı Mesajı; Ekstra Bilgi (Enter ile ekle)"
                             value={newForm.banned_keywords}
                             onChange={(val) => setNewForm({ ...newForm, banned_keywords: val })}
                         />
@@ -341,7 +529,7 @@ export function DietTypesEditor({ dietTypes, onUpdate, patientId = null }: { die
                     <div>
                         <Label className="text-xs">Yasaklı Tagler (Yemek İçeriği)</Label>
                         <RichTagInput
-                            placeholder="ör: Gluten; Çölyak Riski; (Enter ile ekle)"
+                            placeholder="Örn: Gluten; Çölyak Riski; (Enter ile ekle)"
                             value={newForm.banned_tags}
                             onChange={(val) => setNewForm({ ...newForm, banned_tags: val })}
                         />
@@ -376,6 +564,16 @@ export function DietTypesEditor({ dietTypes, onUpdate, patientId = null }: { die
                                 {patientId && !dt.patient_id && (
                                     <div className="text-xs bg-blue-100 text-blue-700 p-2 rounded flex items-center gap-2">
                                         <span className="font-bold">Bilgi:</span> Bu genel şablonu düzenliyorsunuz. Kaydettiğinizde kişisel bir kopya oluşturulacak.
+                                    </div>
+                                )}
+                                {isTeamScopedContext && !isProgramScopedContext && dt.scope_source !== 'team' && (
+                                    <div className="text-xs bg-violet-100 text-violet-700 p-2 rounded flex items-center gap-2">
+                                        <span className="font-bold">Bilgi:</span> Bu global şablonu düzenliyorsunuz. Kaydettiğinizde takıma özel override oluşturulacak.
+                                    </div>
+                                )}
+                                {isProgramScopedContext && dt.scope_source !== 'program' && (
+                                    <div className="text-xs bg-purple-100 text-purple-700 p-2 rounded flex items-center gap-2">
+                                        <span className="font-bold">Bilgi:</span> Bu üst katman şablonunu düzenliyorsunuz. Kaydedince programa özel override oluşacak.
                                     </div>
                                 )}
 
@@ -419,7 +617,7 @@ export function DietTypesEditor({ dietTypes, onUpdate, patientId = null }: { die
                                 <div>
                                     <Label className="text-xs">Yasaklı Kelimeler (Yemek İsminde Geçen)</Label>
                                     <RichTagInput
-                                        placeholder="ör: Şeker; Uyarı; Bilgi (Enter ile ekle)"
+                                        placeholder="Örn: Şeker; Uyarı; Bilgi (Enter ile ekle)"
                                         value={editForm.banned_keywords}
                                         onChange={(val) => setEditForm({ ...editForm, banned_keywords: val })}
                                     />
@@ -428,7 +626,7 @@ export function DietTypesEditor({ dietTypes, onUpdate, patientId = null }: { die
                                 <div>
                                     <Label className="text-xs">Yasaklı Tagler (Yemek İçeriği)</Label>
                                     <RichTagInput
-                                        placeholder="ör: Gluten; Uyarı; Bilgi (Enter ile ekle)"
+                                        placeholder="Örn: Gluten; Uyarı; Bilgi (Enter ile ekle)"
                                         value={editForm.banned_tags}
                                         onChange={(val) => setEditForm({ ...editForm, banned_tags: val })}
                                     />
@@ -445,7 +643,11 @@ export function DietTypesEditor({ dietTypes, onUpdate, patientId = null }: { die
                                     <div className="flex items-center gap-2">
                                         <span className="font-medium">{dt.name}</span>
                                         <span className="text-xs bg-gray-100 px-1.5 py-0.5 rounded">{dt.abbreviation}</span>
-                                        {dt.patient_id ? (
+                                        {dt.scope_source === 'program' ? (
+                                            <span className="text-[9px] bg-purple-100 text-purple-700 px-1 rounded border border-purple-200">Program</span>
+                                        ) : dt.scope_source === 'team' ? (
+                                            <span className="text-[9px] bg-violet-100 text-violet-700 px-1 rounded border border-violet-200">Takım</span>
+                                        ) : dt.patient_id ? (
                                             <span className="text-[9px] bg-amber-100 text-amber-700 px-1 rounded border border-amber-200">Kişisel</span>
                                         ) : (
                                             <span className="text-[9px] bg-blue-50 text-blue-600 px-1 rounded border border-blue-100">Global</span>
@@ -465,17 +667,19 @@ export function DietTypesEditor({ dietTypes, onUpdate, patientId = null }: { die
                                     </div>
                                 </div>
                                 <div className="flex gap-1">
-                                    {dt.parent_diet_type_id && (
-                                        <Button size="sm" variant="ghost" className="text-amber-500 hover:text-amber-700" onClick={() => handleReset(dt)} title="Fabrika Ayarlarına Dön (Global'e Sıfırla)">
+                                    {(dt.parent_diet_type_id || (isTeamScopedContext && dt.scope_source === 'team') || (isProgramScopedContext && dt.scope_source === 'program')) && (
+                                        <Button size="sm" variant="ghost" className="text-amber-500 hover:text-amber-700" onClick={() => handleReset(dt)} title="Fabrika ayarlarına dön (Global'e sıfırla)">
                                             <RotateCcw size={14} />
                                         </Button>
                                     )}
                                     <Button size="sm" variant="ghost" onClick={() => startEdit(dt)}>
                                         <Pencil size={14} />
                                     </Button>
-                                    <Button size="sm" variant="ghost" className="text-red-500 hover:text-red-700" onClick={() => deleteDietType(dt.id, dt.name)}>
-                                        <Trash2 size={14} />
-                                    </Button>
+                                    {!isTeamScopedContext && !isProgramScopedContext && (
+                                        <Button size="sm" variant="ghost" className="text-red-500 hover:text-red-700" onClick={() => deleteDietType(dt.id, dt.name)}>
+                                            <Trash2 size={14} />
+                                        </Button>
+                                    )}
                                 </div>
                             </div>
                         )}

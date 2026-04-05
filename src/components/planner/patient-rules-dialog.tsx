@@ -34,6 +34,10 @@ import {
     useSortable
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
+import { resolveTeamScopeContextFromAuth } from "@/lib/team-scope"
+
+// Sentinel rule name used to signal "use global rules, skip program/team inheritance"
+const USE_GLOBAL_SENTINEL = '__use_global__'
 
 interface PatientRulesDialogProps {
     open: boolean
@@ -48,7 +52,7 @@ interface PatientRulesDialogProps {
 export function PatientRulesDialog({ open, onOpenChange, patientId, programTemplateId, focusRuleId, focusRuleName, onRulesChanged }: PatientRulesDialogProps) {
     const normalizeRuleName = (value?: string | null) => (value || '')
         .toLocaleLowerCase('tr-TR')
-        .replace(/[^a-z0-9ğüşöçıİĞÜŞÖÇ]+/g, ' ')
+        .replace(/[^a-z0-9ğıüşöçİĞÜŞÖÇ]+/g, ' ')
         .replace(/\s+/g, ' ')
         .trim()
 
@@ -72,17 +76,43 @@ export function PatientRulesDialog({ open, onOpenChange, patientId, programTempl
 
     const [loading, setLoading] = useState(false)
     const [globalRules, setGlobalRules] = useState<PlanningRule[]>([])
+    const [teamRules, setTeamRules] = useState<PlanningRule[]>([])
     const [programRules, setProgramRules] = useState<PlanningRule[]>([])
     const [patientRules, setPatientRules] = useState<PlanningRule[]>([])
     const [hasPatientRules, setHasPatientRules] = useState(false)
+    const [hasGlobalSentinel, setHasGlobalSentinel] = useState(false)
     const [ruleDialogOpen, setRuleDialogOpen] = useState(false)
     const [editingRule, setEditingRule] = useState<PlanningRule | null>(null)
-    const [sourceLabel, setSourceLabel] = useState<'global' | 'program'>('global')
     const [lastFocusKey, setLastFocusKey] = useState<string | null>(null)
+    const [teamOwnerId, setTeamOwnerId] = useState<string | null>(null)
+    const [isTeamScopedContext, setIsTeamScopedContext] = useState(false)
+
+    const applyCurrentTeamFilter = useCallback((query: any) => {
+        if (isTeamScopedContext && teamOwnerId) {
+            return query.eq('team_owner_id', teamOwnerId)
+        }
+        return query.is('team_owner_id', null)
+    }, [isTeamScopedContext, teamOwnerId])
 
     const fetchRules = useCallback(async (silent: boolean = false) => {
         if (!silent) setLoading(true)
         try {
+            const { userId, role, canUseGlobal, teamOwnerId: resolvedTeamOwnerId } = await resolveTeamScopeContextFromAuth()
+            const hasTeamScopedRole = role === 'doctor' || role === 'dietitian'
+            const effectiveTeamOwnerId = hasTeamScopedRole
+                ? ((role === 'doctor' && canUseGlobal && userId) ? userId : resolvedTeamOwnerId)
+                : null
+
+            setIsTeamScopedContext(!!effectiveTeamOwnerId)
+            setTeamOwnerId(effectiveTeamOwnerId || null)
+
+            const applyScopedTeamFilter = (query: any) => {
+                if (effectiveTeamOwnerId) {
+                    return query.eq('team_owner_id', effectiveTeamOwnerId)
+                }
+                return query.is('team_owner_id', null)
+            }
+
             // Fetch global rules
             const { data: gRules } = await supabase
                 .from('planning_rules')
@@ -91,38 +121,57 @@ export function PatientRulesDialog({ open, onOpenChange, patientId, programTempl
                 .order('sort_order', { ascending: true })
                 .order('priority', { ascending: false })
 
-            setGlobalRules(gRules || [])
+            const resolvedGlobalRules = (gRules || []) as unknown as PlanningRule[]
+            setGlobalRules(resolvedGlobalRules)
 
-            // Fetch program-specific rules (if patient has a program)
-            if (programTemplateId) {
-                const { data: progRules } = await supabase
+            // Fetch team base rules (if team context exists)
+            let resolvedTeamRules: PlanningRule[] = []
+            if (effectiveTeamOwnerId) {
+                const { data: tRules } = await supabase
                     .from('planning_rules')
                     .select('*')
-                    .eq('scope', 'program')
-                    .eq('program_template_id', programTemplateId)
+                    .eq('scope', 'team')
+                    .eq('team_owner_id', effectiveTeamOwnerId)
                     .order('sort_order', { ascending: true })
                     .order('priority', { ascending: false })
-                setProgramRules(progRules || [])
-            } else {
-                setProgramRules([])
+                resolvedTeamRules = (tRules || []) as unknown as PlanningRule[]
             }
+            setTeamRules(resolvedTeamRules)
+
+            // Fetch program-specific rules (if patient has a program)
+            let resolvedProgramRules: PlanningRule[] = []
+            if (programTemplateId) {
+                const { data: progRules } = await applyScopedTeamFilter(
+                    supabase
+                        .from('planning_rules')
+                        .select('*')
+                        .eq('scope', 'program')
+                        .eq('program_template_id', programTemplateId)
+                )
+                    .order('sort_order', { ascending: true })
+                    .order('priority', { ascending: false })
+                resolvedProgramRules = (progRules || []) as unknown as PlanningRule[]
+            }
+            setProgramRules(resolvedProgramRules)
 
             // Fetch patient-specific rules
-            const { data: pRules } = await supabase
-                .from('planning_rules')
-                .select('*')
-                .eq('scope', 'patient')
-                .eq('patient_id', patientId)
+            const { data: pRules } = await applyScopedTeamFilter(
+                supabase
+                    .from('planning_rules')
+                    .select('*')
+                    .eq('scope', 'patient')
+                    .eq('patient_id', patientId)
+            )
                 .order('sort_order', { ascending: true })
                 .order('priority', { ascending: false })
 
-            setPatientRules(pRules || [])
-            setHasPatientRules((pRules?.length || 0) > 0)
-
-            // Determine source label
-            if ((pRules?.length || 0) === 0) {
-                setSourceLabel(programTemplateId ? 'program' : 'global')
-            }
+            const resolvedPatientRules = (pRules || []) as unknown as PlanningRule[]
+            const sentinelFound = resolvedPatientRules.some(r => r.name === USE_GLOBAL_SENTINEL)
+            setHasGlobalSentinel(sentinelFound)
+            // Filter out sentinel from visible patient rules
+            const visiblePatientRules = resolvedPatientRules.filter(r => r.name !== USE_GLOBAL_SENTINEL)
+            setPatientRules(visiblePatientRules)
+            setHasPatientRules(visiblePatientRules.length > 0 || sentinelFound)
         } catch (e) {
             console.error("Error fetching rules:", e)
         }
@@ -173,28 +222,43 @@ export function PatientRulesDialog({ open, onOpenChange, patientId, programTempl
                     )
 
                     if (candidates.length > 0) {
-                        const { data: patRules } = await supabase
-                            .from('planning_rules')
-                            .select('*')
-                            .eq('scope', 'patient')
-                            .eq('patient_id', patientId)
-                            .in('name', candidates)
-                            .limit(1)
+                        const { data: patRules } = await applyCurrentTeamFilter(
+                            supabase
+                                .from('planning_rules')
+                                .select('*')
+                                .eq('scope', 'patient')
+                                .eq('patient_id', patientId)
+                                .in('name', candidates)
+                        ).limit(1)
                         if (patRules && patRules.length > 0) {
                             rawRule = patRules[0] as PlanningRule
                         }
                     }
 
                     if (!rawRule && candidates.length > 0 && programTemplateId) {
-                        const { data: progRules } = await supabase
-                            .from('planning_rules')
-                            .select('*')
-                            .eq('scope', 'program')
-                            .eq('program_template_id', programTemplateId)
-                            .in('name', candidates)
-                            .limit(1)
+                        const { data: progRules } = await applyCurrentTeamFilter(
+                            supabase
+                                .from('planning_rules')
+                                .select('*')
+                                .eq('scope', 'program')
+                                .eq('program_template_id', programTemplateId)
+                                .in('name', candidates)
+                        ).limit(1)
                         if (progRules && progRules.length > 0) {
                             rawRule = progRules[0] as PlanningRule
+                        }
+                    }
+
+                    if (!rawRule && candidates.length > 0 && isTeamScopedContext && teamOwnerId) {
+                        const { data: teamBaseRules } = await applyCurrentTeamFilter(
+                            supabase
+                                .from('planning_rules')
+                                .select('*')
+                                .eq('scope', 'team')
+                                .in('name', candidates)
+                        ).limit(1)
+                        if (teamBaseRules && teamBaseRules.length > 0) {
+                            rawRule = teamBaseRules[0] as PlanningRule
                         }
                     }
 
@@ -222,18 +286,30 @@ export function PatientRulesDialog({ open, onOpenChange, patientId, programTempl
 
                     // Fallback: fuzzy match by normalized name if exact name lookup misses.
                     if (!rawRule && candidates.length > 0) {
-                        const [patientScan, programScan, globalScan, globalNullScan] = await Promise.all([
-                            supabase
-                                .from('planning_rules')
-                                .select('*')
-                                .eq('scope', 'patient')
-                                .eq('patient_id', patientId),
-                            programTemplateId
-                                ? supabase
+                        const [patientScan, programScan, teamScan, globalScan, globalNullScan] = await Promise.all([
+                            applyCurrentTeamFilter(
+                                supabase
                                     .from('planning_rules')
                                     .select('*')
-                                    .eq('scope', 'program')
-                                    .eq('program_template_id', programTemplateId)
+                                    .eq('scope', 'patient')
+                                    .eq('patient_id', patientId)
+                            ),
+                            programTemplateId
+                                ? applyCurrentTeamFilter(
+                                    supabase
+                                        .from('planning_rules')
+                                        .select('*')
+                                        .eq('scope', 'program')
+                                        .eq('program_template_id', programTemplateId)
+                                )
+                                : Promise.resolve({ data: [], error: null } as any),
+                            (isTeamScopedContext && teamOwnerId)
+                                ? applyCurrentTeamFilter(
+                                    supabase
+                                        .from('planning_rules')
+                                        .select('*')
+                                        .eq('scope', 'team')
+                                )
                                 : Promise.resolve({ data: [], error: null } as any),
                             supabase
                                 .from('planning_rules')
@@ -248,6 +324,7 @@ export function PatientRulesDialog({ open, onOpenChange, patientId, programTempl
                         const pool = [
                             ...(patientScan.data || []),
                             ...(programScan.data || []),
+                            ...(teamScan.data || []),
                             ...(globalScan.data || []),
                             ...(globalNullScan.data || [])
                         ] as PlanningRule[]
@@ -283,13 +360,14 @@ export function PatientRulesDialog({ open, onOpenChange, patientId, programTempl
                 if (rawRule.scope === 'patient' && rawRule.patient_id === patientId) {
                     editableRule = rawRule
                 } else {
-                    const { data: existingClone } = await supabase
-                        .from('planning_rules')
-                        .select('*')
-                        .eq('scope', 'patient')
-                        .eq('patient_id', patientId)
-                        .eq('source_rule_id', rawRule.id as string)
-                        .maybeSingle()
+                    const { data: existingClone } = await applyCurrentTeamFilter(
+                        supabase
+                            .from('planning_rules')
+                            .select('*')
+                            .eq('scope', 'patient')
+                            .eq('patient_id', patientId)
+                            .eq('source_rule_id', rawRule.id as string)
+                    ).maybeSingle()
 
                     if (existingClone) {
                         editableRule = existingClone as PlanningRule
@@ -321,14 +399,23 @@ export function PatientRulesDialog({ open, onOpenChange, patientId, programTempl
         return () => {
             cancelled = true
         }
-    }, [open, focusRuleId, focusRuleName, lastFocusKey, patientId, programTemplateId, hasPatientRules, ensurePatientRules, fetchRules, onRulesChanged])
+    }, [open, focusRuleId, focusRuleName, lastFocusKey, patientId, programTemplateId, hasPatientRules, ensurePatientRules, fetchRules, onRulesChanged, applyCurrentTeamFilter])
 
-    // Determine the base rules to show (program > global)
-    const baseRules = programRules.length > 0 ? programRules : globalRules
+    // Determine the base rules to show (program > team > global)
+    const baseRules = programRules.length > 0
+        ? programRules
+        : teamRules.length > 0
+            ? teamRules
+            : globalRules
     const isProgramInherited = !hasPatientRules && programRules.length > 0
+    const isTeamInherited = !hasPatientRules && programRules.length === 0 && teamRules.length > 0
+    const canMutateRules = hasPatientRules || isProgramInherited || isTeamInherited
+    const inheritedLabel = isProgramInherited ? 'Program' : isTeamInherited ? 'Takım' : 'Global'
+    const hasExplicitProgramRules = programRules.length > 0
+    const hasExplicitTeamRules = teamRules.length > 0
 
     // Find new base rules that patient doesn't have
-    const newGlobalRules = baseRules.filter(g => {
+    const newInheritedRules = baseRules.filter(g => {
         return !patientRules.some(p => p.source_rule_id === g.id)
     })
 
@@ -345,6 +432,7 @@ export function PatientRulesDialog({ open, onOpenChange, patientId, programTempl
             definition: rule.definition,
             scope: 'patient' as const,
             patient_id: patientId,
+            team_owner_id: isTeamScopedContext ? teamOwnerId : null,
             source_rule_id: rule.id,
             sort_order: rule.sort_order ?? index
         }))
@@ -368,6 +456,7 @@ export function PatientRulesDialog({ open, onOpenChange, patientId, programTempl
             definition: baseRule.definition,
             scope: 'patient' as const,
             patient_id: patientId,
+            team_owner_id: isTeamScopedContext ? teamOwnerId : null,
             source_rule_id: baseRule.id,
             sort_order: baseRule.sort_order ?? patientRules.length
         }
@@ -380,13 +469,14 @@ export function PatientRulesDialog({ open, onOpenChange, patientId, programTempl
 
         if (error) {
             // Fallback: if insertion failed (e.g. duplicate), try to find an existing patient rule by name.
-            const { data: existingByName } = await supabase
-                .from('planning_rules')
-                .select('*')
-                .eq('scope', 'patient')
-                .eq('patient_id', patientId)
-                .eq('name', baseRule.name)
-                .limit(1)
+            const { data: existingByName } = await applyCurrentTeamFilter(
+                supabase
+                    .from('planning_rules')
+                    .select('*')
+                    .eq('scope', 'patient')
+                    .eq('patient_id', patientId)
+                    .eq('name', baseRule.name)
+            ).limit(1)
             if (existingByName && existingByName.length > 0) {
                 return existingByName[0] as PlanningRule
             }
@@ -412,11 +502,17 @@ export function PatientRulesDialog({ open, onOpenChange, patientId, programTempl
     }
 
     // Revert to program rules (delete patient rules, system falls back to program)
-    async function handleRevertToProgram() {
-        if (!confirm("Tüm kişisel kurallar silinecek ve program kurallarına dönülecek. Emin misiniz?")) return
+    async function handleRevertToUpperLayer() {
+        const upperLabel = programTemplateId
+            ? 'program kurallarına'
+            : teamRules.length > 0
+                ? 'takım kurallarına'
+                : 'global kurallara'
+        if (!confirm(`Tüm kişisel kurallar silinecek ve ${upperLabel} dönülecek. Emin misiniz?`)) return
         setLoading(true)
 
         try {
+            // Delete ALL patient rules (ignore team_owner_id to prevent orphans)
             const { error } = await supabase
                 .from('planning_rules')
                 .delete()
@@ -428,7 +524,7 @@ export function PatientRulesDialog({ open, onOpenChange, patientId, programTempl
             await fetchRules()
             onRulesChanged?.()
         } catch (e: any) {
-            console.error("Error reverting to program:", e)
+            console.error("Error reverting to upper layer:", e)
             alert("Hata: " + e.message)
         }
         setLoading(false)
@@ -440,7 +536,7 @@ export function PatientRulesDialog({ open, onOpenChange, patientId, programTempl
         setLoading(true)
 
         try {
-            // 1. Delete all patient rules
+            // 1. Delete ALL patient rules (ignore team_owner_id to prevent orphans)
             const { error } = await supabase
                 .from('planning_rules')
                 .delete()
@@ -449,30 +545,75 @@ export function PatientRulesDialog({ open, onOpenChange, patientId, programTempl
 
             if (error) throw error
 
-            // 2. If patient has a program, clone global rules to patient scope
-            //    This overrides the program rules in the inheritance chain
-            if (programTemplateId && globalRules.length > 0) {
-                const rulesToInsert = globalRules.map(rule => ({
-                    name: rule.name,
-                    description: rule.description,
-                    rule_type: rule.rule_type,
-                    priority: rule.priority,
-                    is_active: rule.is_active,
-                    definition: rule.definition,
-                    scope: 'patient' as const,
-                    patient_id: patientId,
-                    source_rule_id: rule.id
-                }))
-
+            // 2. If patient has program or team rules, insert a sentinel marker
+            //    so the engine knows to skip inheritance and use global rules directly.
+            //    Without the sentinel, the engine would fall back to program/team rules.
+            if (programTemplateId || teamRules.length > 0) {
                 await supabase
                     .from('planning_rules')
-                    .insert(rulesToInsert)
+                    .insert({
+                        name: USE_GLOBAL_SENTINEL,
+                        description: 'Sentinel: bu hasta global kuralları kullanır',
+                        rule_type: 'frequency',
+                        priority: 0,
+                        is_active: false,
+                        definition: { type: 'frequency', data: {} },
+                        scope: 'patient',
+                        patient_id: patientId,
+                        team_owner_id: isTeamScopedContext ? teamOwnerId : null
+                    })
             }
 
             await fetchRules()
             onRulesChanged?.()
         } catch (e: any) {
             console.error("Error reverting to global:", e)
+            alert("Hata: " + e.message)
+        }
+        setLoading(false)
+    }
+
+    // Revert to team rules (delete patient rules, then clone team rules to override program)
+    async function handleRevertToTeam() {
+        if (teamRules.length === 0) {
+            alert("Takım kuralı bulunamadı.")
+            return
+        }
+        if (!confirm("Tüm kişisel kurallar silinecek ve takım kurallarına dönülecek. Emin misiniz?")) return
+        setLoading(true)
+
+        try {
+            // 1. Delete ALL patient rules (ignore team_owner_id to prevent orphans)
+            const { error: deleteError } = await supabase
+                .from('planning_rules')
+                .delete()
+                .eq('scope', 'patient')
+                .eq('patient_id', patientId)
+            if (deleteError) throw deleteError
+
+            // 2. Clone team rules to patient scope
+            const rulesToInsert = teamRules.map(rule => ({
+                name: rule.name,
+                description: rule.description,
+                rule_type: rule.rule_type,
+                priority: rule.priority,
+                is_active: rule.is_active,
+                definition: rule.definition,
+                scope: 'patient' as const,
+                patient_id: patientId,
+                team_owner_id: isTeamScopedContext ? teamOwnerId : null,
+                source_rule_id: rule.id
+            }))
+
+            const { error: insertError } = await supabase
+                .from('planning_rules')
+                .insert(rulesToInsert)
+            if (insertError) throw insertError
+
+            await fetchRules()
+            onRulesChanged?.()
+        } catch (e: any) {
+            console.error("Error reverting to team:", e)
             alert("Hata: " + e.message)
         }
         setLoading(false)
@@ -554,6 +695,7 @@ export function PatientRulesDialog({ open, onOpenChange, patientId, programTempl
                     definition: baseRule.definition,
                     scope: 'patient',
                     patient_id: patientId,
+                    team_owner_id: isTeamScopedContext ? teamOwnerId : null,
                     source_rule_id: baseRule.id
                 })
 
@@ -571,7 +713,7 @@ export function PatientRulesDialog({ open, onOpenChange, patientId, programTempl
     async function handleAddAllNewGlobalRules() {
         setLoading(true)
         try {
-            const rulesToInsert = newGlobalRules.map(rule => ({
+            const rulesToInsert = newInheritedRules.map(rule => ({
                 name: rule.name,
                 description: rule.description,
                 rule_type: rule.rule_type,
@@ -580,6 +722,7 @@ export function PatientRulesDialog({ open, onOpenChange, patientId, programTempl
                 definition: rule.definition,
                 scope: 'patient',
                 patient_id: patientId,
+                team_owner_id: isTeamScopedContext ? teamOwnerId : null,
                 source_rule_id: rule.id
             }))
 
@@ -678,9 +821,12 @@ export function PatientRulesDialog({ open, onOpenChange, patientId, programTempl
     }
 
     // Always show rules: patient-specific if available, otherwise program/global
-    const displayRules = hasPatientRules
-        ? patientRules.filter(r => !r.is_ignored)
-        : baseRules
+    // If sentinel is active, show global rules (the sentinel overrides program/team)
+    const displayRules = hasGlobalSentinel
+        ? globalRules
+        : hasPatientRules
+            ? patientRules.filter(r => !r.is_ignored)
+            : baseRules
 
     return (
         <>
@@ -690,20 +836,28 @@ export function PatientRulesDialog({ open, onOpenChange, patientId, programTempl
                     <DialogHeader className="px-6 py-4 border-b bg-white shrink-0 z-10">
                         <DialogTitle className="flex items-center gap-2">
                             Planlama Kuralları
-                            {hasPatientRules ? (
-                                <Badge variant="default" className="bg-blue-600">🎯 Kişiselleştirildi</Badge>
+                            {hasGlobalSentinel ? (
+                                <Badge variant="default" className="bg-orange-600">Global (Manuel)</Badge>
+                            ) : hasPatientRules ? (
+                                <Badge variant="default" className="bg-blue-600">Kişiselleştirildi</Badge>
                             ) : isProgramInherited ? (
-                                <Badge variant="default" className="bg-purple-600">📋 Program Kuralları</Badge>
+                                <Badge variant="default" className="bg-purple-600">Program Kuralları</Badge>
+                            ) : isTeamInherited ? (
+                                <Badge variant="default" className="bg-violet-600">Takım Kuralları</Badge>
                             ) : (
-                                <Badge variant="secondary">🌐 Global</Badge>
+                                <Badge variant="secondary">Global</Badge>
                             )}
                         </DialogTitle>
                         <DialogDescription>
-                            {hasPatientRules
-                                ? "Bu hastaya özel kurallar aktif. Değişiklikler sadece bu hastayı etkiler."
-                                : isProgramInherited
-                                    ? "Programdan devralınan kurallar aktif. Herhangi bir değişiklik yaparsanız kurallar otomatik olarak kişiselleştirilir."
-                                    : "Tüm hastalar için geçerli global kurallar görüntüleniyor."
+                            {hasGlobalSentinel
+                                ? "Bu hasta global kuralları kullanıyor (program/takım kuralları atlanıyor)."
+                                : hasPatientRules
+                                    ? "Bu hastaya özel kurallar aktif. Değişiklikler sadece bu hastayı etkiler."
+                                    : isProgramInherited
+                                        ? "Programdan devralınan kurallar aktif. Değişiklik yaparsanız kurallar otomatik olarak kişiselleştirilir."
+                                        : isTeamInherited
+                                            ? "Takımdan devralınan kurallar aktif. Değişiklik yaparsanız kurallar otomatik olarak kişiselleştirilir."
+                                            : "Tüm hastalar için geçerli global kurallar görüntüleniyor."
                             }
                         </DialogDescription>
                     </DialogHeader>
@@ -711,25 +865,25 @@ export function PatientRulesDialog({ open, onOpenChange, patientId, programTempl
                     {/* Content Area - Scrollable */}
                     <div className="flex-1 min-h-0 overflow-y-auto p-6 bg-slate-50/50">
 
-                        {/* Show new global rules to add individually - MOVED TO TOP */}
-                        {hasPatientRules && newGlobalRules.length > 0 && (
+                        {/* Show new inherited rules to add individually */}
+                        {hasPatientRules && newInheritedRules.length > 0 && (
                             <div className="mb-6 border border-blue-200 rounded-lg bg-white overflow-hidden shadow-sm">
                                 <div className="bg-blue-50/50 px-4 py-3 border-b border-blue-100 flex items-center justify-between">
                                     <div className="flex items-center gap-2 text-sm font-semibold text-blue-700">
                                         <AlertCircle size={16} />
-                                        <span>Eklenebilecek Yeni Global Kurallar ({newGlobalRules.length})</span>
+                                        <span>Eklenebilecek Yeni {inheritedLabel} Kuralları ({newInheritedRules.length})</span>
                                     </div>
                                     <Button size="sm" variant="ghost" className="h-7 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-100" onClick={handleAddAllNewGlobalRules}>
                                         <Download size={12} className="mr-1" /> Tümünü Kabul Et
                                     </Button>
                                 </div>
                                 <div className="divide-y divide-blue-50">
-                                    {newGlobalRules.map(rule => (
+                                    {newInheritedRules.map(rule => (
                                         <div key={rule.id} className="flex items-center justify-between p-3 hover:bg-blue-50/30 transition-colors">
                                             <div className="flex flex-col flex-1 min-w-0 mr-4">
                                                 <div className="flex items-center gap-2">
                                                     <span className="text-sm font-medium text-slate-800 truncate">{rule.name}</span>
-                                                    <Badge variant="outline" className="text-[10px] bg-slate-50 text-slate-500 font-normal border-slate-200">Global</Badge>
+                                                    <Badge variant="outline" className="text-[10px] bg-slate-50 text-slate-500 font-normal border-slate-200">{inheritedLabel}</Badge>
                                                 </div>
                                                 <span className="text-xs text-slate-500 mt-0.5 truncate">{rule.description || "Açıklama yok"}</span>
                                             </div>
@@ -759,7 +913,7 @@ export function PatientRulesDialog({ open, onOpenChange, patientId, programTempl
                                                             handleAddGlobalRule(rule, false, true)
                                                         }
                                                     }}
-                                                    title="Sil (Öneri listesinden kaldır)"
+                                                    title="Sil (öneri listesinden kaldır)"
                                                 >
                                                     <Trash2 size={14} />
                                                 </Button>
@@ -797,8 +951,7 @@ export function PatientRulesDialog({ open, onOpenChange, patientId, programTempl
                                                 rule={rule}
                                                 index={index}
                                                 loading={loading}
-                                                hasPatientRules={hasPatientRules}
-                                                isProgramInherited={isProgramInherited}
+                                                canMutate={canMutateRules}
                                                 onToggleActive={handleToggleActive}
                                                 onEdit={async (r) => {
                                                     if (!hasPatientRules) {
@@ -835,16 +988,16 @@ export function PatientRulesDialog({ open, onOpenChange, patientId, programTempl
 
                     <DialogFooter className="px-6 py-4 border-t bg-white shrink-0 flex items-center justify-between">
                         <div className="flex gap-2">
-                            {!hasPatientRules && !isProgramInherited ? (
+                            {!hasPatientRules && !isProgramInherited && !isTeamInherited ? (
                                 <Button onClick={handlePersonalize} disabled={loading || baseRules.length === 0} className="gap-2">
                                     {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-                                    🎯 Kuralları Kişiselleştir
+                                    Kuralları Kişiselleştir
                                 </Button>
-                            ) : !hasPatientRules && isProgramInherited ? (
+                            ) : !hasPatientRules && (isProgramInherited || isTeamInherited) ? (
                                 <>
                                     <Button onClick={handlePersonalize} disabled={loading || baseRules.length === 0} className="gap-2">
                                         {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-                                        🎯 Kuralları Kişiselleştir
+                                        Kuralları Kişiselleştir
                                     </Button>
                                     <Button
                                         variant="outline"
@@ -859,24 +1012,41 @@ export function PatientRulesDialog({ open, onOpenChange, patientId, programTempl
                                 </>
                             ) : (
                                 <>
-                                    {/* Programa Dön - only when patient has a program */}
-                                    {programTemplateId && (
+                                    {/* Üst katmana dön: program varsa programa, yoksa takım kurallarına */}
+                                    {(programTemplateId || teamRules.length > 0) && (
                                         <Button
                                             variant="outline"
-                                            onClick={handleRevertToProgram}
-                                            disabled={loading}
+                                            onClick={handleRevertToUpperLayer}
+                                            disabled={loading || (programTemplateId ? !hasExplicitProgramRules : !hasExplicitTeamRules)}
                                             className="text-purple-600 hover:text-purple-700 hover:bg-purple-50 border-purple-200"
+                                            title={programTemplateId
+                                                ? (hasExplicitProgramRules ? 'Program katmanına dön' : 'Program katmanında özelleştirilmiş kural yok')
+                                                : (hasExplicitTeamRules ? 'Takım katmanına dön' : 'Takım katmanında kural yok')}
                                         >
                                             <RotateCcw size={14} className="mr-2" />
-                                            Programa Dön
+                                            {programTemplateId ? 'Programa Dön' : 'Takıma Dön'}
                                         </Button>
                                     )}
-                                    {/* Global'e Dön - always available */}
+                                    {/* Takıma Dön - show for team-scoped users when patient has a program */}
+                                    {programTemplateId && isTeamScopedContext && (
+                                        <Button
+                                            variant="outline"
+                                            onClick={handleRevertToTeam}
+                                            disabled={loading || !hasExplicitTeamRules}
+                                            className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 border-blue-200"
+                                            title={!hasExplicitTeamRules ? 'Takım katmanında kural yok' : 'Takım kurallarına dön'}
+                                        >
+                                            <RotateCcw size={14} className="mr-2" />
+                                            Takıma Dön
+                                        </Button>
+                                    )}
+                                    {/* Global'e Dön - always available (disabled if sentinel already active) */}
                                     <Button
                                         variant="outline"
                                         onClick={handleRevertToGlobal}
-                                        disabled={loading}
+                                        disabled={loading || hasGlobalSentinel}
                                         className="text-orange-600 hover:text-orange-700 hover:bg-orange-50 border-orange-200"
+                                        title={hasGlobalSentinel ? 'Zaten global kurallar kullanılıyor' : "Global kurallara dön"}
                                     >
                                         <RotateCcw size={14} className="mr-2" />
                                         Global'e Dön
@@ -909,6 +1079,7 @@ export function PatientRulesDialog({ open, onOpenChange, patientId, programTempl
                     onRulesChanged?.()
                 }}
                 patientId={patientId}
+                teamOwnerId={isTeamScopedContext ? teamOwnerId : null}
             />
         </>
     )
@@ -918,8 +1089,7 @@ interface SortableRuleItemProps {
     rule: PlanningRule;
     index: number;
     loading: boolean;
-    hasPatientRules: boolean;
-    isProgramInherited: boolean;
+    canMutate: boolean;
     onToggleActive: (rule: PlanningRule) => void;
     onEdit: (rule: PlanningRule) => void;
     onDelete: (rule: PlanningRule) => void;
@@ -930,8 +1100,7 @@ function SortableRuleItem({
     rule,
     index,
     loading,
-    hasPatientRules,
-    isProgramInherited,
+    canMutate,
     onToggleActive,
     onEdit,
     onDelete,
@@ -992,7 +1161,7 @@ function SortableRuleItem({
                 </div>
 
                 <div className="flex items-center gap-1 shrink-0">
-                    {(hasPatientRules || isProgramInherited) && (
+                    {canMutate && (
                         <>
                             <Switch
                                 checked={rule.is_active}
@@ -1017,7 +1186,7 @@ function SortableRuleItem({
                                 <Trash2 size={14} />
                             </Button>
                             {/* Suggest to Global button - only for custom patient rules */}
-                            {hasPatientRules && !(rule as any).source_rule_id && !(rule as any).pending_global_approval && (
+                            {rule.scope === 'patient' && !(rule as any).source_rule_id && !(rule as any).pending_global_approval && (
                                 <Button
                                     size="icon"
                                     variant="ghost"
@@ -1035,3 +1204,6 @@ function SortableRuleItem({
         </div>
     );
 }
+
+
+

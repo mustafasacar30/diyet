@@ -1,4 +1,7 @@
 import { supabase } from "@/lib/supabase"
+import { applyTeamFoodOverrides } from "@/lib/team-food-overrides"
+import { applyTeamFoodMicronutrientOverrides } from "@/lib/team-food-micronutrient-overrides"
+import { resolveTeamScopeContextForUser } from "@/lib/team-scope"
 import { checkCompatibility } from "@/utils/compatibility-checker"
 import { PlanningRule, PlannerSettings, RuleDefinition, PortionSettings } from "@/types/planner"
 
@@ -54,6 +57,7 @@ export class Planner {
     private eligibleFoods: any[] = [] // Filtered by diet type and banned tags
     private effectiveExemptTags: Set<string> = new Set()
     private programTemplateId: string | null = null // Patient's assigned program
+    private teamOwnerId: string | null = null
     private activeDietRules: { allowedTags: string[], bannedKeywords: string[], bannedTags?: string[], bannedDetails?: Record<string, any>, dietName: string } | undefined = undefined
 
     // Patient specific data for compatibility checks
@@ -107,6 +111,9 @@ export class Planner {
     }
 
     async init() {
+        const teamScope = await resolveTeamScopeContextForUser(this.userId)
+        this.teamOwnerId = teamScope.teamOwnerId || null
+
         // Must fetch patient data first to get programTemplateId for settings/rules fallback
         await Promise.all([
             this.fetchPatientData(),
@@ -126,33 +133,69 @@ export class Planner {
     }
 
     private async fetchSettings() {
-        // ── FIELD-LEVEL MERGE: global → program → patient ──
+        // ── FIELD-LEVEL MERGE: global → team → program → patient ──
         // Each layer only overrides non-null fields from the layer below.
         // This mirrors the settings-dialog's merge strategy exactly.
         let mergedData: any = {}
+        let teamOverrides: Record<string, number> = {}
         let programOverrides: Record<string, number> = {}
         let globalOverrides: Record<string, number> = {}
 
+        const pickLatest = (rows: any[] | null | undefined) => (rows && rows.length > 0 ? rows[0] : null)
+
         // 1. Global (Base layer)
-        const { data: globalSettings } = await supabase
+        const { data: globalRows } = await supabase
             .from('planner_settings')
             .select('*')
             .eq('scope', 'global')
-            .maybeSingle()
+            .order('updated_at', { ascending: false })
+            .limit(1)
+        const globalSettings = pickLatest(globalRows)
 
         if (globalSettings) {
             mergedData = { ...globalSettings }
             globalOverrides = globalSettings.food_score_overrides || {}
         }
 
-        // 2. Program (Middle layer - overlay non-null fields)
+        // 2. Team (Middle layer - overlay non-null fields)
+        if (this.teamOwnerId) {
+            const { data: teamRows } = await supabase
+                .from('planner_settings')
+                .select('*')
+                .eq('scope', 'team')
+                .eq('team_owner_id', this.teamOwnerId)
+                .order('updated_at', { ascending: false })
+                .limit(1)
+            const teamSettings = pickLatest(teamRows)
+            if (teamSettings) {
+                teamOverrides = teamSettings.food_score_overrides || {}
+                Object.keys(teamSettings).forEach(key => {
+                    if (teamSettings[key] !== null) {
+                        mergedData[key] = teamSettings[key]
+                    }
+                })
+            }
+        }
+
+        // 3. Program (Middle layer - overlay non-null fields)
         if (this.programTemplateId) {
-            const { data: programSettings } = await supabase
+            let programQuery = supabase
                 .from('planner_settings')
                 .select('*')
                 .eq('scope', 'program')
                 .eq('program_template_id', this.programTemplateId)
-                .maybeSingle()
+
+            if (this.teamOwnerId) {
+                programQuery = programQuery.eq('team_owner_id', this.teamOwnerId)
+            } else {
+                programQuery = programQuery.is('team_owner_id', null)
+            }
+
+            const { data: programRows } = await programQuery
+                .order('updated_at', { ascending: false })
+                .limit(1)
+            const programSettings = pickLatest(programRows)
+
             if (programSettings) {
                 programOverrides = programSettings.food_score_overrides || {}
                 Object.keys(programSettings).forEach(key => {
@@ -163,14 +206,25 @@ export class Planner {
             }
         }
 
-        // 3. Patient (Top layer - overlay non-null fields)
+        // 4. Patient (Top layer - overlay non-null fields)
         if (this.patientId) {
-            const { data: patientSettings } = await supabase
+            let patientQuery = supabase
                 .from('planner_settings')
                 .select('*')
                 .eq('scope', 'patient')
                 .eq('patient_id', this.patientId)
-                .maybeSingle()
+
+            if (this.teamOwnerId) {
+                patientQuery = patientQuery.eq('team_owner_id', this.teamOwnerId)
+            } else {
+                patientQuery = patientQuery.is('team_owner_id', null)
+            }
+
+            const { data: patientRows } = await patientQuery
+                .order('updated_at', { ascending: false })
+                .limit(1)
+            const patientSettings = pickLatest(patientRows)
+
             if (patientSettings) {
                 Object.keys(patientSettings).forEach(key => {
                     if (patientSettings[key] !== null) {
@@ -182,10 +236,11 @@ export class Planner {
 
         if (Object.keys(mergedData).length > 0) {
             this.settings = mergedData as PlannerSettings
-            // Merge food_score_overrides: global → program → patient (patient wins)
+            // Merge food_score_overrides: global → team → program → patient (patient wins)
             const patientFSO = this.settings.food_score_overrides || {}
             this.settings.food_score_overrides = {
                 ...globalOverrides,
+                ...teamOverrides,
                 ...programOverrides,
                 ...patientFSO
             }
@@ -194,28 +249,48 @@ export class Planner {
 
 
     private async fetchRules() {
-        // Fetch ALL rules from all scopes
-        let orFilter = `scope.is.null,scope.eq.global`
-        if (this.programTemplateId) {
-            orFilter += `,and(scope.eq.program,program_template_id.eq.${this.programTemplateId})`
+        // Fetch all rules from all scopes with strict team isolation for scoped rows.
+        const orParts: string[] = ['scope.is.null', 'scope.eq.global']
+
+        if (this.teamOwnerId) {
+            orParts.push(`and(scope.eq.team,team_owner_id.eq.${this.teamOwnerId})`)
         }
+
+        if (this.programTemplateId) {
+            if (this.teamOwnerId) {
+                orParts.push(`and(scope.eq.program,program_template_id.eq.${this.programTemplateId},team_owner_id.eq.${this.teamOwnerId})`)
+            } else {
+                orParts.push(`and(scope.eq.program,program_template_id.eq.${this.programTemplateId},team_owner_id.is.null)`)
+            }
+        }
+
         if (this.patientId) {
-            orFilter += `,and(scope.eq.patient,patient_id.eq.${this.patientId})`
+            if (this.teamOwnerId) {
+                orParts.push(`and(scope.eq.patient,patient_id.eq.${this.patientId},team_owner_id.eq.${this.teamOwnerId})`)
+            } else {
+                orParts.push(`and(scope.eq.patient,patient_id.eq.${this.patientId},team_owner_id.is.null)`)
+            }
         }
 
         const { data } = await supabase
             .from('planning_rules')
             .select('*')
-            .or(orFilter)
+            .or(orParts.join(','))
             .order('priority', { ascending: false })
 
         const allRules = (data as unknown as PlanningRule[]) || []
 
         const patientRules = allRules.filter(r => r.scope === 'patient')
         const programRules = allRules.filter(r => r.scope === 'program')
+        const teamRules = allRules.filter(r => r.scope === 'team')
         const globalRules = allRules.filter(r => !r.scope || r.scope === 'global')
-        const activePatientRules = patientRules.filter(r => r.is_active)
+        // Sentinel detection: if patient has a '__use_global__' sentinel marker,
+        // skip program/team inheritance and use global rules directly.
+        const hasGlobalSentinel = patientRules.some(r => r.name === '__use_global__')
+
+        const activePatientRules = patientRules.filter(r => r.is_active && r.name !== '__use_global__')
         const activeProgramRules = programRules.filter(r => r.is_active)
+        const activeTeamRules = teamRules.filter(r => r.is_active)
         const activeGlobalRules = globalRules.filter(r => r.is_active)
 
         const inheritConsistencyRules = (
@@ -240,14 +315,25 @@ export class Planner {
         }
 
         let effectiveRules: PlanningRule[]
-        if (patientRules.length > 0) {
-            effectiveRules = inheritConsistencyRules(activePatientRules, [...activeProgramRules, ...activeGlobalRules])
+        if (hasGlobalSentinel) {
+            // Sentinel forces global rules, skipping program/team
+            effectiveRules = activeGlobalRules
+            console.log(`[Engine] Using GLOBAL rules via sentinel (${effectiveRules.length} active / ${globalRules.length} total)`)
+        } else if (patientRules.length > 0) {
+            effectiveRules = inheritConsistencyRules(
+                activePatientRules,
+                [...activeProgramRules, ...activeTeamRules, ...activeGlobalRules]
+            )
             const inheritedCount = Math.max(0, effectiveRules.length - activePatientRules.length)
             console.log(`[Engine] Using PATIENT rules (${activePatientRules.length} active / ${patientRules.length} total, +${inheritedCount} inherited consistency)`)
         } else if (programRules.length > 0) {
-            effectiveRules = inheritConsistencyRules(activeProgramRules, activeGlobalRules)
+            effectiveRules = inheritConsistencyRules(activeProgramRules, [...activeTeamRules, ...activeGlobalRules])
             const inheritedCount = Math.max(0, effectiveRules.length - activeProgramRules.length)
             console.log(`[Engine] Using PROGRAM rules (${activeProgramRules.length} active / ${programRules.length} total, +${inheritedCount} inherited consistency)`)
+        } else if (teamRules.length > 0) {
+            effectiveRules = inheritConsistencyRules(activeTeamRules, activeGlobalRules)
+            const inheritedCount = Math.max(0, effectiveRules.length - activeTeamRules.length)
+            console.log(`[Engine] Using TEAM rules (${activeTeamRules.length} active / ${teamRules.length} total, +${inheritedCount} inherited consistency)`)
         } else {
             effectiveRules = activeGlobalRules
             console.log(`[Engine] Using GLOBAL rules (${effectiveRules.length} active / ${globalRules.length} total)`)
@@ -283,7 +369,22 @@ export class Planner {
 
     private async fetchAllFoods() {
         const { data } = await supabase.from('foods').select('*')
-        this.allFoods = data || []
+        const baseFoods = data || []
+        let scopedFoods = baseFoods
+
+        try {
+            scopedFoods = await applyTeamFoodOverrides(baseFoods, this.teamOwnerId)
+        } catch (error: any) {
+            console.warn("[Planner] team food override resolve failed, using global foods:", error?.message || error)
+            scopedFoods = baseFoods
+        }
+
+        try {
+            this.allFoods = await applyTeamFoodMicronutrientOverrides(scopedFoods, this.teamOwnerId)
+        } catch (error: any) {
+            console.warn("[Planner] team micronutrient override resolve failed, using scoped foods:", error?.message || error)
+            this.allFoods = scopedFoods
+        }
     }
 
     private async fetchPatientData() {

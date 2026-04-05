@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -6,7 +6,8 @@ import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Plus, Pencil, Trash2, Calendar, Activity, Ban, ArrowLeft } from 'lucide-react'
+import { Switch } from '@/components/ui/switch'
+import { Plus, Pencil, Trash2, Calendar, Activity, Ban, ArrowLeft, Loader2 } from 'lucide-react'
 import ProgramDialog from '@/components/programs/program-dialog'
 import {
     AlertDialog,
@@ -20,6 +21,9 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DietTypesEditor } from "@/components/diet/diet-types-editor"
+import { applyTeamProgramOverrides } from "@/lib/team-program-overrides"
+import { applyTeamDietTypeOverrides } from "@/lib/team-diet-type-overrides"
+import { resolveTeamScopeContextFromAuth } from "@/lib/team-scope"
 
 interface ProgramTemplate {
     id: string
@@ -29,6 +33,7 @@ interface ProgramTemplate {
     default_activity_level: number
     is_active: boolean
     created_at: string
+    scope_source?: 'global' | 'team'
     program_template_weeks?: ProgramTemplateWeek[]
     program_template_restrictions?: ProgramTemplateRestriction[]
 }
@@ -70,6 +75,34 @@ function ProgramsContent() {
     const [editingProgram, setEditingProgram] = useState<ProgramTemplate | null>(null)
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
     const [programToDelete, setProgramToDelete] = useState<ProgramTemplate | null>(null)
+    const [scopeActionProgramId, setScopeActionProgramId] = useState<string | null>(null)
+    const [scopeMode, setScopeMode] = useState<'global' | 'team'>('global')
+    const [teamScope, setTeamScope] = useState<{
+        userId: string | null
+        role: string | null
+        canUseGlobal: boolean
+        teamOwnerId: string | null
+    }>({
+        userId: null,
+        role: null,
+        canUseGlobal: true,
+        teamOwnerId: null,
+    })
+
+    const canToggleScopeMode =
+        teamScope.role === 'doctor' &&
+        teamScope.canUseGlobal &&
+        !!teamScope.userId
+
+    const effectiveTeamOwnerId =
+        canToggleScopeMode && scopeMode === 'team'
+            ? teamScope.userId
+            : teamScope.teamOwnerId
+
+    const hasTeamScope =
+        (teamScope.role === 'doctor' || teamScope.role === 'dietitian') &&
+        !!effectiveTeamOwnerId &&
+        (!teamScope.canUseGlobal || (canToggleScopeMode && scopeMode === 'team'))
 
     useEffect(() => {
         const tabParam = searchParams.get('tab')
@@ -80,8 +113,11 @@ function ProgramsContent() {
 
     useEffect(() => {
         fetchPrograms()
+    }, [scopeMode])
+
+    useEffect(() => {
         fetchDietTypes()
-    }, [])
+    }, [scopeMode])
 
     async function fetchPrograms() {
         setLoading(true)
@@ -102,24 +138,198 @@ function ProgramsContent() {
         if (error) {
             console.error('Error fetching programs:', error)
         } else {
-            setPrograms(data || [])
+            let finalPrograms: ProgramTemplate[] = (data || []).map((program: ProgramTemplate) => ({
+                ...program,
+                scope_source: 'global',
+            }))
+
+            try {
+                const { userId, role, canUseGlobal, teamOwnerId } = await resolveTeamScopeContextFromAuth()
+                const hasTeamScopedRole = role === 'doctor' || role === 'dietitian'
+                setTeamScope({ userId, role, canUseGlobal, teamOwnerId })
+
+                const canToggleForCurrentUser = role === 'doctor' && canUseGlobal && !!userId
+                const mergedTeamOwnerId =
+                    canToggleForCurrentUser && scopeMode === 'team'
+                        ? userId
+                        : teamOwnerId
+
+                const shouldUseTeamOverrides =
+                    hasTeamScopedRole &&
+                    !!mergedTeamOwnerId &&
+                    (!canUseGlobal || (canToggleForCurrentUser && scopeMode === 'team'))
+
+                if (shouldUseTeamOverrides) {
+                    finalPrograms = await applyTeamProgramOverrides(finalPrograms, mergedTeamOwnerId)
+
+                    const teamCustomizedIds = new Set(
+                        finalPrograms
+                            .filter((p) => p.scope_source === 'team')
+                            .map((p) => p.id)
+                    )
+
+                    // Planner settings team/program overrides
+                    const { data: plannerRows, error: plannerError } = await supabase
+                        .from('planner_settings')
+                        .select('program_template_id')
+                        .eq('scope', 'program')
+                        .eq('team_owner_id', mergedTeamOwnerId)
+                        .in('program_template_id', finalPrograms.map((p) => p.id))
+
+                    if (!plannerError) {
+                        ;(plannerRows || []).forEach((row: { program_template_id: string | null }) => {
+                            if (row.program_template_id) teamCustomizedIds.add(row.program_template_id)
+                        })
+                    }
+
+                    // Program rules team/program overrides (v101 sonrası aktif)
+                    const { data: ruleRows, error: ruleError } = await supabase
+                        .from('planning_rules')
+                        .select('program_template_id')
+                        .eq('scope', 'program')
+                        .eq('team_owner_id', mergedTeamOwnerId)
+                        .in('program_template_id', finalPrograms.map((p) => p.id))
+
+                    if (!ruleError) {
+                        ;(ruleRows || []).forEach((row: { program_template_id: string | null }) => {
+                            if (row.program_template_id) teamCustomizedIds.add(row.program_template_id)
+                        })
+                    }
+
+                    // Program-level diet type overrides
+                    const { data: dietTypeRows, error: dietTypeError } = await supabase
+                        .from('program_diet_type_overrides')
+                        .select('program_template_id')
+                        .eq('team_owner_id', mergedTeamOwnerId)
+                        .in('program_template_id', finalPrograms.map((p) => p.id))
+
+                    if (!dietTypeError) {
+                        ;(dietTypeRows || []).forEach((row: { program_template_id: string | null }) => {
+                            if (row.program_template_id) teamCustomizedIds.add(row.program_template_id)
+                        })
+                    }
+
+                    finalPrograms = finalPrograms.map((program) => ({
+                        ...program,
+                        scope_source: teamCustomizedIds.has(program.id) ? 'team' : 'global',
+                    }))
+                }
+            } catch (teamScopeError) {
+                console.warn('Team override merge skipped:', teamScopeError)
+                setTeamScope({
+                    userId: null,
+                    role: null,
+                    canUseGlobal: true,
+                    teamOwnerId: null,
+                })
+            }
+
+            setPrograms(finalPrograms)
         }
         setLoading(false)
     }
 
+    async function handleRevertToGlobal(program: ProgramTemplate) {
+        if (!effectiveTeamOwnerId) return
+        const confirmed = window.confirm(
+            `"${program.name}" icin tum takım ozellestirmeleri (program bilgisi, hafta/yasak, kurallar, gelismis ayarlar) kaldirilacak ve global mirasa donulecek. Devam edilsin mi?`
+        )
+        if (!confirmed) return
+
+        setScopeActionProgramId(program.id)
+
+        const { error: overrideError } = await supabase
+            .from('team_program_overrides')
+            .delete()
+            .eq('team_owner_id', effectiveTeamOwnerId)
+            .eq('program_template_id', program.id)
+
+        const { error: settingsError } = await supabase
+            .from('planner_settings')
+            .delete()
+            .eq('scope', 'program')
+            .eq('team_owner_id', effectiveTeamOwnerId)
+            .eq('program_template_id', program.id)
+
+        const { error: rulesError } = await supabase
+            .from('planning_rules')
+            .delete()
+            .eq('scope', 'program')
+            .eq('team_owner_id', effectiveTeamOwnerId)
+            .eq('program_template_id', program.id)
+
+        const { error: dietTypeOverrideError } = await supabase
+            .from('program_diet_type_overrides')
+            .delete()
+            .eq('team_owner_id', effectiveTeamOwnerId)
+            .eq('program_template_id', program.id)
+
+        if (overrideError || settingsError || rulesError || dietTypeOverrideError) {
+            console.error('Error reverting to global:', {
+                overrideError,
+                settingsError,
+                rulesError,
+                dietTypeOverrideError,
+            })
+            alert('Global mirasa donus sirasinda hata olustu.')
+        }
+
+        await fetchPrograms()
+        setScopeActionProgramId(null)
+    }
+
     async function fetchDietTypes() {
-        // Fetch only GLOBAL diet types (patient_id is IS NULL)
+        // Base list: global diet types.
         const { data, error } = await supabase
             .from('diet_types')
             .select('*')
             .is('patient_id', null)
             .order('name')
 
-        if (data) setDietTypes(data)
+        if (error) {
+            console.error('Error fetching diet types:', error)
+            return
+        }
+
+        let finalDietTypes = (data || []).map((row: any) => ({
+            ...row,
+            base_diet_type_id: row.id,
+            scope_source: 'global',
+        }))
+
+        try {
+            const { userId, role, canUseGlobal, teamOwnerId } = await resolveTeamScopeContextFromAuth()
+            const hasTeamScopedRole = role === 'doctor' || role === 'dietitian'
+            const canToggleForCurrentUser = role === 'doctor' && canUseGlobal && !!userId
+            const mergedTeamOwnerId =
+                canToggleForCurrentUser && scopeMode === 'team'
+                    ? userId
+                    : teamOwnerId
+
+            const shouldUseTeamOverrides =
+                hasTeamScopedRole &&
+                !!mergedTeamOwnerId &&
+                (!canUseGlobal || (canToggleForCurrentUser && scopeMode === 'team'))
+
+            if (shouldUseTeamOverrides) {
+                finalDietTypes = await applyTeamDietTypeOverrides(finalDietTypes, mergedTeamOwnerId)
+            }
+        } catch (teamScopeError) {
+            console.warn('Team diet type merge skipped:', teamScopeError)
+        }
+
+        setDietTypes(finalDietTypes)
     }
 
     async function handleDelete() {
         if (!programToDelete) return
+
+        if (hasTeamScope) {
+            alert('Takım modunda global program silinemez. "Globalden Miras Al" butonunu kullanin.')
+            setDeleteDialogOpen(false)
+            setProgramToDelete(null)
+            return
+        }
 
         const { error } = await supabase
             .from('program_templates')
@@ -167,6 +377,21 @@ function ProgramsContent() {
                         Program şablonları ve diyet türlerini buradan yönetebilirsiniz.
                     </p>
                 </div>
+                {canToggleScopeMode && (
+                    <div className="flex items-center gap-3 rounded-md border bg-white px-3 py-2">
+                        <span className={`text-sm ${scopeMode === 'global' ? 'font-semibold text-gray-900' : 'text-gray-500'}`}>
+                            Global Mod
+                        </span>
+                        <Switch
+                            checked={scopeMode === 'team'}
+                            onCheckedChange={(checked) => setScopeMode(checked ? 'team' : 'global')}
+                            aria-label="Scope mode switch"
+                        />
+                        <span className={`text-sm ${scopeMode === 'team' ? 'font-semibold text-gray-900' : 'text-gray-500'}`}>
+                            Takım Modu
+                        </span>
+                    </div>
+                )}
             </div>
 
             <Tabs value={activeTab} onValueChange={(val) => {
@@ -182,12 +407,14 @@ function ProgramsContent() {
                 </TabsList>
 
                 <TabsContent value="programs">
-                    <div className="flex justify-end mb-4">
-                        <Button onClick={openNewDialog} className="flex items-center gap-2">
-                            <Plus size={18} />
-                            Yeni Program
-                        </Button>
-                    </div>
+                    {!hasTeamScope && (
+                        <div className="flex justify-end mb-4">
+                            <Button onClick={openNewDialog} className="flex items-center gap-2">
+                                <Plus size={18} />
+                                Yeni Program
+                            </Button>
+                        </div>
+                    )}
 
                     {/* Programs Grid */}
                     {loading ? (
@@ -196,10 +423,12 @@ function ProgramsContent() {
                         <Card className="text-center py-12">
                             <CardContent>
                                 <p className="text-gray-500 mb-4">Henüz program şablonu oluşturulmamış</p>
+                                {!hasTeamScope && (
                                 <Button onClick={openNewDialog} variant="outline">
                                     <Plus size={18} className="mr-2" />
                                     İlk Programı Oluştur
                                 </Button>
+                                )}
                             </CardContent>
                         </Card>
                     ) : (
@@ -209,7 +438,9 @@ function ProgramsContent() {
                                     <CardHeader className="pb-3">
                                         <div className="flex justify-between items-start">
                                             <div>
-                                                <CardTitle className="text-lg">{program.name}</CardTitle>
+                                                <CardTitle className="text-lg">
+                                                    {program.name} ({program.scope_source === 'team' ? 'Takım' : 'Global'})
+                                                </CardTitle>
                                                 {program.description && (
                                                     <CardDescription className="mt-1 line-clamp-2">
                                                         {program.description}
@@ -246,8 +477,12 @@ function ProgramsContent() {
                                                 {program.program_template_weeks
                                                     .sort((a, b) => a.week_start - b.week_start)
                                                     .slice(0, 4)
-                                                    .map(week => (
-                                                        <Badge key={week.id} variant="outline" className="text-xs">
+                                                    .map((week, index) => (
+                                                        <Badge
+                                                            key={week.id ? `${week.id}-${index}` : `${program.id}-${week.week_start}-${week.week_end}-${week.diet_type_id || 'none'}-${index}`}
+                                                            variant="outline"
+                                                            className="text-xs"
+                                                        >
                                                             H{week.week_start}-{week.week_end}: {week.diet_types?.abbreviation || week.diet_types?.name || '?'}
                                                         </Badge>
                                                     ))}
@@ -260,27 +495,47 @@ function ProgramsContent() {
                                         )}
 
                                         {/* Actions */}
+                                        {hasTeamScope && program.scope_source === 'team' && (
+                                            <Button
+                                                variant="secondary"
+                                                size="sm"
+                                                className="w-full"
+                                                disabled={scopeActionProgramId === program.id}
+                                                onClick={() => handleRevertToGlobal(program)}
+                                            >
+                                                {scopeActionProgramId === program.id ? (
+                                                    <>
+                                                        <Loader2 size={14} className="mr-1 animate-spin" />
+                                                        İşleniyor...
+                                                    </>
+                                                ) : (
+                                                    'Globalden Miras Al'
+                                                )}
+                                            </Button>
+                                        )}
                                         <div className="flex gap-2 pt-2 border-t">
                                             <Button
                                                 variant="outline"
                                                 size="sm"
-                                                className="flex-1"
+                                                className={hasTeamScope ? 'w-full' : 'flex-1'}
                                                 onClick={() => openEditDialog(program)}
                                             >
                                                 <Pencil size={14} className="mr-1" />
                                                 Düzenle
                                             </Button>
-                                            <Button
-                                                variant="outline"
-                                                size="sm"
-                                                className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                                                onClick={() => {
-                                                    setProgramToDelete(program)
-                                                    setDeleteDialogOpen(true)
-                                                }}
-                                            >
-                                                <Trash2 size={14} />
-                                            </Button>
+                                            {!hasTeamScope && (
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                                    onClick={() => {
+                                                        setProgramToDelete(program)
+                                                        setDeleteDialogOpen(true)
+                                                    }}
+                                                >
+                                                    <Trash2 size={14} />
+                                                </Button>
+                                            )}
                                         </div>
                                     </CardContent>
                                 </Card>
@@ -301,6 +556,7 @@ function ProgramsContent() {
                             <DietTypesEditor
                                 dietTypes={dietTypes}
                                 onUpdate={fetchDietTypes}
+                                forcedMode={canToggleScopeMode ? scopeMode : undefined}
                             // No patientId passed -> Global Mode
                             />
                         </CardContent>
@@ -313,6 +569,7 @@ function ProgramsContent() {
                 open={dialogOpen}
                 onClose={handleDialogClose}
                 program={editingProgram}
+                forcedMode={canToggleScopeMode ? scopeMode : undefined}
             />
 
             {/* Delete Confirmation */}
@@ -339,3 +596,5 @@ function ProgramsContent() {
         </div>
     )
 }
+
+

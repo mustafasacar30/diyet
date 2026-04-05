@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import { useState, useEffect, useMemo } from "react"
 import { supabase } from "@/lib/supabase"
@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/table"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
+import { Switch } from "@/components/ui/switch"
 import {
     Plus,
     Search,
@@ -27,7 +28,8 @@ import {
     ChevronDown,
     ImageIcon,
     Eye,
-    EyeOff
+    EyeOff,
+    RotateCcw
 } from "lucide-react"
 import {
     Dialog,
@@ -47,9 +49,18 @@ import { FOOD_ROLES, ROLE_LABELS as SHARED_ROLE_LABELS } from "@/lib/constants/f
 import { FOOD_CATEGORIES } from "@/lib/constants/food-categories"
 import { useRecipeManager } from "@/hooks/use-recipe-manager"
 import { normalizeFoodName } from "@/utils/recipe-matcher"
+import { resolveTeamScopeContextFromAuth } from "@/lib/team-scope"
+import { applyTeamFoodOverrides, deleteTeamFoodOverride, upsertTeamFoodOverride } from "@/lib/team-food-overrides"
+import { deleteTeamFoodMicronutrientOverride, saveFoodMicronutrientsByScope } from "@/lib/team-food-micronutrient-overrides"
 
 
 const ROLE_LABELS = SHARED_ROLE_LABELS
+
+type ScopedFood = Food & {
+    scope_source?: 'global' | 'team'
+    base_food_id?: string
+    micronutrients?: string[]
+}
 
 // Generic Inline Edit Components
 const InlineCell = ({
@@ -384,22 +395,35 @@ const InlineSeasonEdit = ({
 }
 
 export default function FoodsPage() {
-    const [foods, setFoods] = useState<Food[]>([])
+    const [foods, setFoods] = useState<ScopedFood[]>([])
     const [loading, setLoading] = useState(true)
     const [searchQuery, setSearchQuery] = useState("")
     const [searchScope, setSearchScope] = useState("all") // 'all', 'name', 'tags', 'compatibility'
 
     // Sorting state
-    const [sortConfig, setSortConfig] = useState<{ key: keyof Food; direction: 'asc' | 'desc' } | null>(null)
+    const [sortConfig, setSortConfig] = useState<{ key: keyof ScopedFood; direction: 'asc' | 'desc' } | null>(null)
     const [showHidden, setShowHidden] = useState(false)
+    const [scopeMode, setScopeMode] = useState<'global' | 'team'>('global')
 
     // Dialog state
     const [isDialogOpen, setIsDialogOpen] = useState(false)
-    const [editingFood, setEditingFood] = useState<Food | null>(null)
+    const [editingFood, setEditingFood] = useState<ScopedFood | null>(null)
 
     // Delete confirmation state
     const [deleteId, setDeleteId] = useState<string | null>(null)
     const [isDeleting, setIsDeleting] = useState(false)
+    const [scopeActionFoodId, setScopeActionFoodId] = useState<string | null>(null)
+    const [teamScope, setTeamScope] = useState<{
+        userId: string | null
+        role: string | null
+        canUseGlobal: boolean
+        teamOwnerId: string | null
+    }>({
+        userId: null,
+        role: null,
+        canUseGlobal: true,
+        teamOwnerId: null,
+    })
 
     // Advanced Filter State 1
     const [filterColumn, setFilterColumn] = useState<string>('all')
@@ -410,7 +434,7 @@ export default function FoodsPage() {
     const [filterValue2, setFilterValue2] = useState<string>('all')
 
     // Helper to get unique values for a column
-    const getUniqueValues = (column: string, data: Food[]) => {
+    const getUniqueValues = (column: string, data: ScopedFood[]) => {
         if (column === 'all') return []
         const values = new Set<string>()
         data.forEach(food => {
@@ -439,6 +463,21 @@ export default function FoodsPage() {
     // GitHub card thumbnails
     const [githubCards, setGithubCards] = useState<{ name: string, imageUrl: string }[]>([])
     const [imagePreview, setImagePreview] = useState<string | null>(null)
+
+    const canToggleScopeMode =
+        teamScope.role === 'doctor' &&
+        teamScope.canUseGlobal &&
+        !!teamScope.userId
+
+    const effectiveTeamOwnerId =
+        canToggleScopeMode && scopeMode === 'team'
+            ? teamScope.userId
+            : teamScope.teamOwnerId
+
+    const hasTeamScope =
+        (teamScope.role === 'doctor' || teamScope.role === 'dietitian') &&
+        !!effectiveTeamOwnerId &&
+        (!teamScope.canUseGlobal || (canToggleScopeMode && scopeMode === 'team'))
 
     // Recipe match/ban management (for ban-aware card matching)
     const { manualMatches: recipeMatches, bans: recipeBans } = useRecipeManager()
@@ -500,7 +539,7 @@ export default function FoodsPage() {
         loadCategories()
         loadRoles()
         fetchGithubCards()
-    }, [])
+    }, [scopeMode])
 
     const fetchGithubCards = async () => {
         try {
@@ -650,8 +689,42 @@ export default function FoodsPage() {
 
             if (error) throw error
 
-            // Transform tags if needed (postgres array to string is usually automatic in JS client but let's be safe)
-            setFoods(data as Food[])
+            let finalFoods: ScopedFood[] = ((data || []) as ScopedFood[]).map((food) => ({
+                ...food,
+                base_food_id: food.base_food_id || food.id,
+                scope_source: 'global',
+            }))
+
+            try {
+                const { userId, role, canUseGlobal, teamOwnerId } = await resolveTeamScopeContextFromAuth()
+                const hasTeamScopedRole = role === 'doctor' || role === 'dietitian'
+                setTeamScope({ userId, role, canUseGlobal, teamOwnerId })
+
+                const canToggleForCurrentUser = role === 'doctor' && canUseGlobal && !!userId
+                const mergedTeamOwnerId =
+                    canToggleForCurrentUser && scopeMode === 'team'
+                        ? userId
+                        : teamOwnerId
+
+                const shouldUseTeamScope =
+                    hasTeamScopedRole &&
+                    !!mergedTeamOwnerId &&
+                    (!canUseGlobal || (canToggleForCurrentUser && scopeMode === 'team'))
+
+                if (shouldUseTeamScope) {
+                    finalFoods = await applyTeamFoodOverrides(finalFoods, mergedTeamOwnerId)
+                }
+            } catch (teamScopeError) {
+                console.warn('Team food merge skipped:', teamScopeError)
+                setTeamScope({
+                    userId: null,
+                    role: null,
+                    canUseGlobal: true,
+                    teamOwnerId: null,
+                })
+            }
+
+            setFoods(finalFoods)
         } catch (error) {
             console.error("Error loading foods:", error)
             // toast({ title: "Hata", description: "Yemekler yüklenemedi", variant: "destructive" })
@@ -661,7 +734,7 @@ export default function FoodsPage() {
     }
 
     // Handle Sort
-    const requestSort = (key: keyof Food) => {
+    const requestSort = (key: keyof ScopedFood) => {
         let direction: 'asc' | 'desc' = 'asc';
         if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
             direction = 'desc';
@@ -758,7 +831,7 @@ export default function FoodsPage() {
         }
 
         return data
-    }, [foods, searchQuery, sortConfig, filterColumn, filterValue, filterColumn2, filterValue2])
+    }, [foods, showHidden, searchQuery, searchScope, sortConfig, filterColumn, filterValue, filterColumn2, filterValue2])
 
     // Bulk Selection Logic
     const toggleSelection = (id: string, multiSelect: boolean) => {
@@ -780,7 +853,87 @@ export default function FoodsPage() {
         }
     }
 
-    const handleBulkUpdate = async (field: keyof Food | 'meal_types' | 'filler_complex' | 'diet_complex' | 'season_complex', value: any) => {
+    const persistFoodUpdate = async (food: ScopedFood, updates: Record<string, any>) => {
+        const cleanUpdates = Object.fromEntries(
+            Object.entries(updates || {}).filter(([, value]) => value !== undefined)
+        )
+        if (Object.keys(cleanUpdates).length === 0) return
+
+        const baseFoodId = food.base_food_id || food.id
+
+        if (hasTeamScope && effectiveTeamOwnerId) {
+            const { data: authData } = await supabase.auth.getUser()
+            const currentUserId = authData.user?.id || null
+            const { error } = await upsertTeamFoodOverride({
+                teamOwnerId: effectiveTeamOwnerId,
+                baseFoodId,
+                createdBy: currentUserId,
+                updates: cleanUpdates,
+            })
+            if (error) throw error
+            return
+        }
+
+        const { error } = await supabase
+            .from('foods')
+            .update(cleanUpdates)
+            .eq('id', baseFoodId)
+        if (error) throw error
+    }
+
+    const applyFoodPatch = async (foodId: string, updates: Record<string, any>) => {
+        const targetFood = foods.find((f) => f.id === foodId)
+        if (!targetFood) return
+
+        setFoods((current) =>
+            current.map((food) =>
+                food.id === foodId
+                    ? {
+                        ...food,
+                        ...updates,
+                        ...(hasTeamScope ? { scope_source: 'team' as const } : {}),
+                    }
+                    : food
+            )
+        )
+
+        try {
+            await persistFoodUpdate(targetFood, updates)
+        } catch (error) {
+            console.error('Food patch failed:', error)
+            await loadFoods()
+            throw error
+        }
+    }
+
+    const handleRevertFoodToGlobal = async (food: ScopedFood) => {
+        if (!effectiveTeamOwnerId) return
+        if (food.scope_source !== 'team') {
+            alert('Bu yemek zaten global mirastan geliyor.')
+            return
+        }
+
+        const confirmed = window.confirm(
+            `"${food.name}" icin takım ozellestirmesi silinecek ve global mirasa donulecek. Devam edilsin mi?`
+        )
+        if (!confirmed) return
+
+        setScopeActionFoodId(food.id)
+        const baseFoodId = food.base_food_id || food.id
+        const [{ error: foodOverrideError }, { error: micronutrientOverrideError }] = await Promise.all([
+            deleteTeamFoodOverride(effectiveTeamOwnerId, baseFoodId),
+            deleteTeamFoodMicronutrientOverride(effectiveTeamOwnerId, baseFoodId),
+        ])
+
+        if (foodOverrideError || micronutrientOverrideError) {
+            console.error('Food revert error:', foodOverrideError || micronutrientOverrideError)
+            alert('Global mirasa donus sirasinda hata olustu.')
+        }
+        await loadFoods()
+        setScopeActionFoodId(null)
+    }
+
+    const handleBulkUpdate = async (field: keyof ScopedFood | 'meal_types' | 'filler_complex' | 'diet_complex' | 'season_complex', value: any) => {
         if (selectedIds.size === 0) return
         if (!confirm(`${selectedIds.size} kayıt güncellenecek. Emin misiniz?`)) return
 
@@ -825,10 +978,28 @@ export default function FoodsPage() {
             }
 
             // Optimistic Update
-            setFoods(current => current.map(f => selectedIds.has(f.id) ? { ...f, ...updates } : f))
+            setFoods(current =>
+                current.map((food) =>
+                    selectedIds.has(food.id)
+                        ? {
+                            ...food,
+                            ...updates,
+                            ...(hasTeamScope ? { scope_source: 'team' as const } : {}),
+                        }
+                        : food
+                )
+            )
 
-            const { error } = await supabase.from('foods').update(updates).in('id', Array.from(selectedIds))
-            if (error) throw error
+            if (hasTeamScope && effectiveTeamOwnerId) {
+                const selectedFoods = foods.filter((food) => selectedIds.has(food.id))
+                await Promise.all(selectedFoods.map((food) => persistFoodUpdate(food, updates)))
+            } else {
+                const { error } = await supabase
+                    .from('foods')
+                    .update(updates)
+                    .in('id', Array.from(selectedIds))
+                if (error) throw error
+            }
 
             // Clear selection after successful update? Maybe keep it for multiple edits.
             // setSelectedIds(new Set()) 
@@ -889,6 +1060,11 @@ export default function FoodsPage() {
 
     const handleDelete = async () => {
         if (!deleteId) return
+        if (hasTeamScope) {
+            alert('Takım modunda global yemek silme kapali. Takıma ozel degisikligi kaldirmak icin geri don ikonunu kullanin.')
+            setDeleteId(null)
+            return
+        }
         setIsDeleting(true)
         try {
             const { error } = await supabase
@@ -909,7 +1085,7 @@ export default function FoodsPage() {
     }
 
     // Determine sort icon
-    const getSortIcon = (columnKey: keyof Food) => {
+    const getSortIcon = (columnKey: keyof ScopedFood) => {
         if (sortConfig?.key !== columnKey) return <ArrowUpDown className="ml-2 h-4 w-4 text-gray-400" />
         if (sortConfig.direction === 'asc') return <ArrowUp className="ml-2 h-4 w-4 text-green-600" />
         return <ArrowDown className="ml-2 h-4 w-4 text-green-600" />
@@ -1076,7 +1252,7 @@ export default function FoodsPage() {
     }
 
     // Column Header Component with Bulk Edit Support
-    const SortableHeader = ({ label, columnKey, bulkOptions, bulkLabels, isResizable = false, isMultiSelect = false, isNumeric = false, stickyClass = "" }: { label: string, columnKey: keyof Food, bulkOptions?: string[], bulkLabels?: Record<string, string>, isResizable?: boolean, isMultiSelect?: boolean, isNumeric?: boolean, stickyClass?: string }) => {
+    const SortableHeader = ({ label, columnKey, bulkOptions, bulkLabels, isResizable = false, isMultiSelect = false, isNumeric = false, stickyClass = "" }: { label: string, columnKey: keyof ScopedFood, bulkOptions?: string[], bulkLabels?: Record<string, string>, isResizable?: boolean, isMultiSelect?: boolean, isNumeric?: boolean, stickyClass?: string }) => {
         const isBulkMode = selectedIds.size > 0 && (bulkOptions && bulkOptions.length > 0 || isNumeric)
         const isSeasonNumeric = isBulkMode && columnKey === 'season_start'
         const isBulkNumber = isBulkMode && isNumeric
@@ -1145,15 +1321,13 @@ export default function FoodsPage() {
 
 
     // Generic Update Handler
-    const handleInlineUpdate = async (id: string, field: keyof Food, value: any) => {
-        // Optimistic Update
-        setFoods(current => current.map(f => f.id === id ? { ...f, [field]: value } : f))
-
-        const { error } = await supabase.from('foods').update({ [field]: value }).eq('id', id)
-        if (error) {
+    const handleInlineUpdate = async (id: string, field: keyof ScopedFood, value: any) => {
+        try {
+            await applyFoodPatch(id, { [field]: value })
+        } catch (error) {
             console.error(`Error updating ${field}`, error)
-            alert("Güncelleme hatası")
-            throw error // Bubble up to component to revert
+            alert("Guncelleme hatasi")
+            throw error
         }
     }
 
@@ -1170,6 +1344,30 @@ export default function FoodsPage() {
 
     return (
         <div className="space-y-4">
+            {canToggleScopeMode && (
+                <div className="flex justify-end">
+                    <div className="flex items-center gap-3 rounded-md border bg-white px-3 py-2">
+                        <span className={`text-sm ${scopeMode === 'global' ? 'font-semibold text-gray-900' : 'text-gray-500'}`}>
+                            Global Mod
+                        </span>
+                        <Switch
+                            checked={scopeMode === 'team'}
+                            onCheckedChange={(checked) => setScopeMode(checked ? 'team' : 'global')}
+                            aria-label="Foods scope mode switch"
+                        />
+                        <span className={`text-sm ${scopeMode === 'team' ? 'font-semibold text-gray-900' : 'text-gray-500'}`}>
+                            Takım Modu
+                        </span>
+                    </div>
+                </div>
+            )}
+
+            {hasTeamScope && (
+                <div className="rounded-lg border border-violet-200 bg-violet-50 p-3 text-xs text-violet-800">
+                    Bu modda yaptiginiz yemek degisiklikleri sadece takıminiza ve takım hastalariniza yansir.
+                </div>
+            )}
+
             <div className="bg-white rounded-lg border shadow-md overflow-hidden relative flex flex-col">
                 {/* Compact Sticky Header (Search & Actions) */}
                 <div className="p-2 border-b bg-gray-50 flex flex-wrap gap-2 items-center justify-between sticky top-0 z-30 shadow-sm">
@@ -1299,12 +1497,17 @@ export default function FoodsPage() {
                         <Button
                             size="sm"
                             onClick={() => {
+                                if (hasTeamScope) {
+                                    alert('Takım modunda yeni global yemek ekleme kapali. Mevcut yemekleri duzenleyerek takıminiza ozel hale getirebilirsiniz.')
+                                    return
+                                }
                                 setEditingFood({} as any)
                                 setIsDialogOpen(true)
                             }}
+                            disabled={hasTeamScope}
                             className="bg-gradient-to-r from-green-600 to-teal-600 text-white h-7 text-xs px-3"
                         >
-                            <Plus className="mr-1 h-3 w-3" /> Ekle
+                            <Plus className="mr-1 h-3 w-3" /> {hasTeamScope ? 'Takımda Kapali' : 'Ekle'}
                         </Button>
                     </div>
                 </div>
@@ -1387,7 +1590,7 @@ export default function FoodsPage() {
                                         <TableCell className="p-1 min-w-10 w-fit text-center">
                                             {(() => {
                                                 const urls = getCardUrls(food.name)
-                                                if (urls.length === 0) return <span className="text-gray-200">—</span>
+            if (urls.length === 0) return <span className="text-gray-200">—</span>
                                                 return (
                                                     <div className="flex flex-row gap-1 items-center justify-center flex-wrap max-w-[80px]">
                                                         {urls.map((url, i) => (
@@ -1408,10 +1611,20 @@ export default function FoodsPage() {
                                             className="p-2 text-xs font-semibold whitespace-normal leading-tight text-gray-900 sticky left-[64px] z-10 bg-inherit shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]"
                                             style={{ width: colWidths['name'] || 200, minWidth: colWidths['name'] || 200, maxWidth: colWidths['name'] || 200 }}
                                         >
-                                            <InlineCell
-                                                initialValue={food.name}
-                                                onSave={(val) => handleInlineUpdate(food.id, 'name', val)}
-                                            />
+                                            <div className="flex items-center gap-1">
+                                                <InlineCell
+                                                    initialValue={food.name}
+                                                    onSave={(val) => handleInlineUpdate(food.id, 'name', val)}
+                                                />
+                                                {hasTeamScope && (
+                                                    <span className={`text-[9px] px-1 rounded border whitespace-nowrap ${food.scope_source === 'team'
+                                                            ? 'bg-violet-100 text-violet-700 border-violet-200'
+                                                            : 'bg-blue-50 text-blue-600 border-blue-100'
+                                                        }`}>
+                                                        {food.scope_source === 'team' ? 'Takım' : 'Global'}
+                                                    </span>
+                                                )}
+                                            </div>
                                         </TableCell>
                                         <TableCell className="p-2">
                                             <InlineSelect
@@ -1473,9 +1686,7 @@ export default function FoodsPage() {
                                                 start={food.season_start || null}
                                                 end={food.season_end || null}
                                                 onSave={async (s, e) => {
-                                                    const { error } = await supabase.from('foods').update({ season_start: s, season_end: e }).eq('id', food.id)
-                                                    if (error) throw error
-                                                    setFoods(curr => curr.map(f => f.id === food.id ? { ...f, season_start: s, season_end: e } : f))
+                                                    await applyFoodPatch(food.id, { season_start: s, season_end: e })
                                                 }}
                                             />
                                         </TableCell>
@@ -1486,9 +1697,7 @@ export default function FoodsPage() {
                                                 onSave={async (vals: string[]) => {
                                                     const updates: Record<string, boolean> = {}
                                                     dietOptions.forEach(o => updates[o.value] = vals.includes(o.value))
-                                                    const { error } = await supabase.from('foods').update(updates).eq('id', food.id)
-                                                    if (error) throw error
-                                                    setFoods(c => c.map(f => f.id === food.id ? { ...f, ...updates } : f))
+                                                    await applyFoodPatch(food.id, updates)
                                                 }}
                                                 renderLabel={(vals) => (
                                                     <div className="flex gap-0.5 flex-wrap max-w-[80px]">
@@ -1507,9 +1716,7 @@ export default function FoodsPage() {
                                                 initialValues={food.meal_types || []}
                                                 options={mealOptions}
                                                 onSave={async (vals: string[]) => {
-                                                    const { error } = await supabase.from('foods').update({ meal_types: vals }).eq('id', food.id)
-                                                    if (error) throw error
-                                                    setFoods(c => c.map(f => f.id === food.id ? { ...f, meal_types: vals } : f))
+                                                    await applyFoodPatch(food.id, { meal_types: vals })
                                                 }}
                                                 renderLabel={(vals) => (
                                                     <div className="flex gap-0.5 flex-wrap max-w-[80px]">
@@ -1531,9 +1738,7 @@ export default function FoodsPage() {
                                                         filler_lunch: vals.includes('filler_lunch'),
                                                         filler_dinner: vals.includes('filler_dinner')
                                                     }
-                                                    const { error } = await supabase.from('foods').update(updates).eq('id', food.id)
-                                                    if (error) throw error
-                                                    setFoods(c => c.map(f => f.id === food.id ? { ...f, ...updates } : f))
+                                                    await applyFoodPatch(food.id, updates)
                                                 }}
                                                 renderLabel={(vals) => (
                                                     <div className="flex gap-0.5 flex-col">
@@ -1549,9 +1754,7 @@ export default function FoodsPage() {
                                                 initialValue={(food.tags || []).join(', ')}
                                                 onSave={async (val) => {
                                                     const tags = String(val).split(',').map(t => t.trim()).filter(Boolean)
-                                                    const { error } = await supabase.from('foods').update({ tags }).eq('id', food.id)
-                                                    if (error) throw error
-                                                    setFoods(c => c.map(f => f.id === food.id ? { ...f, tags } : f))
+                                                    await applyFoodPatch(food.id, { tags })
                                                 }}
                                                 classes="w-24"
                                             />
@@ -1561,9 +1764,7 @@ export default function FoodsPage() {
                                                 initialValue={(food.compatibility_tags || []).join(', ')}
                                                 onSave={async (val) => {
                                                     const tags = String(val).split(',').map(t => t.trim()).filter(Boolean)
-                                                    const { error } = await supabase.from('foods').update({ compatibility_tags: tags }).eq('id', food.id)
-                                                    if (error) throw error
-                                                    setFoods(c => c.map(f => f.id === food.id ? { ...f, compatibility_tags: tags } : f))
+                                                    await applyFoodPatch(food.id, { compatibility_tags: tags })
                                                 }}
                                                 classes="w-24"
                                             />
@@ -1575,10 +1776,7 @@ export default function FoodsPage() {
                                                 className={`h-6 w-6 ${food.hidden_from_cardmaker ? 'text-orange-500' : 'text-gray-400 hover:text-green-500'}`}
                                                 onClick={async () => {
                                                     const newVal = !food.hidden_from_cardmaker;
-                                                    const { error } = await supabase.from('foods').update({ hidden_from_cardmaker: newVal }).eq('id', food.id);
-                                                    if (!error) {
-                                                        setFoods(curr => curr.map(f => f.id === food.id ? { ...f, hidden_from_cardmaker: newVal } : f));
-                                                    }
+                                                    await applyFoodPatch(food.id, { hidden_from_cardmaker: newVal });
                                                 }}
                                                 title={food.hidden_from_cardmaker ? "Kart yapıcıda gizli" : "Kart yapıcıda görünür"}
                                             >
@@ -1588,6 +1786,22 @@ export default function FoodsPage() {
 
                                         <TableCell className="text-right p-1">
                                             <div className="flex justify-end gap-1">
+                                                {hasTeamScope && food.scope_source === 'team' && (
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        onClick={() => handleRevertFoodToGlobal(food)}
+                                                        disabled={scopeActionFoodId === food.id}
+                                                        className="h-6 w-6 text-orange-600 hover:text-orange-700 hover:bg-orange-50"
+                                                        title="Globalden Miras Al"
+                                                    >
+                                                        {scopeActionFoodId === food.id ? (
+                                                            <Loader2 className="h-3 w-3 animate-spin" />
+                                                        ) : (
+                                                            <RotateCcw className="h-3 w-3" />
+                                                        )}
+                                                    </Button>
+                                                )}
                                                 <Button
                                                     variant="ghost"
                                                     size="icon"
@@ -1599,14 +1813,16 @@ export default function FoodsPage() {
                                                 >
                                                     <Pencil className="h-3 w-3" />
                                                 </Button>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="icon"
-                                                    onClick={() => setDeleteId(food.id)}
-                                                    className="h-6 w-6 text-red-600 hover:text-red-700 hover:bg-red-50"
-                                                >
-                                                    <Trash2 className="h-3 w-3" />
-                                                </Button>
+                                                {!hasTeamScope && (
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        onClick={() => setDeleteId(food.id)}
+                                                        className="h-6 w-6 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                                    >
+                                                        <Trash2 className="h-3 w-3" />
+                                                    </Button>
+                                                )}
                                             </div>
                                         </TableCell>
                                     </TableRow>
@@ -1627,8 +1843,33 @@ export default function FoodsPage() {
                         isOpen={isDialogOpen}
                         onClose={() => setIsDialogOpen(false)}
                         food={editingFood}
+                        teamOwnerId={hasTeamScope ? (effectiveTeamOwnerId || null) : null}
                         mode={editingFood.id ? 'edit' : 'create'}
                         onUpdate={loadFoods}
+                        onSave={hasTeamScope ? async (data: any) => {
+                            if (!editingFood?.id) {
+                                throw new Error('Takım modunda yeni yemek ekleme kapali.')
+                            }
+                            const { micronutrients, ...updates } = data || {}
+                            await persistFoodUpdate(editingFood, updates)
+                            if (Array.isArray(micronutrients)) {
+                                const baseFoodId = editingFood.base_food_id || editingFood.id
+                                const { data: authData } = await supabase.auth.getUser()
+                                const { error: microError } = await saveFoodMicronutrientsByScope({
+                                    baseFoodId,
+                                    teamOwnerId: effectiveTeamOwnerId || null,
+                                    micronutrients,
+                                    createdBy: authData.user?.id || null,
+                                })
+                                if (microError) throw microError
+                            }
+                            return {
+                                ...editingFood,
+                                ...updates,
+                                micronutrients: Array.isArray(micronutrients) ? micronutrients : editingFood.micronutrients,
+                                scope_source: 'team',
+                            }
+                        } : undefined}
                     />
                 )}
 
@@ -1665,7 +1906,7 @@ export default function FoodsPage() {
                         <button
                             onClick={() => setImagePreview(null)}
                             className="absolute -top-3 -right-3 bg-white rounded-full w-8 h-8 flex items-center justify-center shadow-lg text-gray-600 hover:text-gray-900 z-10"
-                        >✕</button>
+                        >×</button>
                         <img
                             src={imagePreview}
                             alt="Tarif Kartı"
@@ -1677,3 +1918,6 @@ export default function FoodsPage() {
         </div>
     )
 }
+
+
+

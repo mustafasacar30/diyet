@@ -28,6 +28,8 @@ import { checkCompatibility } from "@/utils/compatibility-checker"
 import { normalizeFoodName } from "@/utils/recipe-matcher"
 import { useRecipeManager } from "@/hooks/use-recipe-manager"
 import { FOOD_ROLES, ROLE_LABELS as SHARED_ROLE_LABELS } from "@/lib/constants/food-roles"
+import { resolveTeamScopeContextFromAuth } from "@/lib/team-scope"
+import { getFoodMicronutrientsByScope } from "@/lib/team-food-micronutrient-overrides"
 
 import { FOOD_CATEGORIES } from "@/lib/constants/food-categories"
 
@@ -350,7 +352,19 @@ export function FoodSidebar({
                 }
             })
 
-            setFoods(Array.from(uniqueFoods.values()))
+            const resolvedFoods = Array.from(uniqueFoods.values()).map((food: any) => {
+                const overrideMicronutrients = foodMicronutrients?.[food.id]
+                if (!Array.isArray(overrideMicronutrients)) return food
+                return {
+                    ...food,
+                    micronutrients: overrideMicronutrients,
+                    food_micronutrients: overrideMicronutrients.map((micronutrientId: string) => ({
+                        micronutrient_id: micronutrientId
+                    }))
+                }
+            })
+
+            setFoods(resolvedFoods)
         }
         setLoading(false)
     }
@@ -830,7 +844,27 @@ function DraggableFoodItem({ food, onUpdate, dislikedFoods = [], activeDietRules
 }
 
 // ================== FOOD EDIT DIALOG ==================
-export function FoodEditDialog({ food, isOpen, onClose, onUpdate, mode = 'edit', onCreate, onSave, patientId }: { food: any; isOpen: boolean; onClose: () => void; onUpdate: () => void; mode?: 'edit' | 'create'; onCreate?: (newFood: any) => void; onSave?: (data: any) => Promise<any>; patientId?: string }) {
+export function FoodEditDialog({
+    food,
+    isOpen,
+    onClose,
+    onUpdate,
+    mode = 'edit',
+    onCreate,
+    onSave,
+    patientId,
+    teamOwnerId
+}: {
+    food: any
+    isOpen: boolean
+    onClose: () => void
+    onUpdate: () => void
+    mode?: 'edit' | 'create'
+    onCreate?: (newFood: any) => void
+    onSave?: (data: any) => Promise<any>
+    patientId?: string
+    teamOwnerId?: string | null
+}) {
     // Basic info
     const [name, setName] = useState(food.name || '')
     const [category, setCategory] = useState(food.category || 'ÖĞLEN')
@@ -901,6 +935,7 @@ export function FoodEditDialog({ food, isOpen, onClose, onUpdate, mode = 'edit',
     const [autoDetectedMicronutrients, setAutoDetectedMicronutrients] = useState<string[]>([]) // Auto-detected via keywords
 
     const [saving, setSaving] = useState(false)
+    const [effectiveTeamOwnerId, setEffectiveTeamOwnerId] = useState<string | null>(teamOwnerId ?? null)
 
     // Recipe match/ban management
     const { manualMatches, bans, cards, addManualMatch, deleteManualMatch, addBan, deleteBan } = useRecipeManager()
@@ -1001,6 +1036,33 @@ export function FoodEditDialog({ food, isOpen, onClose, onUpdate, mode = 'edit',
         loadOptions()
     }, [])
 
+    useEffect(() => {
+        let mounted = true
+
+        if (teamOwnerId !== undefined) {
+            setEffectiveTeamOwnerId(teamOwnerId || null)
+            return () => {
+                mounted = false
+            }
+        }
+
+        resolveTeamScopeContextFromAuth()
+            .then((scope) => {
+                if (mounted) {
+                    setEffectiveTeamOwnerId(scope.teamOwnerId)
+                }
+            })
+            .catch(() => {
+                if (mounted) {
+                    setEffectiveTeamOwnerId(null)
+                }
+            })
+
+        return () => {
+            mounted = false
+        }
+    }, [teamOwnerId])
+
     async function loadOptions() {
         try {
             const { data: settingsData } = await supabase
@@ -1072,16 +1134,20 @@ export function FoodEditDialog({ food, isOpen, onClose, onUpdate, mode = 'edit',
                 setSelectedMicronutrients([])
                 return
             }
-            const { data } = await supabase
-                .from('food_micronutrients')
-                .select('micronutrient_id')
-                .eq('food_id', food.id)
-            if (data) {
-                setSelectedMicronutrients(data.map((d: any) => d.micronutrient_id))
+
+            if (Array.isArray(food.micronutrients)) {
+                setSelectedMicronutrients(Array.from(new Set(food.micronutrients)))
+            }
+
+            try {
+                const micronutrients = await getFoodMicronutrientsByScope(food.id, effectiveTeamOwnerId)
+                setSelectedMicronutrients(micronutrients)
+            } catch (error) {
+                console.warn('[FoodEditDialog] micronutrient scope fetch failed:', error)
             }
         }
         fetchFoodMicronutrients()
-    }, [food.id])
+    }, [food.id, effectiveTeamOwnerId, food.micronutrients])
 
     // Fetch available diet types from database
     useEffect(() => {

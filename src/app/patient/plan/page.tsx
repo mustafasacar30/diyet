@@ -5,6 +5,11 @@ import { useEffect, useState, useRef, useMemo } from "react"
 import { format } from "date-fns"
 import { tr } from "date-fns/locale"
 import { supabase } from "@/lib/supabase"
+import { applyTeamFoodOverrides } from "@/lib/team-food-overrides"
+import { applyTeamFoodMicronutrientOverrides } from "@/lib/team-food-micronutrient-overrides"
+import { applyTeamDietTypeOverrides } from "@/lib/team-diet-type-overrides"
+import { applyProgramDietTypeOverrides } from "@/lib/program-diet-type-overrides"
+import { resolveTeamScopeContextForUser } from "@/lib/team-scope"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import {
@@ -827,6 +832,15 @@ export default function PatientPlanPage() {
         limitPeriodHours: number | null;
     }>({ isEligible: true, remainingCount: null, nextAvailableTime: null, limitPeriodHours: null })
 
+    const resolveFoodTeamOwnerId = async (): Promise<string | null> => {
+        if (!user?.id) return null
+        const scope = await resolveTeamScopeContextForUser(user.id, {
+            role: profile?.role || null,
+            is_global_access: (profile as any)?.is_global_access === true
+        })
+        return scope.teamOwnerId
+    }
+
     const checkAutoPlanEligibility = async (patientId: string, limitCount: number | null, limitHours: number | null) => {
         if (!patientId || !limitCount || !limitHours) {
             setAutoPlanEligibility({ isEligible: true, remainingCount: null, nextAvailableTime: null, limitPeriodHours: null })
@@ -1317,6 +1331,28 @@ export default function PatientPlanPage() {
                     .is('ended_at', null)
             ])
 
+            let effectiveDietTypes = pTypes || []
+            if (effectiveDietTypes.length > 0) {
+                const teamOwnerId = await resolveFoodTeamOwnerId()
+                const programTemplateId =
+                    (scopedPatientRecord as any).program_template_id ||
+                    scopedPatientRecord?.program_templates?.id ||
+                    null
+
+                let globalTeamProgramMerged = await applyTeamDietTypeOverrides(
+                    effectiveDietTypes.filter((dt: any) => !dt.patient_id),
+                    teamOwnerId
+                )
+                if (programTemplateId) {
+                    globalTeamProgramMerged = await applyProgramDietTypeOverrides(globalTeamProgramMerged, {
+                        programTemplateId,
+                        teamOwnerId
+                    })
+                }
+                const patientSpecific = effectiveDietTypes.filter((dt: any) => !!dt.patient_id)
+                effectiveDietTypes = [...globalTeamProgramMerged, ...patientSpecific]
+            }
+
             // Process Diseases
             if (diseasesData) {
                 const mapped = diseasesData.map((d: any) => d.disease).filter(Boolean)
@@ -1363,7 +1399,7 @@ export default function PatientPlanPage() {
                     .maybeSingle()
 
                 if (anyPlan) {
-                    await fetchAllWeeks(anyPlan.id, pTypes || [])
+                    await fetchAllWeeks(anyPlan.id, effectiveDietTypes)
                     setActivePlan(anyPlan)
                     return
                 }
@@ -1473,9 +1509,9 @@ export default function PatientPlanPage() {
             setActivePlan(plan)
 
 
-            if (pTypes) {
-                setDietTypesList(pTypes)
-                setPatientDietTypes(pTypes.filter((d: any) => d.patient_id === actualPatientId))
+            if (effectiveDietTypes) {
+                setDietTypesList(effectiveDietTypes)
+                setPatientDietTypes(effectiveDietTypes.filter((d: any) => d.patient_id === actualPatientId))
             }
 
             // SET ACTIVE PROGRAM IF ANY (from nested fetch)
@@ -1486,7 +1522,7 @@ export default function PatientPlanPage() {
                 setPatientProgram(patientProgramData)
             }
 
-            await fetchAllWeeks(plan.id, pTypes || [], patientProgramData, scopedPatientRecord, targetWeekId, isBackgroundRefresh)
+            await fetchAllWeeks(plan.id, effectiveDietTypes, patientProgramData, scopedPatientRecord, targetWeekId, isBackgroundRefresh)
 
         } catch (err) {
             console.error("Error fetching plan:", err)
@@ -1671,8 +1707,18 @@ export default function PatientPlanPage() {
                     if (!progType) {
                         const { data: globalType } = await supabase.from('diet_types').select('*').eq('id', rule.diet_type_id).maybeSingle()
                         if (globalType) {
-                            const override = pDietTypes.find((d: any) => d.parent_diet_type_id === globalType.id)
-                            progType = override || globalType
+                            const teamOwnerId = await resolveFoodTeamOwnerId()
+                            const [effectiveGlobalType] = await applyTeamDietTypeOverrides([globalType], teamOwnerId)
+                            let baseGlobalType = effectiveGlobalType || globalType
+                            if (pProgram?.id) {
+                                const [programScopedType] = await applyProgramDietTypeOverrides([baseGlobalType], {
+                                    programTemplateId: pProgram.id,
+                                    teamOwnerId
+                                })
+                                baseGlobalType = programScopedType || baseGlobalType
+                            }
+                            const override = pDietTypes.find((d: any) => d.parent_diet_type_id === baseGlobalType.id)
+                            progType = override || baseGlobalType
                         }
                     }
                     if (progType) {
@@ -1928,7 +1974,10 @@ export default function PatientPlanPage() {
                     .in('id', Array.from(missingFoodIds))
 
                 if (manualFoods) {
-                    manualFoods.forEach(f => foodMap.set(f.id, f))
+                    const teamOwnerId = await resolveFoodTeamOwnerId()
+                    const scopedFoods = await applyTeamFoodOverrides(manualFoods, teamOwnerId)
+                    const effectiveFoods = await applyTeamFoodMicronutrientOverrides(scopedFoods, teamOwnerId)
+                    effectiveFoods.forEach(f => foodMap.set(f.id, f))
                 }
             }
 
@@ -2520,6 +2569,7 @@ export default function PatientPlanPage() {
     const fetchFoods = async () => {
         if (allFoods.length > 0) return // Already fetched
 
+        const teamOwnerId = await resolveFoodTeamOwnerId()
         const { data, error } = await supabase
             .from('foods')
             .select('id, name, calories, protein, carbs, fat, vejeteryan, meal_types, tags, compatibility_tags, min_quantity, max_quantity, step, portion_fixed, max_weekly_freq, priority_score, season_start, season_end')
@@ -2533,12 +2583,16 @@ export default function PatientPlanPage() {
                 .select('id, name, calories, protein, carbs, fat, vejeteryan, meal_types, tags, compatibility_tags, min_quantity, max_quantity, step, portion_fixed, max_weekly_freq, priority_score, season_start, season_end')
 
             if (fallbackData && !fallbackError) {
-                setAllFoods(fallbackData.sort((a, b) => a.name.localeCompare(b.name, 'tr')))
+                const scopedFallbackFoods = await applyTeamFoodOverrides(fallbackData, teamOwnerId)
+                const effectiveFallbackFoods = await applyTeamFoodMicronutrientOverrides(scopedFallbackFoods, teamOwnerId)
+                setAllFoods(effectiveFallbackFoods.sort((a, b) => a.name.localeCompare(b.name, 'tr')))
             } else {
                 console.error('Foods fallback fetch error:', fallbackError)
             }
         } else if (data) {
-            setAllFoods(data)
+            const scopedFoods = await applyTeamFoodOverrides(data, teamOwnerId)
+            const effectiveFoods = await applyTeamFoodMicronutrientOverrides(scopedFoods, teamOwnerId)
+            setAllFoods(effectiveFoods)
         }
     }
 
@@ -2600,8 +2654,18 @@ export default function PatientPlanPage() {
                         .maybeSingle()
 
                     if (globalType) {
-                        const override = patientDietTypes.find((d: any) => d.parent_diet_type_id === globalType.id)
-                        progType = override || globalType
+                        const teamOwnerId = await resolveFoodTeamOwnerId()
+                        const [effectiveGlobalType] = await applyTeamDietTypeOverrides([globalType], teamOwnerId)
+                        let baseGlobalType = effectiveGlobalType || globalType
+                        if (patientInfo?.program_template_id) {
+                            const [programScopedType] = await applyProgramDietTypeOverrides([baseGlobalType], {
+                                programTemplateId: patientInfo.program_template_id,
+                                teamOwnerId
+                            })
+                            baseGlobalType = programScopedType || baseGlobalType
+                        }
+                        const override = patientDietTypes.find((d: any) => d.parent_diet_type_id === baseGlobalType.id)
+                        progType = override || baseGlobalType
                     }
                 }
 

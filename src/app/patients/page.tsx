@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import { useState, useEffect } from "react"
 import { supabase } from "@/lib/supabase"
@@ -6,6 +6,7 @@ import { useAuth } from "@/contexts/auth-context"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { Switch } from "@/components/ui/switch"
 import { Plus, Search, User, MoreVertical, Pencil, Trash2, Copy, LayoutGrid, List, Archive, RefreshCw, ArrowUpDown, UserCog, Eye, Check } from "lucide-react"
 import {
     Dialog,
@@ -31,6 +32,7 @@ import { PatientProfileDialog } from "@/components/diet/patient-profile-dialog"
 import { PatientCloneDialog } from "@/components/diet/patient-clone-dialog"
 import { PatientAssignmentDialog } from "@/components/diet/patient-assignment-dialog"
 import { createPatientWithAuth } from "@/actions/patient-actions"
+import { resolveTeamScopeContextFromAuth } from "@/lib/team-scope"
 
 type Patient = {
     id: string
@@ -55,6 +57,7 @@ type Patient = {
         full_name: string
     } | null
     patient_assignments?: {
+        dietitian_id?: string | null
         profiles: {
             full_name: string
         } | null
@@ -70,6 +73,21 @@ export default function PatientsPage() {
     const [patients, setPatients] = useState<Patient[]>([])
     const [loading, setLoading] = useState(true)
     const [search, setSearch] = useState("")
+    const [scopeMode, setScopeMode] = useState<'global' | 'team'>('global')
+    const [teamScope, setTeamScope] = useState<{
+        userId: string | null
+        role: string | null
+        canUseGlobal: boolean
+        teamOwnerId: string | null
+    }>({
+        userId: null,
+        role: null,
+        canUseGlobal: true,
+        teamOwnerId: null
+    })
+    const [visibleDietitianIds, setVisibleDietitianIds] = useState<string[]>([])
+    const [highlightDietitianIds, setHighlightDietitianIds] = useState<string[]>([])
+    const [highlightPatientIds, setHighlightPatientIds] = useState<string[]>([])
 
     // Sort State
     const [sortConfig, setSortConfig] = useState<{ key: keyof Patient | 'age' | 'program'; direction: 'asc' | 'desc' }>({ key: 'created_at', direction: 'desc' })
@@ -92,41 +110,163 @@ export default function PatientsPage() {
 
     const router = useRouter()
 
+    const canToggleScopeMode =
+        teamScope.role === 'doctor' &&
+        teamScope.canUseGlobal &&
+        !!teamScope.userId
+
+    const isTeamScopeActive =
+        (teamScope.role === 'doctor' || teamScope.role === 'dietitian') &&
+        (!teamScope.canUseGlobal || (canToggleScopeMode && scopeMode === 'team'))
+
     useEffect(() => {
         fetchPatients()
-    }, [])
+    }, [scopeMode])
+
+    function getPatientAssigneeIds(patient: Patient): string[] {
+        const ids: string[] = []
+        if (patient.dietitian_id) ids.push(patient.dietitian_id)
+        ;(patient.patient_assignments || []).forEach((assignment) => {
+            if (assignment?.dietitian_id) ids.push(assignment.dietitian_id)
+        })
+        return Array.from(new Set(ids))
+    }
+
+    function isHighlightedPatient(patient: Patient): boolean {
+        if (highlightPatientIds.length > 0 && highlightPatientIds.includes(patient.id)) {
+            return true
+        }
+        if (highlightDietitianIds.length === 0) return false
+        const highlightSet = new Set(highlightDietitianIds)
+        return getPatientAssigneeIds(patient).some((dietitianId) => highlightSet.has(dietitianId))
+    }
 
     async function fetchPatients() {
         setLoading(true)
-        const { data, error } = await supabase
-            .from('patients')
-            .select(`
-                *,
-                user_id,
-                program_templates (
-                    name
-                ),
-                diet_plans (
-                    id,
-                    status,
-                    created_at,
-                    diet_weeks (
-                        id
-                    )
-                ),
-                patient_assignments (
-                    profiles:dietitian_id (
-                        full_name
-                    )
-                )
-            `)
-            .not('gender', 'is', null)
-            .order('created_at', { ascending: false })
+        try {
+            const scopeCtx = await resolveTeamScopeContextFromAuth()
+            setTeamScope({
+                userId: scopeCtx.userId,
+                role: scopeCtx.role,
+                canUseGlobal: scopeCtx.canUseGlobal,
+                teamOwnerId: scopeCtx.teamOwnerId
+            })
 
-        if (error) {
-            console.error('Error fetching patients:', error)
-        } else {
-            setPatients(data || [])
+            let ownScopedDietitianIds: string[] = []
+            if (scopeCtx.role === 'doctor' && scopeCtx.userId) {
+                const { data: teamMembers, error: teamMembersError } = await supabase
+                    .from('team_members')
+                    .select('member_id')
+                    .eq('supervisor_id', scopeCtx.userId)
+                    .eq('status', 'active')
+
+                if (teamMembersError) {
+                    console.error('Error fetching team members for patient scope:', teamMembersError)
+                }
+
+                const memberIds = (teamMembers || [])
+                    .map((row: { member_id: string | null }) => row.member_id)
+                    .filter((id): id is string => Boolean(id))
+
+                // Doctor direct assignment support + team dietitians.
+                ownScopedDietitianIds = Array.from(new Set([scopeCtx.userId, ...memberIds]))
+            } else if (scopeCtx.role === 'dietitian' && scopeCtx.userId) {
+                ownScopedDietitianIds = [scopeCtx.userId]
+            }
+
+            setHighlightDietitianIds(ownScopedDietitianIds)
+
+            const shouldApplyTeamFilter =
+                (scopeCtx.role === 'doctor' || scopeCtx.role === 'dietitian') &&
+                (
+                    !scopeCtx.canUseGlobal ||
+                    (scopeCtx.role === 'doctor' && scopeCtx.canUseGlobal && scopeMode === 'team')
+                )
+
+            const scopedDietitianIds = shouldApplyTeamFilter ? ownScopedDietitianIds : []
+            setVisibleDietitianIds(scopedDietitianIds)
+
+            let ownAssignmentPatientIds: string[] = []
+            if (ownScopedDietitianIds.length > 0) {
+                const { data: ownAssignments, error: ownAssignmentsError } = await supabase
+                    .from('patient_assignments')
+                    .select('patient_id,dietitian_id')
+                    .in('dietitian_id', ownScopedDietitianIds)
+
+                if (ownAssignmentsError) {
+                    console.error('Error fetching patient assignments for team scope:', ownAssignmentsError)
+                } else {
+                    ownAssignmentPatientIds = (ownAssignments || [])
+                        .map((row: { patient_id: string | null }) => row.patient_id)
+                        .filter((id): id is string => Boolean(id))
+                }
+            }
+
+            const { data, error } = await supabase
+                .from('patients')
+                .select(`
+                    *,
+                    user_id,
+                    program_templates (
+                        name
+                    ),
+                    diet_plans (
+                        id,
+                        status,
+                        created_at,
+                        diet_weeks (
+                            id
+                        )
+                    ),
+                    patient_assignments (
+                        dietitian_id,
+                        profiles:dietitian_id (
+                            full_name
+                        )
+                    )
+                `)
+                .not('gender', 'is', null)
+                .order('created_at', { ascending: false })
+
+            if (error) {
+                console.error('Error fetching patients:', error)
+                setPatients([])
+                return
+            }
+
+            const allPatients = (data || []) as Patient[]
+            const ownDietitianSet = new Set(ownScopedDietitianIds)
+            const ownAssignmentPatientSet = new Set(ownAssignmentPatientIds)
+            const highlightedPatientIds = allPatients
+                .filter((patient) => {
+                    const directMatch = !!patient.dietitian_id && ownDietitianSet.has(patient.dietitian_id)
+                    const assignmentMatch = ownAssignmentPatientSet.has(patient.id)
+                    return directMatch || assignmentMatch
+                })
+                .map((patient) => patient.id)
+            setHighlightPatientIds(highlightedPatientIds)
+
+            let scopedPatients = allPatients
+            if (shouldApplyTeamFilter) {
+                if (scopedDietitianIds.length === 0) {
+                    scopedPatients = []
+                } else {
+                    const allowedSet = new Set(scopedDietitianIds)
+                    scopedPatients = scopedPatients.filter((patient) =>
+                        (
+                            (!!patient.dietitian_id && allowedSet.has(patient.dietitian_id)) ||
+                            ownAssignmentPatientSet.has(patient.id) ||
+                            getPatientAssigneeIds(patient).some((dietitianId) => allowedSet.has(dietitianId))
+                        )
+                    )
+                }
+            }
+
+            setPatients(scopedPatients)
+        } catch (error) {
+            console.error('Unexpected patient fetch error:', error)
+            setPatients([])
+            setHighlightPatientIds([])
         }
         setLoading(false)
     }
@@ -241,6 +381,7 @@ export default function PatientsPage() {
     })
 
     const pendingCount = patients.filter(p => p.status === 'pending').length
+    const ownScopeVisibleCount = filteredPatients.filter((patient) => isHighlightedPatient(patient)).length
 
     const sortedPatients = [...filteredPatients].sort((a, b) => {
         let aValue: any = a[sortConfig.key as keyof Patient]
@@ -285,12 +426,39 @@ export default function PatientsPage() {
                 <div>
                     <h2 className="text-3xl font-bold tracking-tight">Hastalar</h2>
                     <p className="text-muted-foreground">Danışanlarınızı buradan yönetin.</p>
+                    {isTeamScopeActive && (
+                        <p className="text-xs text-violet-700 mt-1">
+                            Takım kapsamı aktif: {filteredPatients.length} hasta listeleniyor, {visibleDietitianIds.length} sorumlu kullanıcı filtresi uygulanıyor.
+                        </p>
+                    )}
+                    {(teamScope.role === 'doctor' || teamScope.role === 'dietitian') && (
+                        <p className="text-xs text-gray-500 mt-1">
+                            Sorumlu olduğunuz hastalar "Takımım" etiketiyle işaretlenir ({ownScopeVisibleCount} hasta).
+                        </p>
+                    )}
                 </div>
 
-                <Button className="gap-2 bg-green-600 hover:bg-green-700 text-white" onClick={openCreateDialog}>
-                    <Plus size={18} />
-                    Yeni Hasta Ekle
-                </Button>
+                <div className="flex items-center gap-3">
+                    {canToggleScopeMode && (
+                        <div className="flex items-center gap-3 rounded-md border bg-white px-3 py-2">
+                            <span className={`text-sm ${scopeMode === 'global' ? 'font-semibold text-gray-900' : 'text-gray-500'}`}>
+                                Global Mod
+                            </span>
+                            <Switch
+                                checked={scopeMode === 'team'}
+                                onCheckedChange={(checked) => setScopeMode(checked ? 'team' : 'global')}
+                                aria-label="Patients scope mode switch"
+                            />
+                            <span className={`text-sm ${scopeMode === 'team' ? 'font-semibold text-gray-900' : 'text-gray-500'}`}>
+                                Takım Modu
+                            </span>
+                        </div>
+                    )}
+                    <Button className="gap-2 bg-green-600 hover:bg-green-700 text-white" onClick={openCreateDialog}>
+                        <Plus size={18} />
+                        Yeni Hasta Ekle
+                    </Button>
+                </div>
             </div>
 
             {/* Filters & View Toggle */}
@@ -357,10 +525,12 @@ export default function PatientsPage() {
             ) : viewMode === 'grid' ? (
                 // GRID VIEW
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                    {sortedPatients.map((patient) => (
+                    {sortedPatients.map((patient) => {
+                        const isOwnScopePatient = isHighlightedPatient(patient)
+                        return (
                         <Card
                             key={patient.id}
-                            className={`hover:shadow-md transition-shadow cursor-pointer group relative overflow-hidden ${patient.status === 'archived' ? 'opacity-75 bg-gray-50' : ''}`}
+                            className={`hover:shadow-md transition-shadow cursor-pointer group relative overflow-hidden ${patient.status === 'archived' ? 'opacity-75 bg-gray-50' : ''} ${isOwnScopePatient ? 'ring-1 ring-violet-200' : ''}`}
                         >
                             <div className={`absolute top-0 left-0 w-1 h-full opacity-0 group-hover:opacity-100 transition-opacity ${patient.status === 'archived' ? 'bg-gray-400' : 'bg-gradient-to-b from-blue-400 to-blue-600'}`} />
                             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -369,6 +539,11 @@ export default function PatientsPage() {
                                     onClick={() => router.push(`/patients/${patient.id}`)}
                                 >
                                     {patient.full_name}
+                                    {isOwnScopePatient && (
+                                        <span className="ml-2 inline-flex items-center rounded border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium text-violet-700 align-middle">
+                                            Takımım
+                                        </span>
+                                    )}
                                 </CardTitle>
                                 <DropdownMenu>
                                     <DropdownMenuTrigger asChild>
@@ -428,7 +603,7 @@ export default function PatientsPage() {
                                 </div>
                             </CardContent>
                         </Card>
-                    ))}
+                    )})}
                 </div>
             ) : (
                 // LIST VIEW (TABLE)
@@ -470,10 +645,11 @@ export default function PatientsPage() {
                         activePlans.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
                         const latestActivePlan = activePlans[0]
                         const weekCount = latestActivePlan?.diet_weeks?.length || 0
+                        const isOwnScopePatient = isHighlightedPatient(patient)
                         return (
                             <div
                                 key={patient.id}
-                                className={`grid grid-cols-12 gap-4 items-center p-4 border-b last:border-b-0 hover:bg-gray-50 transition-colors cursor-pointer group text-sm ${patient.status === 'archived' ? 'bg-gray-50/50 text-gray-500' : ''}`}
+                                className={`grid grid-cols-12 gap-4 items-center p-4 border-b last:border-b-0 hover:bg-gray-50 transition-colors cursor-pointer group text-sm ${patient.status === 'archived' ? 'bg-gray-50/50 text-gray-500' : ''} ${isOwnScopePatient ? 'bg-violet-50/40' : ''}`}
                                 onClick={() => router.push(`/patients/${patient.id}`)}
                             >
                                 <div className="col-span-1 font-medium text-gray-400">
@@ -486,6 +662,11 @@ export default function PatientsPage() {
                                     <div className="min-w-0">
                                         <div className="font-medium truncate">{patient.full_name}</div>
                                     </div>
+                                    {isOwnScopePatient && (
+                                        <span className="bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded text-[9px] font-medium shrink-0">
+                                            Takımım
+                                        </span>
+                                    )}
                                     {patient.status === 'archived' && (
                                         <span className="bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded text-[9px] font-medium shrink-0">ARŞİV</span>
                                     )}
@@ -642,3 +823,4 @@ export default function PatientsPage() {
         </div>
     )
 }
+

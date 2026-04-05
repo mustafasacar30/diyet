@@ -16,6 +16,9 @@ import { FoodEditDialog } from "@/components/diet/food-sidebar"
 import { SettingsDialog } from "@/components/planner/settings-dialog"
 import { PatientRulesDialog } from "@/components/planner/patient-rules-dialog"
 import { supabase } from "@/lib/supabase"
+import { resolveTeamScopeContextFromAuth } from "@/lib/team-scope"
+import { applyTeamFoodOverrides, upsertTeamFoodOverride } from "@/lib/team-food-overrides"
+import { saveFoodMicronutrientsByScope } from "@/lib/team-food-micronutrient-overrides"
 import { FOOD_ROLES, LEGACY_ROLE_LABELS } from "@/lib/constants/food-roles"
 import { Planner } from "@/lib/planner/engine3"
 
@@ -985,30 +988,61 @@ export function AutoPlanDialog({ open, onOpenChange, plan, onConfirm, loading, m
                         onSave={async (data) => {
                             // Separate micronutrients array (not a column in 'foods' table)
                             const { micronutrients, ...foodsPayload } = data
+                            const baseFoodId = editFood.base_food_id || editFood.id
+                            const { userId, teamOwnerId } = await resolveTeamScopeContextFromAuth()
 
-                            // Update Supabase foods table
-                            const { data: savedFood, error } = await supabase
-                                .from('foods')
-                                .update(foodsPayload)
-                                .eq('id', editFood.id)
-                                .select()
-                                .single()
+                            let savedFood: any = null
+                            let error: any = null
+
+                            if (teamOwnerId && userId) {
+                                const { error: overrideError } = await upsertTeamFoodOverride({
+                                    teamOwnerId,
+                                    baseFoodId,
+                                    createdBy: userId,
+                                    updates: foodsPayload
+                                })
+
+                                if (overrideError) {
+                                    error = overrideError
+                                } else {
+                                    const { data: baseFood, error: baseFoodError } = await supabase
+                                        .from('foods')
+                                        .select('*')
+                                        .eq('id', baseFoodId)
+                                        .single()
+
+                                    if (baseFoodError) {
+                                        error = baseFoodError
+                                    } else {
+                                        const [effectiveFood] = await applyTeamFoodOverrides(baseFood ? [baseFood] : [], teamOwnerId)
+                                        savedFood = effectiveFood || baseFood
+                                    }
+                                }
+                            } else {
+                                const result = await supabase
+                                    .from('foods')
+                                    .update(foodsPayload)
+                                    .eq('id', baseFoodId)
+                                    .select()
+                                    .single()
+
+                                savedFood = result.data
+                                error = result.error
+                            }
 
                             if (error) {
                                 console.error("Error saving food:", error)
                                 throw error // Pass error up to FoodEditDialog alert
                             }
 
-                            // Update micronutrients associations
-                            if (micronutrients && Array.isArray(micronutrients)) {
-                                await supabase.from('food_micronutrients').delete().eq('food_id', editFood.id)
-                                if (micronutrients.length > 0) {
-                                    const associations = micronutrients.map((microId: string) => ({
-                                        food_id: editFood.id,
-                                        micronutrient_id: microId
-                                    }))
-                                    await supabase.from('food_micronutrients').insert(associations)
-                                }
+                            if (Array.isArray(micronutrients)) {
+                                const { error: microError } = await saveFoodMicronutrientsByScope({
+                                    baseFoodId,
+                                    teamOwnerId,
+                                    micronutrients,
+                                    createdBy: userId
+                                })
+                                if (microError) throw microError
                             }
 
                             setFoodDialogOpen(false)

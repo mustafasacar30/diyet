@@ -389,7 +389,6 @@ export function PatientProfileDialog({
     })
 
     useEffect(() => {
-        console.log("PatientProfileDialog mounted/updated", open, patientId, isCreateMode)
         if (open) {
             if (isCreateMode) {
                 // Reset form for create mode

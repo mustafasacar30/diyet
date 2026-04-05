@@ -39,9 +39,11 @@ interface RuleDialogProps {
     initialData: PlanningRule | null
     onSuccess: () => void
     patientId?: string // For patient-scoped rules
+    programTemplateId?: string | null
+    teamOwnerId?: string | null
 }
 
-export function RuleDialog({ open, onOpenChange, initialData, onSuccess, patientId }: RuleDialogProps) {
+export function RuleDialog({ open, onOpenChange, initialData, onSuccess, patientId, programTemplateId, teamOwnerId }: RuleDialogProps) {
     const { categories, roles, loading: metadataLoading } = usePlannerMetadata()
     const [mealTypes, setMealTypes] = useState<string[]>([])
     const [definition, setDefinition] = useState<RuleDefinition | null>(null)
@@ -181,20 +183,35 @@ export function RuleDialog({ open, onOpenChange, initialData, onSuccess, patient
 
         setLoading(true)
         try {
+            const isEditingExistingRule = Boolean(initialData?.id)
+            const editingRuleId = initialData?.id || null
+            const resolvedScope: 'global' | 'team' | 'program' | 'patient' =
+                patientId ? 'patient'
+                    : programTemplateId ? 'program'
+                        : teamOwnerId ? 'team'
+                            : 'global'
+
             const ruleData = {
                 ...values,
                 definition: definition,
-                // Add scope and patient_id for patient-specific rules (only on insert)
-                ...(patientId && !initialData ? { scope: 'patient', patient_id: patientId } : {})
+                // Add scoped identifiers only on insert
+                ...(!isEditingExistingRule ? {
+                    scope: resolvedScope,
+                    patient_id: resolvedScope === 'patient' ? patientId : null,
+                    program_template_id: resolvedScope === 'program' ? programTemplateId : null,
+                    team_owner_id: (resolvedScope === 'team' || resolvedScope === 'program' || resolvedScope === 'patient')
+                        ? (teamOwnerId || null)
+                        : null,
+                    source_rule_id: initialData?.source_rule_id || null,
+                    pending_global_approval: false,
+                } : {})
             }
 
-            // If initialData exists AND has an ID, it's an update.
-            // If initialData exists but ID is undefined (e.g. accepting suggestion as new), it's a create.
-            if (initialData && initialData.id) {
+            if (isEditingExistingRule) {
                 const { error } = await supabase
                     .from('planning_rules')
                     .update(ruleData)
-                    .eq('id', initialData.id)
+                    .eq('id', editingRuleId)
                 if (error) throw error
             } else {
                 const { error } = await supabase

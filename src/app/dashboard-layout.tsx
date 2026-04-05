@@ -19,7 +19,7 @@ export default function DashboardLayout({
     const pathname = usePathname()
     const router = useRouter()
     const isPublicAuthPath = pathname === '/login' || pathname === '/register' || pathname?.startsWith('/auth/callback')
-    const { isImpersonating, stopImpersonation, profile, signOut, user, loading } = useAuth()
+    const { isImpersonating, stopImpersonation, profile, signOut, user, loading, isStaff, isAdmin } = useAuth()
     const [unreadCount, setUnreadCount] = useState(0)
     const [sheetOpen, setSheetOpen] = useState(false)
     const startupName = profile?.full_name || user?.user_metadata?.full_name || (user?.email ? user.email.split('@')[0] : null)
@@ -145,8 +145,8 @@ export default function DashboardLayout({
         { href: '/foods', label: 'Yemek Listesi', icon: UtensilsCrossed },
     ]
 
-    if (profile?.role === 'admin' || profile?.role === 'dietitian') {
-        if (profile?.role === 'admin') {
+    if (isStaff) {
+        if (isAdmin) {
             tabs.push({ href: '/admin/users', label: 'Yönetici', icon: Shield })
             tabs.push({ href: '/admin/dietitians', label: 'Diyetisyenler', icon: UserCog })
             tabs.push({ href: '/admin/doctors', label: 'Doktorlar', icon: Stethoscope })

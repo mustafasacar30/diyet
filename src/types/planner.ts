@@ -126,10 +126,13 @@ export interface PlanningRule {
     updated_at: string
     user_id?: string | null
     // Patient-scope fields
-    scope?: 'global' | 'patient' | 'program'
+    scope?: 'global' | 'team' | 'patient' | 'program'
     patient_id?: string | null
     program_template_id?: string | null
+    team_owner_id?: string | null
     source_rule_id?: string | null
+    scope_source?: 'global' | 'team' | 'program' | 'patient'
+    base_rule_id?: string | null
     pending_global_approval?: boolean
     is_ignored?: boolean
 }
@@ -171,9 +174,10 @@ export interface PortionSettings {
 export interface PlannerSettings {
     id: string
     user_id: string
-    scope: 'global' | 'patient' | 'program'
+    scope: 'global' | 'team' | 'patient' | 'program'
     patient_id?: string | null
     program_template_id?: string | null
+    team_owner_id?: string | null
     weights: { id: string, weight: number }[]
     exempt_tags?: string[]
     enable_name_similarity_check?: boolean

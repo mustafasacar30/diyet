@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
@@ -29,12 +29,17 @@ import { Plus, Trash2, Calendar, Ban, AlertTriangle, BookOpen, UtensilsCrossed, 
 import { MealTypesEditor, SlotConfig as MealSlotConfig } from '@/components/planner/meal-types-editor'
 import { RuleDialog } from '@/components/planner/rule-dialog'
 import { SettingsDialog } from '@/components/planner/settings-dialog'
+import { DietTypesEditor } from '@/components/diet/diet-types-editor'
 import { PlanningRule } from '@/types/planner'
+import { resolveTeamScopeContextFromAuth } from '@/lib/team-scope'
+import { applyTeamDietTypeOverrides } from '@/lib/team-diet-type-overrides'
+import { applyProgramDietTypeOverrides } from '@/lib/program-diet-type-overrides'
 
 interface DietType {
     id: string
     name: string
     abbreviation?: string
+    [key: string]: any
 }
 
 interface ProgramTemplateWeek {
@@ -60,6 +65,7 @@ interface ProgramTemplate {
     total_weeks: number
     default_activity_level: number
     is_active: boolean
+    scope_source?: 'global' | 'team'
     program_template_weeks?: ProgramTemplateWeek[]
     program_template_restrictions?: ProgramTemplateRestriction[]
 }
@@ -68,9 +74,10 @@ interface ProgramDialogProps {
     open: boolean
     onClose: () => void
     program: ProgramTemplate | null
+    forcedMode?: 'global' | 'team'
 }
 
-export default function ProgramDialog({ open, onClose, program }: ProgramDialogProps) {
+export default function ProgramDialog({ open, onClose, program, forcedMode }: ProgramDialogProps) {
     const [saving, setSaving] = useState(false)
     const [dietTypes, setDietTypes] = useState<DietType[]>([])
 
@@ -88,15 +95,17 @@ export default function ProgramDialog({ open, onClose, program }: ProgramDialogP
     const [newRestrictionValue, setNewRestrictionValue] = useState('')
     const [newRestrictionSeverity, setNewRestrictionSeverity] = useState<'warn' | 'block'>('warn')
 
-    // ─── Rules Tab State ────────────────────────────────────────────
+    // â”€â”€â”€ Rules Tab State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const [rulesLoading, setRulesLoading] = useState(false)
     const [globalRules, setGlobalRules] = useState<PlanningRule[]>([])
+    const [teamRules, setTeamRules] = useState<PlanningRule[]>([])
     const [programRules, setProgramRules] = useState<PlanningRule[]>([])
     const [hasProgramRules, setHasProgramRules] = useState(false)
     const [ruleDialogOpen, setRuleDialogOpen] = useState(false)
     const [editingRule, setEditingRule] = useState<PlanningRule | null>(null)
+    const [rulesTeamOwnerId, setRulesTeamOwnerId] = useState<string | null>(null)
 
-    // ─── General Settings Tab State ─────────────────────────────────
+    // â”€â”€â”€ General Settings Tab State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const [settingsOpen, setSettingsOpen] = useState(false)
 
     useEffect(() => {
@@ -118,7 +127,7 @@ export default function ProgramDialog({ open, onClose, program }: ProgramDialogP
                 resetForm()
             }
         }
-    }, [open, program])
+    }, [open, program, forcedMode])
 
     function resetForm() {
         setName('')
@@ -131,20 +140,97 @@ export default function ProgramDialog({ open, onClose, program }: ProgramDialogP
         setProgramRules([])
         setHasProgramRules(false)
         setGlobalRules([])
+        setTeamRules([])
+        setRulesTeamOwnerId(null)
     }
 
     async function fetchDietTypes() {
-        const { data } = await supabase
+        const { data, error } = await supabase
             .from('diet_types')
-            .select('id, name, abbreviation')
+            .select('*')
+            .is('patient_id', null)
             .order('name')
-        setDietTypes(data || [])
+        if (error) {
+            console.error('Error fetching diet types:', error)
+            setDietTypes([])
+            return
+        }
+
+        let mergedDietTypes = (data || []).map((row: any) => ({
+            ...row,
+            base_diet_type_id: row.id,
+            scope_source: 'global',
+        }))
+
+        try {
+            const scopeCtx = await resolveEffectiveScopeContext()
+            const teamOwnerId = scopeCtx.isTeamScoped ? scopeCtx.teamOwnerId : null
+
+            if (teamOwnerId) {
+                mergedDietTypes = await applyTeamDietTypeOverrides(mergedDietTypes, teamOwnerId)
+            }
+
+            if (program?.id) {
+                mergedDietTypes = await applyProgramDietTypeOverrides(mergedDietTypes, {
+                    programTemplateId: program.id,
+                    teamOwnerId,
+                })
+            }
+        } catch (scopeError) {
+            console.warn('Program dialog diet type scope merge skipped:', scopeError)
+        }
+
+        setDietTypes(mergedDietTypes)
     }
 
-    // ─── Rules Fetching ─────────────────────────────────────────────
+    async function resolveEffectiveScopeContext() {
+        let baseCtx: {
+            userId: string | null
+            role: string | null
+            canUseGlobal: boolean
+            teamOwnerId: string | null
+        } = {
+            userId: null,
+            role: null,
+            canUseGlobal: true,
+            teamOwnerId: null
+        }
+
+        try {
+            baseCtx = await resolveTeamScopeContextFromAuth()
+        } catch (scopeError) {
+            console.warn('Team scope resolve failed, fallback to global context:', scopeError)
+        }
+
+        const canForceTeamModeForAdminDoctor =
+            forcedMode === 'team' &&
+            baseCtx.role === 'doctor' &&
+            baseCtx.canUseGlobal &&
+            !!baseCtx.userId
+
+        const effectiveCanUseGlobal = canForceTeamModeForAdminDoctor ? false : baseCtx.canUseGlobal
+        const effectiveTeamOwnerId = canForceTeamModeForAdminDoctor ? baseCtx.userId : baseCtx.teamOwnerId
+        const isTeamScoped =
+            (baseCtx.role === 'doctor' || baseCtx.role === 'dietitian') &&
+            !effectiveCanUseGlobal &&
+            !!effectiveTeamOwnerId
+
+        return {
+            ...baseCtx,
+            canUseGlobal: effectiveCanUseGlobal,
+            teamOwnerId: effectiveTeamOwnerId,
+            isTeamScoped
+        }
+    }
+
+    // â”€â”€â”€ Rules Fetching â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const fetchProgramRules = useCallback(async (programId: string) => {
         setRulesLoading(true)
         try {
+            const scopeCtx = await resolveEffectiveScopeContext()
+            const teamOwnerId = scopeCtx.isTeamScoped ? scopeCtx.teamOwnerId : null
+            setRulesTeamOwnerId(teamOwnerId || null)
+
             // Fetch global rules
             const { data: gRules } = await supabase
                 .from('planning_rules')
@@ -153,12 +239,33 @@ export default function ProgramDialog({ open, onClose, program }: ProgramDialogP
                 .order('priority', { ascending: false })
             setGlobalRules(gRules || [])
 
+            // Fetch team base rules (only for team-scoped mode)
+            if (teamOwnerId) {
+                const { data: tRules } = await supabase
+                    .from('planning_rules')
+                    .select('*')
+                    .eq('scope', 'team')
+                    .eq('team_owner_id', teamOwnerId)
+                    .order('priority', { ascending: false })
+                setTeamRules(tRules || [])
+            } else {
+                setTeamRules([])
+            }
+
             // Fetch program-specific rules
-            const { data: pRules } = await supabase
+            let programQuery = supabase
                 .from('planning_rules')
                 .select('*')
                 .eq('scope', 'program')
                 .eq('program_template_id', programId)
+
+            if (teamOwnerId) {
+                programQuery = programQuery.eq('team_owner_id', teamOwnerId)
+            } else {
+                programQuery = programQuery.is('team_owner_id', null)
+            }
+
+            const { data: pRules } = await programQuery
                 .order('priority', { ascending: false })
 
             setProgramRules(pRules || [])
@@ -167,14 +274,18 @@ export default function ProgramDialog({ open, onClose, program }: ProgramDialogP
             console.error("Error fetching program rules:", e)
         }
         setRulesLoading(false)
-    }, [])
+    }, [forcedMode])
 
-    // Clone global rules → program scope
+    // Clone inherited base rules (team if exists, otherwise global) â†’ program scope
     async function handleCloneGlobalRules(programId: string) {
         if (!programId) return
         setRulesLoading(true)
         try {
-            const rulesToInsert = globalRules.map(rule => ({
+            const baseRules = teamRules.length > 0 ? teamRules : globalRules
+            const scopeCtx = await resolveEffectiveScopeContext()
+            const teamOwnerId = scopeCtx.isTeamScoped ? scopeCtx.teamOwnerId : null
+
+            const rulesToInsert = baseRules.map(rule => ({
                 name: rule.name,
                 description: rule.description,
                 rule_type: rule.rule_type,
@@ -183,6 +294,7 @@ export default function ProgramDialog({ open, onClose, program }: ProgramDialogP
                 definition: rule.definition,
                 scope: 'program',
                 program_template_id: programId,
+                team_owner_id: teamOwnerId,
                 source_rule_id: rule.id
             }))
             const { error } = await supabase.from('planning_rules').insert(rulesToInsert)
@@ -195,16 +307,28 @@ export default function ProgramDialog({ open, onClose, program }: ProgramDialogP
         setRulesLoading(false)
     }
 
-    // Revert to global (delete all program rules)
+    // Revert to parent inherited layer (team/global) by deleting program rules.
     async function handleRevertRules(programId: string) {
-        if (!confirm("Tüm program kuralları silinecek ve global kurallara dönülecek. Emin misiniz?")) return
+        const parentLabel = teamRules.length > 0 ? 'takım kurallarına' : 'global kurallara'
+        if (!confirm(`Tüm program kuralları silinecek ve ${parentLabel} dönülecek. Emin misiniz?`)) return
         setRulesLoading(true)
         try {
-            const { error } = await supabase
+            const scopeCtx = await resolveEffectiveScopeContext()
+            const teamOwnerId = scopeCtx.isTeamScoped ? scopeCtx.teamOwnerId : null
+
+            let deleteQuery = supabase
                 .from('planning_rules')
                 .delete()
                 .eq('scope', 'program')
                 .eq('program_template_id', programId)
+
+            if (teamOwnerId) {
+                deleteQuery = deleteQuery.eq('team_owner_id', teamOwnerId)
+            } else {
+                deleteQuery = deleteQuery.is('team_owner_id', null)
+            }
+
+            const { error } = await deleteQuery
             if (error) throw error
             await fetchProgramRules(programId)
         } catch (e: any) {
@@ -233,16 +357,23 @@ export default function ProgramDialog({ open, onClose, program }: ProgramDialogP
         if (!error && program?.id) await fetchProgramRules(program.id)
     }
 
-    // New global rules not yet in program
-    const newGlobalRules = globalRules.filter(g =>
-        !programRules.some(p => p.source_rule_id === g.id)
+    // New inherited rules (team if available, otherwise global) not yet in program
+    const inheritedFromTeam = teamRules.length > 0
+    const baseRules = inheritedFromTeam ? teamRules : globalRules
+    const inheritedRulesSourceLabel = inheritedFromTeam ? 'Takım' : 'Global'
+
+    const newGlobalRules = baseRules.filter(g =>
+        !programRules.some(p => p.source_rule_id === g.id || p.id === g.id)
     )
 
-    // Add single global rule to program
+    // Add single inherited rule to program
     async function handleAddGlobalRuleToProgram(globalRule: PlanningRule) {
         if (!program?.id) return
         setRulesLoading(true)
         try {
+            const scopeCtx = await resolveEffectiveScopeContext()
+            const teamOwnerId = scopeCtx.isTeamScoped ? scopeCtx.teamOwnerId : null
+
             const { error } = await supabase.from('planning_rules').insert({
                 name: globalRule.name,
                 description: globalRule.description,
@@ -252,6 +383,7 @@ export default function ProgramDialog({ open, onClose, program }: ProgramDialogP
                 definition: globalRule.definition,
                 scope: 'program',
                 program_template_id: program.id,
+                team_owner_id: teamOwnerId,
                 source_rule_id: globalRule.id
             })
             if (error) throw error
@@ -267,6 +399,9 @@ export default function ProgramDialog({ open, onClose, program }: ProgramDialogP
         if (!program?.id) return
         setRulesLoading(true)
         try {
+            const scopeCtx = await resolveEffectiveScopeContext()
+            const teamOwnerId = scopeCtx.isTeamScoped ? scopeCtx.teamOwnerId : null
+
             const rulesToInsert = newGlobalRules.map(rule => ({
                 name: rule.name,
                 description: rule.description,
@@ -276,6 +411,7 @@ export default function ProgramDialog({ open, onClose, program }: ProgramDialogP
                 definition: rule.definition,
                 scope: 'program',
                 program_template_id: program.id,
+                team_owner_id: teamOwnerId,
                 source_rule_id: rule.id
             }))
             const { error } = await supabase.from('planning_rules').insert(rulesToInsert)
@@ -289,9 +425,9 @@ export default function ProgramDialog({ open, onClose, program }: ProgramDialogP
 
     const displayRules = hasProgramRules
         ? programRules.filter(r => !r.is_ignored)
-        : globalRules
+        : baseRules
 
-    // ─── Week Mapping Handlers ──────────────────────────────────────
+    // â”€â”€â”€ Week Mapping Handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     function addWeekMapping() {
         const lastWeek = weekMappings.length > 0
             ? Math.max(...weekMappings.map(w => w.week_end))
@@ -319,7 +455,7 @@ export default function ProgramDialog({ open, onClose, program }: ProgramDialogP
         setWeekMappings(weekMappings.filter((_, i) => i !== index))
     }
 
-    // ─── Restriction Handlers ───────────────────────────────────────
+    // â”€â”€â”€ Restriction Handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     function addRestriction() {
         if (!newRestrictionValue.trim()) return
 
@@ -336,7 +472,7 @@ export default function ProgramDialog({ open, onClose, program }: ProgramDialogP
         setRestrictions(restrictions.filter((_, i) => i !== index))
     }
 
-    // ─── Save Handler ───────────────────────────────────────────────
+    // â”€â”€â”€ Save Handler â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     async function handleSave() {
         if (!name.trim()) {
             alert('Program adı zorunludur')
@@ -347,28 +483,96 @@ export default function ProgramDialog({ open, onClose, program }: ProgramDialogP
 
         try {
             let programId = program?.id
+            let teamOverrideId: string | null = null
+            let saveMode: 'global' | 'team' = 'global'
+
+            let scopeCtx: {
+                userId: string | null
+                role: string | null
+                canUseGlobal: boolean
+                teamOwnerId: string | null
+            } | null = null
+
+            try {
+                scopeCtx = await resolveTeamScopeContextFromAuth()
+            } catch (scopeError) {
+                console.warn('Team scope resolve failed in program save, fallback to global mode:', scopeError)
+            }
+
+            const resolvedScopeCtx = scopeCtx || {
+                userId: null,
+                role: null,
+                canUseGlobal: true,
+                teamOwnerId: null
+            }
+
+            const canForceTeamModeForAdminDoctor =
+                forcedMode === 'team' &&
+                resolvedScopeCtx.role === 'doctor' &&
+                resolvedScopeCtx.canUseGlobal &&
+                !!resolvedScopeCtx.userId
+
+            const effectiveCanUseGlobal = canForceTeamModeForAdminDoctor ? false : resolvedScopeCtx.canUseGlobal
+            const effectiveTeamOwnerId = canForceTeamModeForAdminDoctor
+                ? resolvedScopeCtx.userId
+                : resolvedScopeCtx.teamOwnerId
+
+            const isTeamScopedUser =
+                (resolvedScopeCtx.role === 'doctor' || resolvedScopeCtx.role === 'dietitian') &&
+                !effectiveCanUseGlobal &&
+                !!effectiveTeamOwnerId
 
             if (programId) {
-                // Update existing
-                const { error } = await supabase
-                    .from('program_templates')
-                    .update({
-                        name: name.trim(),
-                        description: description.trim() || null,
-                        total_weeks: totalWeeks,
-                        default_activity_level: activityLevel,
-                        is_active: isActive,
-                        updated_at: new Date().toISOString()
-                    })
-                    .eq('id', programId)
+                if (isTeamScopedUser && effectiveTeamOwnerId && resolvedScopeCtx.userId) {
+                    saveMode = 'team'
 
-                if (error) throw error
+                    const { data: overrideRow, error: overrideError } = await supabase
+                        .from('team_program_overrides')
+                        .upsert(
+                            {
+                                team_owner_id: effectiveTeamOwnerId,
+                                program_template_id: programId,
+                                name: name.trim(),
+                                description: description.trim() || null,
+                                total_weeks: totalWeeks,
+                                default_activity_level: activityLevel,
+                                is_active: isActive,
+                                created_by: resolvedScopeCtx.userId,
+                            },
+                            { onConflict: 'team_owner_id,program_template_id' }
+                        )
+                        .select('id')
+                        .single()
 
-                // Delete existing weeks and restrictions
-                await supabase.from('program_template_weeks').delete().eq('program_template_id', programId)
-                await supabase.from('program_template_restrictions').delete().eq('program_template_id', programId)
+                    if (overrideError) throw overrideError
+                    teamOverrideId = overrideRow.id
+
+                    await supabase.from('team_program_override_weeks').delete().eq('override_id', teamOverrideId)
+                    await supabase.from('team_program_override_restrictions').delete().eq('override_id', teamOverrideId)
+                } else {
+                    const { error } = await supabase
+                        .from('program_templates')
+                        .update({
+                            name: name.trim(),
+                            description: description.trim() || null,
+                            total_weeks: totalWeeks,
+                            default_activity_level: activityLevel,
+                            is_active: isActive,
+                            updated_at: new Date().toISOString()
+                        })
+                        .eq('id', programId)
+
+                    if (error) throw error
+
+                    await supabase.from('program_template_weeks').delete().eq('program_template_id', programId)
+                    await supabase.from('program_template_restrictions').delete().eq('program_template_id', programId)
+                }
             } else {
-                // Create new
+                if (isTeamScopedUser) {
+                    alert('Takım modunda yeni global program olusturamazsiniz. Mevcut bir programi Takıma Ozel Hale Getir ile ozellestirin.')
+                    return
+                }
+
                 const { data, error } = await supabase
                     .from('program_templates')
                     .insert({
@@ -387,28 +591,52 @@ export default function ProgramDialog({ open, onClose, program }: ProgramDialogP
 
             // Insert week mappings
             if (weekMappings.length > 0) {
-                const weeksToInsert = weekMappings.map(w => ({
-                    program_template_id: programId,
-                    week_start: w.week_start,
-                    week_end: w.week_end,
-                    diet_type_id: w.diet_type_id,
-                    notes: w.notes
-                }))
-                const { error } = await supabase.from('program_template_weeks').insert(weeksToInsert)
-                if (error) throw error
+                if (saveMode === 'team' && teamOverrideId) {
+                    const weeksToInsert = weekMappings.map(w => ({
+                        override_id: teamOverrideId,
+                        week_start: w.week_start,
+                        week_end: w.week_end,
+                        diet_type_id: w.diet_type_id,
+                        notes: w.notes
+                    }))
+                    const { error } = await supabase.from('team_program_override_weeks').insert(weeksToInsert)
+                    if (error) throw error
+                } else {
+                    const weeksToInsert = weekMappings.map(w => ({
+                        program_template_id: programId,
+                        week_start: w.week_start,
+                        week_end: w.week_end,
+                        diet_type_id: w.diet_type_id,
+                        notes: w.notes
+                    }))
+                    const { error } = await supabase.from('program_template_weeks').insert(weeksToInsert)
+                    if (error) throw error
+                }
             }
 
             // Insert restrictions
             if (restrictions.length > 0) {
-                const restrictionsToInsert = restrictions.map(r => ({
-                    program_template_id: programId,
-                    restriction_type: r.restriction_type,
-                    restriction_value: r.restriction_value,
-                    reason: r.reason,
-                    severity: r.severity
-                }))
-                const { error } = await supabase.from('program_template_restrictions').insert(restrictionsToInsert)
-                if (error) throw error
+                if (saveMode === 'team' && teamOverrideId) {
+                    const restrictionsToInsert = restrictions.map(r => ({
+                        override_id: teamOverrideId,
+                        restriction_type: r.restriction_type,
+                        restriction_value: r.restriction_value,
+                        reason: r.reason,
+                        severity: r.severity
+                    }))
+                    const { error } = await supabase.from('team_program_override_restrictions').insert(restrictionsToInsert)
+                    if (error) throw error
+                } else {
+                    const restrictionsToInsert = restrictions.map(r => ({
+                        program_template_id: programId,
+                        restriction_type: r.restriction_type,
+                        restriction_value: r.restriction_value,
+                        reason: r.reason,
+                        severity: r.severity
+                    }))
+                    const { error } = await supabase.from('program_template_restrictions').insert(restrictionsToInsert)
+                    if (error) throw error
+                }
             }
 
             onClose()
@@ -446,6 +674,10 @@ export default function ProgramDialog({ open, onClose, program }: ProgramDialogP
                         <TabsTrigger value="rules" className="flex-1 min-w-[100px]">
                             <BookOpen size={14} className="mr-1 inline" />
                             Kurallar
+                        </TabsTrigger>
+                        <TabsTrigger value="diet-types" className="flex-1 min-w-[120px]">
+                            <UtensilsCrossed size={14} className="mr-1 inline" />
+                            Diyet Türleri
                         </TabsTrigger>
                         <button
                             type="button"
@@ -534,6 +766,25 @@ export default function ProgramDialog({ open, onClose, program }: ProgramDialogP
                         </div>
                     </TabsContent>
 
+                    {/* Diet Types Tab */}
+                    <TabsContent value="diet-types" className="space-y-4 mt-4 overflow-y-auto pr-2 pb-2">
+                        {!program?.id ? (
+                            <div className="text-center py-8 text-amber-600 bg-amber-50 border-2 border-dashed border-amber-200 rounded-lg">
+                                <AlertTriangle className="mx-auto mb-2" size={24} />
+                                <p className="text-sm font-medium">Önce programı kaydedin, ardından diyet türü override düzenleyin.</p>
+                            </div>
+                        ) : (
+                            <div className="rounded-lg border p-3">
+                                <DietTypesEditor
+                                    dietTypes={dietTypes}
+                                    programTemplateId={program.id}
+                                    forcedMode={forcedMode}
+                                    onUpdate={fetchDietTypes}
+                                />
+                            </div>
+                        )}
+                    </TabsContent>
+
                     {/* Weeks Tab */}
                     <TabsContent value="weeks" className="space-y-4 mt-4 overflow-y-auto pr-2 pb-2">
                         <div className="flex justify-between items-center">
@@ -609,11 +860,18 @@ export default function ProgramDialog({ open, onClose, program }: ProgramDialogP
                                 Bu programda yasaklanacak yemek anahtar kelimeleri veya etiketleri
                             </p>
                             {program?.id && (
-                                <Button variant="outline" size="sm" onClick={async () => {
-                                    if (confirm("Tüm program yasaklarını temizleyip global yasaklara dönmek istediğinize emin misiniz?")) {
-                                        setRestrictions([])
-                                    }
-                                }} className="text-orange-600 hover:text-orange-700 hover:bg-orange-50 border-orange-200">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={restrictions.length === 0}
+                                    onClick={async () => {
+                                        if (confirm("Tüm program yasaklarını temizleyip global yasaklara dönmek istediğinize emin misiniz?")) {
+                                            setRestrictions([])
+                                        }
+                                    }}
+                                    className="text-orange-600 hover:text-orange-700 hover:bg-orange-50 border-orange-200"
+                                    title={restrictions.length === 0 ? "Program katmaninda yasak ozellestirmesi yok" : "Program yasaklarini temizleyip global mirasa don"}
+                                >
                                     <RotateCcw size={14} className="mr-1" /> Temizle (Global'e Dön)
                                 </Button>
                             )}
@@ -648,8 +906,8 @@ export default function ProgramDialog({ open, onClose, program }: ProgramDialogP
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="warn">⚠️ Uyarı</SelectItem>
-                                    <SelectItem value="block">🚫 Engelle</SelectItem>
+                                        <SelectItem value="warn">Uyarı</SelectItem>
+                                        <SelectItem value="block">Engelle</SelectItem>
                                 </SelectContent>
                             </Select>
                             <Button onClick={addRestriction} disabled={!newRestrictionValue.trim()}>
@@ -670,7 +928,7 @@ export default function ProgramDialog({ open, onClose, program }: ProgramDialogP
                                         variant={r.severity === 'block' ? 'destructive' : 'secondary'}
                                         className="flex items-center gap-1 px-3 py-1"
                                     >
-                                        {r.severity === 'block' ? '🚫' : '⚠️'}
+                                                            {r.severity === 'block' ? 'Engel' : 'Uyarı'}
                                         <span className="text-xs opacity-70">{r.restriction_type === 'keyword' ? 'Kelime:' : 'Tag:'}</span>
                                         {r.restriction_value}
                                         <button
@@ -685,7 +943,7 @@ export default function ProgramDialog({ open, onClose, program }: ProgramDialogP
                         )}
                     </TabsContent>
 
-                    {/* ═══════════════ NEW: Rules Tab ═══════════════ */}
+                    {/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• NEW: Rules Tab â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
                     <TabsContent value="rules" className="space-y-4 mt-4 flex flex-col overflow-hidden">
                         {!program?.id ? (
                             <div className="text-center py-8 text-amber-600 bg-amber-50 border-2 border-dashed border-amber-200 rounded-lg">
@@ -704,13 +962,13 @@ export default function ProgramDialog({ open, onClose, program }: ProgramDialogP
                                     {hasProgramRules ? (
                                         <Badge variant="default" className="bg-purple-600">🏷️ Programa Özel</Badge>
                                     ) : (
-                                        <Badge variant="secondary">🌐 Global (miras)</Badge>
+                                        <Badge variant="secondary">🌐 {inheritedRulesSourceLabel} (miras)</Badge>
                                     )}
                                 </div>
                                 <p className="text-xs text-slate-500 mb-3">
                                     {hasProgramRules
                                         ? "Bu programa özel kurallar aktif. Değişiklikler sadece bu programı ve atanan hastaları etkiler."
-                                        : "Global kurallar görüntüleniyor. Özelleştirmek için \"Programa Kopyala\" butonuna basın."
+                                        : `${inheritedRulesSourceLabel} kuralları görüntüleniyor. Özelleştirmek için \"Programa Kopyala\" butonuna basın.`
                                     }
                                 </p>
 
@@ -718,7 +976,7 @@ export default function ProgramDialog({ open, onClose, program }: ProgramDialogP
                                 {hasProgramRules && newGlobalRules.length > 0 && (
                                     <div className="mb-4 border border-blue-200 rounded-lg bg-white overflow-hidden shadow-sm">
                                         <div className="bg-blue-50/50 px-4 py-2.5 border-b border-blue-100 flex items-center justify-between">
-                                            <span className="text-xs font-semibold text-blue-700">Yeni Global Kurallar ({newGlobalRules.length})</span>
+                                            <span className="text-xs font-semibold text-blue-700">Yeni {inheritedRulesSourceLabel} Kuralları ({newGlobalRules.length})</span>
                                             <Button size="sm" variant="ghost" className="h-7 text-xs text-blue-600" onClick={handleAddAllNewGlobalRules}>
                                                 <Download size={12} className="mr-1" /> Tümünü Ekle
                                             </Button>
@@ -789,7 +1047,7 @@ export default function ProgramDialog({ open, onClose, program }: ProgramDialogP
                                 {/* Footer Actions */}
                                 <div className="flex gap-2 pt-2 border-t shrink-0">
                                     {!hasProgramRules ? (
-                                        <Button onClick={() => handleCloneGlobalRules(program!.id!)} disabled={rulesLoading || globalRules.length === 0} className="gap-2 bg-purple-600 hover:bg-purple-700">
+                                        <Button onClick={() => handleCloneGlobalRules(program!.id!)} disabled={rulesLoading || baseRules.length === 0} className="gap-2 bg-purple-600 hover:bg-purple-700">
                                             {rulesLoading && <Loader2 className="h-4 w-4 animate-spin" />}
                                             🏷️ Programa Kopyala
                                         </Button>
@@ -797,7 +1055,7 @@ export default function ProgramDialog({ open, onClose, program }: ProgramDialogP
                                         <>
                                             <Button variant="outline" onClick={() => handleRevertRules(program!.id!)} disabled={rulesLoading}
                                                 className="text-orange-600 hover:text-orange-700 hover:bg-orange-50 border-orange-200">
-                                                <RotateCcw size={14} className="mr-1" /> Global'e Dön
+                                                <RotateCcw size={14} className="mr-1" /> {inheritedFromTeam ? "Takıma Dön" : "Global'e Dön"}
                                             </Button>
                                             <Button variant="outline" onClick={() => { setEditingRule(null); setRuleDialogOpen(true) }}>
                                                 <Plus size={14} className="mr-1" /> Yeni Kural
@@ -810,11 +1068,23 @@ export default function ProgramDialog({ open, onClose, program }: ProgramDialogP
                     </TabsContent>
                 </Tabs>
 
+                <RuleDialog
+                    open={ruleDialogOpen}
+                    onOpenChange={setRuleDialogOpen}
+                    initialData={editingRule}
+                    onSuccess={async () => {
+                        if (program?.id) await fetchProgramRules(program.id)
+                    }}
+                    programTemplateId={program?.id || null}
+                    teamOwnerId={rulesTeamOwnerId}
+                />
+
                 <SettingsDialog
                     open={settingsOpen}
                     onOpenChange={setSettingsOpen}
                     programTemplateId={program?.id}
                     defaultTab="scores"
+                    forcedMode={forcedMode}
                 />
 
                 <DialogFooter className="mt-6 shrink-0 pt-4 border-t">
@@ -829,3 +1099,5 @@ export default function ProgramDialog({ open, onClose, program }: ProgramDialogP
         </Dialog>
     )
 }
+
+
