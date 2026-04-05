@@ -24,7 +24,7 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from "@/components/ui/sheet"
-import { Plus, Calendar, Save, Calculator, ChefHat, FileText, ChevronRight, ChevronLeft, MoreHorizontal, Copy, Pencil, Trash2, Sliders, X, AlertTriangle, Settings, RefreshCw, Wand2, Search, Filter, BookOpenText, Printer, ArrowLeft, Heart, Info, Archive, LayoutGrid, List, StickyNote, Activity, Menu, RotateCcw, Eraser, Grid3X3, Sparkles, Lock, Unlock, ChevronUp, ChevronDown, Camera, Image } from "lucide-react"
+import { Plus, Calendar, Save, Calculator, ChefHat, FileText, ChevronRight, ChevronLeft, MoreHorizontal, Copy, Pencil, Trash2, Sliders, X, AlertTriangle, Settings, RefreshCw, Wand2, Search, Filter, BookOpenText, Printer, ArrowLeft, Heart, Info, Archive, LayoutGrid, List, StickyNote, Activity, Menu, RotateCcw, Eraser, Grid3X3, Sparkles, Lock, Unlock, ChevronUp, ChevronDown, Camera, Image, ClipboardList } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
     Select,
@@ -88,6 +88,7 @@ import { SettingsDialog } from "@/components/planner/settings-dialog"
 import { useScalableUnits, getScaledFoodName } from "@/lib/planner/portion-scaler"
 import { sortFoodsByRole } from "@/utils/food-sorter"
 import { PatientRulesDialog } from "@/components/planner/patient-rules-dialog"
+import { useSidebar } from "@/contexts/sidebar-context"
 
 
 // JavaScript getDay(): 0=Pazar, 1=Pazartesi, ..., 6=Cumartesi
@@ -308,6 +309,7 @@ export default function PatientDetailPage({ params }: { params: Promise<{ id: st
     const { showAppModal } = useAppModal()
     const { id } = use(params)
     const { isPatient } = useAuth()
+    const { isSidebarCollapsed } = useSidebar()
     const [patient, setPatient] = useState<Patient | null>(null)
     const [weeks, setWeeks] = useState<DietWeek[]>([])
     const [allPlanDays, setAllPlanDays] = useState<any[]>([])
@@ -318,6 +320,7 @@ export default function PatientDetailPage({ params }: { params: Promise<{ id: st
     const [refreshTrigger, setRefreshTrigger] = useState(0)
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
     const [activeMainTab, setActiveMainTab] = useState('diet')
+    const [aiAnalysisSheetOpen, setAiAnalysisSheetOpen] = useState(false)
     const [editingWeek, setEditingWeek] = useState<DietWeek | null>(null)
     const [weekDialogOpen, setWeekDialogOpen] = useState(false)
     const [importDialogOpen, setImportDialogOpen] = useState(false)
@@ -349,6 +352,7 @@ export default function PatientDetailPage({ params }: { params: Promise<{ id: st
 
     // Form states for manual food addition - keeping minimal for inline editing
     const [notesSheetOpen, setNotesSheetOpen] = useState(false)
+    const [isFoodSidebarVisible, setIsFoodSidebarVisible] = useState(false)
 
     const [profileDialogOpen, setProfileDialogOpen] = useState(false)
     const [dietTypesList, setDietTypesList] = useState<any[]>([])
@@ -690,7 +694,6 @@ export default function PatientDetailPage({ params }: { params: Promise<{ id: st
                 }
                 fetchPatientData()
 
-                alert("Plan uygulandı!")
                 setRefreshTrigger(prev => prev + 1)
                 setAutoPlanOpen(false)
             }
@@ -3076,147 +3079,235 @@ export default function PatientDetailPage({ params }: { params: Promise<{ id: st
 
     const sidebarReferenceDate = activeWeek?.start_date ? new Date(activeWeek.start_date) : new Date()
 
-    // Portal component to render action buttons into top navbar
-    const HeaderActionsPortal = () => {
+    // Portal component to render patient actions into sidebar slot
+    const SidebarActionsPortal = () => {
+        const { isSidebarCollapsed } = useSidebar()
         const [mounted, setMounted] = useState(false)
         useEffect(() => { setMounted(true) }, [])
 
         if (!mounted) return null
-        const slot = document.getElementById('header-actions-slot')
-        if (!slot) return null
+        const slot = document.getElementById('sidebar-actions-slot')
+        const nameSlot = document.getElementById('sidebar-patient-name-slot')
+        const mobileSlot = document.getElementById('mobile-sidebar-actions-slot')
+        const mobileNameSlot = document.getElementById('mobile-sidebar-patient-name-slot')
 
-        return createPortal(
-            <>
-                {/* Desktop Actions */}
-                <div className="hidden md:flex items-center gap-2">
-                    <div className="flex border rounded-md shadow-sm">
-                        <Button
-                            variant={viewMode === 'grid' ? 'default' : 'ghost'}
-                            size="sm"
-                            className="rounded-r-none h-7 w-7 px-0"
-                            onClick={() => setViewMode('grid')}
-                        >
-                            <Grid3X3 size={14} />
-                        </Button>
-                        <Button
-                            variant={viewMode === 'list' ? 'default' : 'ghost'}
-                            size="sm"
-                            className="rounded-l-none h-7 w-7 px-0"
-                            onClick={() => setViewMode('list')}
-                        >
-                            <List size={14} />
-                        </Button>
+        let namePortal = null
+        if (!isSidebarCollapsed && nameSlot && patient?.full_name) {
+            namePortal = createPortal(
+                <div className="flex flex-col gap-3">
+                    <span className="text-[13px] font-extrabold bg-gradient-to-br from-slate-700 to-slate-900 bg-clip-text text-transparent uppercase tracking-wider px-1">{patient.full_name}</span>
+                    
+                    {(patient.weight && patient.height) && (
+                        <div className="flex flex-col gap-2 text-xs">
+                            <div className="flex items-center justify-between px-3 py-2 bg-blue-50/50 text-blue-800 rounded-xl border border-blue-100/50 w-full shadow-sm">
+                                <div className="flex flex-col items-center">
+                                    <span className="text-[9px] uppercase tracking-widest text-blue-500 font-bold mb-0.5">Kilo</span>
+                                    <span className="font-bold text-sm tracking-tight">{currentWeight} <span className="text-[10px] font-medium text-blue-600/70">kg</span></span>
+                                </div>
+                                <div className="w-px h-6 bg-blue-200/50"></div>
+                                <div className="flex flex-col items-center">
+                                    <span className="text-[9px] uppercase tracking-widest text-blue-500 font-bold mb-0.5">Boy</span>
+                                    <span className="font-bold text-sm tracking-tight">{patient.height} <span className="text-[10px] font-medium text-blue-600/70">cm</span></span>
+                                </div>
+                                {bmi && (
+                                    <>
+                                        <div className="w-px h-6 bg-blue-200/50"></div>
+                                        <div className={`flex flex-col items-center px-2 py-0.5 rounded-lg ${
+                                            bmi.value > 25 ? 'bg-orange-100 text-orange-800' :
+                                            bmi.value < 18.5 ? 'bg-yellow-100 text-yellow-800' :
+                                            'bg-green-100 text-green-800'
+                                        }`}>
+                                            <span className="text-[9px] uppercase tracking-widest font-bold mb-0.5">VKİ</span>
+                                            <span className="font-bold text-sm tracking-tight">{bmi.value}</span>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+
+                            {targets && (
+                                <div className={`flex flex-col gap-2 px-3 py-2 rounded-xl border shadow-sm w-full ${getDietTheme(displayDietType).bg} ${getDietTheme(displayDietType).border} ${getDietTheme(displayDietType).text}`}>
+                                    <span className="text-[10px] uppercase tracking-widest font-extrabold opacity-90">{displayDietType}</span>
+                                    <div className="flex flex-col gap-1 text-[10px] bg-white/40 p-2 rounded-lg border border-black/5">
+                                        <div className="grid grid-cols-5 gap-1 items-center pb-1 border-b border-black/5 opacity-80 uppercase tracking-tighter font-bold">
+                                            <span className="text-[7px] text-gray-400">Birim</span>
+                                            <span className="text-center">Kcal</span>
+                                            <span className="text-center text-orange-500">Krb</span>
+                                            <span className="text-center text-blue-500">Pro</span>
+                                            <span className="text-center text-yellow-600">Yağ</span>
+                                        </div>
+                                        <div className="grid grid-cols-5 gap-1 items-center font-bold text-gray-700">
+                                            <span className="text-[8px] text-gray-500 uppercase">Hedef</span>
+                                            <span className="text-center">{Math.round(targets.calories)}</span>
+                                            <span className="text-center text-orange-600/80">{Math.round(targets.carb)}</span>
+                                            <span className="text-center text-blue-600/80">{Math.round(targets.protein)}</span>
+                                            <span className="text-center text-yellow-600/80">{Math.round(targets.fat)}</span>
+                                        </div>
+                                        <div className="grid grid-cols-5 gap-1 items-center font-bold">
+                                            <span className="text-[8px] text-gray-500 uppercase">Gerçek</span>
+                                            <span className={`text-center ${(() => {
+                                                const typeKey = 'calories';
+                                                const target = targets[typeKey];
+                                                const actual = weeklyAvgStats?.cal || 0;
+                                                const minTol = macroTolerances?.[typeKey]?.min ?? 90;
+                                                const maxTol = macroTolerances?.[typeKey]?.max ?? 110;
+                                                if (actual > target * (maxTol / 100)) return 'text-red-500';
+                                                if (actual < target * (minTol / 100)) return 'text-orange-500';
+                                                return 'text-green-600';
+                                            })()}`}>{Math.round(weeklyAvgStats?.cal || 0)}</span>
+                                            <span className={`text-center ${(() => {
+                                                const typeKey = 'carb';
+                                                const target = targets[typeKey];
+                                                const actual = weeklyAvgStats?.carb || 0;
+                                                const minTol = macroTolerances?.[typeKey]?.min ?? 80;
+                                                const maxTol = macroTolerances?.[typeKey]?.max ?? 120;
+                                                if (actual > target * (maxTol / 100)) return 'text-red-500';
+                                                if (actual < target * (minTol / 100)) return 'text-orange-500';
+                                                return 'text-green-600';
+                                            })()}`}>{Math.round(weeklyAvgStats?.carb || 0)}</span>
+                                            <span className={`text-center ${(() => {
+                                                const typeKey = 'protein';
+                                                const target = targets[typeKey];
+                                                const actual = weeklyAvgStats?.pro || 0;
+                                                const minTol = macroTolerances?.[typeKey]?.min ?? 80;
+                                                const maxTol = macroTolerances?.[typeKey]?.max ?? 120;
+                                                if (actual > target * (maxTol / 100)) return 'text-red-500';
+                                                if (actual < target * (minTol / 100)) return 'text-orange-500';
+                                                return 'text-green-600';
+                                            })()}`}>{Math.round(weeklyAvgStats?.pro || 0)}</span>
+                                            <span className={`text-center ${(() => {
+                                                const typeKey = 'fat';
+                                                const target = targets[typeKey];
+                                                const actual = weeklyAvgStats?.fat || 0;
+                                                const minTol = macroTolerances?.[typeKey]?.min ?? 80;
+                                                const maxTol = macroTolerances?.[typeKey]?.max ?? 120;
+                                                if (actual > target * (maxTol / 100)) return 'text-red-500';
+                                                if (actual < target * (minTol / 100)) return 'text-orange-500';
+                                                return 'text-green-600';
+                                            })()}`}>{Math.round(weeklyAvgStats?.fat || 0)}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>,
+                nameSlot
+            )
+        }
+
+        if (!slot) return namePortal
+
+        const topItems = [
+            { icon: Search, label: 'Yemek Ara', onClick: () => setIsFoodSidebarVisible(!isFoodSidebarVisible), active: isFoodSidebarVisible, color: 'blue' },
+            { icon: LayoutGrid, label: 'Haftalık Plan', onClick: () => setActiveMainTab('diet'), active: activeMainTab === 'diet', color: 'blue' },
+            { icon: Sparkles, label: isGeneratingPlan ? 'Oluşturuluyor...' : 'Otomatik Plan', onClick: () => handleAutoGenerate(), disabled: isGeneratingPlan || !activeWeekId, color: 'green' },
+            { icon: Sparkles, label: 'AI Analiz', onClick: () => setAiAnalysisSheetOpen(true), color: 'purple' },
+            { icon: RotateCcw, label: 'Geri Al', onClick: handleUndo, color: 'blue' },
+            { icon: Eraser, label: 'Sıfırla', onClick: handleReset, color: 'red' },
+            { icon: Calendar, label: 'PDF İndir', onClick: () => {}, color: 'blue' },
+            { icon: ClipboardList, label: 'Vücut Ölçümleri', onClick: () => setActiveMainTab('measurements'), active: activeMainTab === 'measurements', color: 'blue' },
+            { icon: StickyNote, label: 'Notlar', onClick: () => setNotesSheetOpen(true), color: 'amber' },
+        ]
+
+        const settingsItems = [
+            { icon: Settings, label: 'Öğün Ayarları', onClick: () => setMealTypesDialogOpen(true), color: 'slate' },
+            { icon: Activity, label: 'Diyet Türleri', onClick: () => setDietTypesDialogOpen(true), color: 'slate' },
+            { icon: Sliders, label: 'Program Kuralları', onClick: () => setPatientRulesDialogOpen(true), color: 'purple' },
+            { icon: Save, label: 'Şablon İşlemleri', onClick: () => setTemplateDialogOpen(true), color: 'slate' },
+            { icon: RefreshCw, label: 'Geçmiş Planlar', onClick: () => setArchivedPlansDialogOpen(true), color: 'slate' },
+            { icon: BookOpenText, label: 'Rehber', onClick: () => setIsLegendOpen(true), color: 'slate' },
+        ]
+
+        const toolsItems = [
+            ...(activeMainTab === 'diet' ? [
+                { icon: viewMode === 'grid' ? List : LayoutGrid, label: 'Görünüm', onClick: () => setViewMode(viewMode === 'grid' ? 'list' : 'grid'), active: false, color: 'slate' },
+            ] : []),
+            { icon: Grid3X3, label: 'Excel İçe Aktar', onClick: () => { setAutoStartGoogleSheets(false); setImportDialogOpen(true); }, color: 'green' },
+            { icon: FileText, label: 'Drive İçe Aktar', onClick: () => { setAutoStartGoogleSheets(true); setImportDialogOpen(true); }, color: 'blue' },
+            { icon: Sparkles, label: showMealBadges ? 'Rozetleri Gizle' : 'Rozetleri Göster', onClick: handleToggleMealBadges, color: showMealBadges ? 'blue' : 'slate' },
+            { icon: patient.status === 'archived' ? RefreshCw : Archive, label: patient.status === 'archived' ? 'Hastayı Aktifleştir' : 'Hastayı Arşivle', onClick: handleToggleArchive, color: patient.status === 'archived' ? 'green' : 'slate' },
+            { icon: RefreshCw, label: 'Hafta Döngüsü', onClick: () => setWeekLoopDialogOpen(true), color: 'slate' },
+        ]
+
+        const renderItem = (item: any, idx: number) => {
+            const colorMap: Record<string, any> = {
+                blue: { active: 'bg-blue-600 text-white border-blue-500 shadow-lg shadow-blue-500/20', hover: 'hover:bg-blue-50 hover:text-blue-700', icon: 'text-blue-500 group-hover:text-blue-600' },
+                slate: { active: 'bg-slate-600 text-white border-slate-500', hover: 'hover:bg-slate-50 hover:text-slate-700', icon: 'text-slate-400 group-hover:text-slate-600' },
+                purple: { active: 'bg-purple-600 text-white border-purple-500', hover: 'hover:bg-purple-50 hover:text-purple-700', icon: 'text-purple-500 group-hover:text-purple-600' },
+                amber: { active: 'bg-amber-600 text-white border-amber-500', hover: 'hover:bg-amber-50 hover:text-amber-700', icon: 'text-amber-500 group-hover:text-amber-600' },
+                green: { active: 'bg-green-600 text-white border-green-500', hover: 'hover:bg-green-50 hover:text-green-700', icon: 'text-green-500 group-hover:text-green-600' },
+                red: { active: 'bg-red-600 text-white border-red-500', hover: 'hover:bg-red-50 hover:text-red-700', icon: 'text-red-400 group-hover:text-red-600' },
+            }
+            const colors = colorMap[item.color] || colorMap.slate
+            const isActive = item.active || false
+
+            return (
+                <div key={item.label} className="relative group">
+                    <button
+                        onClick={item.onClick}
+                        disabled={item.disabled}
+                        title={isSidebarCollapsed ? item.label : undefined}
+                        className={`flex items-center transition-all duration-200 cursor-pointer font-medium border
+                            ${isSidebarCollapsed ? 'w-9 h-9 mx-auto justify-center rounded-lg px-0 py-0' : 'w-[calc(100%-16px)] text-[13px] py-1.5 px-3 mx-2 rounded-lg gap-2'}
+                            ${isActive ? colors.active : `bg-white/10 border-transparent text-slate-600 ${colors.hover}`}
+                            ${item.disabled ? 'opacity-50 cursor-not-allowed' : ''}
+                        `}
+                    >
+                        <item.icon size={18} className={`shrink-0 transition-all duration-200 ${isActive ? 'text-white' : colors.icon}`} />
+                        {!isSidebarCollapsed && <span className="flex-1 truncate text-left">{item.label}</span>}
+                    </button>
+                </div>
+            )
+        }
+
+        const actionsPortal = createPortal(
+            <div className="space-y-1 pb-4">
+                {topItems.map(renderItem)}
+
+                {!isSidebarCollapsed && (
+                    <div className="px-6 mt-6 mb-2">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">AYARLAR</span>
                     </div>
-                    <Button variant="outline" size="sm" className="h-7 text-xs px-2" onClick={() => setMealTypesDialogOpen(true)}>
-                        <Settings size={12} className="mr-1" /> Öğünler
-                    </Button>
-                    <Button variant="outline" size="sm" className="h-7 text-xs px-2" onClick={() => setDietTypesDialogOpen(true)}>
-                        <Activity size={12} className="mr-1" /> Diyet Türleri
-                    </Button>
-                    <Button variant="outline" size="sm" className="h-7 text-xs px-2 bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100" onClick={() => setPatientRulesDialogOpen(true)}>
-                        <Sliders size={12} className="mr-1" /> Program Kuralları
-                    </Button>
-                    <Button variant="outline" size="sm" className="h-7 text-xs px-2" onClick={() => setTemplateDialogOpen(true)}>
-                        <Save size={12} className="mr-1" /> Şablon
-                    </Button>
-                    <Button variant="outline" size="sm" className="h-7 text-xs px-2" onClick={() => setArchivedPlansDialogOpen(true)}>
-                        <RefreshCw size={12} className="mr-1" /> Geçmiş Planlar
-                    </Button>
-                    <SnapshotsDialog weekId={activeWeekId} onRestore={fetchPatientData} />
-                    <Button variant="outline" size="sm" className="h-7 text-xs px-2" onClick={() => setIsLegendOpen(true)}>
-                        <BookOpenText size={12} className="mr-1" /> Rehber
-                    </Button>
-                    <Button
-                        size="sm"
-                        className="h-7 text-xs px-2 bg-green-600 hover:bg-green-700"
-                        onClick={() => handleAutoGenerate()}
-                        disabled={isGeneratingPlan || !activeWeekId}
-                    >
-                        <Sparkles size={12} className="mr-1" />
-                        {isGeneratingPlan ? 'Oluşturuluyor...' : 'Otomatik Plan'}
-                    </Button>
-                    <Button size="sm" className="h-7 text-xs px-2 bg-blue-600 hover:bg-blue-700">
-                        <Calendar size={12} className="mr-1" /> PDF
-                    </Button>
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7 text-xs px-2 bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100"
-                        onClick={() => setNotesSheetOpen(true)}
-                    >
-                        <StickyNote size={12} className="mr-1" /> Notlar
-                    </Button>
-                    {duplicateWeekIds.length > 0 && (
+                )}
+
+                {settingsItems.map(renderItem)}
+
+                {!isSidebarCollapsed && (
+                    <div className="px-6 mt-6 mb-2">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">ARAÇLAR & GÖRÜNÜM</span>
+                    </div>
+                )}
+
+                {toolsItems.map(renderItem)}
+
+                {!isSidebarCollapsed && (
+                    <div className="px-3 pt-1">
+                        <SnapshotsDialog weekId={activeWeekId} onRestore={fetchPatientData} />
+                    </div>
+                )}
+
+                {(!isSidebarCollapsed && duplicateWeekIds.length > 0) && (
+                    <div className="px-3 pt-2">
                         <Button
                             variant="destructive"
                             size="sm"
-                            className="h-7 text-xs px-2 animate-pulse"
+                            className="w-full h-9 flex items-center justify-center gap-2 animate-pulse rounded-xl"
                             onClick={handleCleanDuplicates}
                             title={`${duplicateWeekIds.length} yinelenen hafta tespit edildi`}
                         >
-                            <Trash2 size={12} className="mr-1" /> Temizle ({duplicateWeekIds.length})
+                            <Trash2 size={16} /> Temizle ({duplicateWeekIds.length})
                         </Button>
-                    )}
-
-                    {/* Undo / Reset Actions */}
-                    <div className="h-4 w-px bg-gray-300 mx-1"></div>
-                    <Button variant="outline" size="sm" className="h-7 text-xs px-2" onClick={handleUndo} title="Son İşlemi Geri Al">
-                        <RotateCcw size={12} className="mr-1 text-blue-600" /> Geri Al
-                    </Button>
-                    <Button variant="outline" size="sm" className="h-7 text-xs px-2" onClick={handleReset} title="Haftayı Sıfırla">
-                        <Eraser size={12} className="mr-1 text-red-500" /> Sıfırla
-                    </Button>
-                </div>
-
-                {/* Mobile Actions Menu */}
-                <div className="md:hidden">
-                    <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                            <Button variant="outline" size="icon" className="h-8 w-8">
-                                <Menu size={16} />
-                            </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-56">
-                            <DropdownMenuItem onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}>
-                                {viewMode === 'grid' ? <List className="mr-2 h-4 w-4" /> : <Grid3X3 className="mr-2 h-4 w-4" />}
-                                {viewMode === 'grid' ? 'Liste Görünümü' : 'Izgara Görünümü'}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => setNotesSheetOpen(true)}>
-                                <StickyNote className="mr-2 h-4 w-4" /> Notlar
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => setMealTypesDialogOpen(true)}>
-                                <Settings className="mr-2 h-4 w-4" /> Öğün Ayarları
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => setDietTypesDialogOpen(true)}>
-                                <Activity className="mr-2 h-4 w-4" /> Diyet Türleri
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => setTemplateDialogOpen(true)}>
-                                <Save className="mr-2 h-4 w-4" /> Şablon İşlemleri
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => setArchivedPlansDialogOpen(true)}>
-                                <RefreshCw className="mr-2 h-4 w-4" /> Geçmiş Planlar
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => setIsLegendOpen(true)}>
-                                <BookOpenText className="mr-2 h-4 w-4" /> Rehber
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleAutoGenerate()} disabled={isGeneratingPlan || !activeWeekId}>
-                                <Sparkles className="mr-2 h-4 w-4" />
-                                {isGeneratingPlan ? 'Oluşturuluyor...' : 'Otomatik Plan'}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={handleUndo}>
-                                <RotateCcw className="mr-2 h-4 w-4 text-blue-600" /> Geri Al
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={handleReset}>
-                                <Eraser className="mr-2 h-4 w-4 text-red-500" /> Sıfırla
-                            </DropdownMenuItem>
-                            <DropdownMenuItem>
-                                <Calendar className="mr-2 h-4 w-4" /> PDF İndir
-                            </DropdownMenuItem>
-                        </DropdownMenuContent>
-                    </DropdownMenu>
-                </div >
-            </>,
+                    </div>
+                )}
+            </div>,
             slot
+        )
+
+        return (
+            <>
+                {namePortal}
+                {actionsPortal}
+            </>
         )
     }
 
@@ -3228,11 +3319,11 @@ export default function PatientDetailPage({ params }: { params: Promise<{ id: st
 
     return (
         <DndContext onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-            <HeaderActionsPortal />
+            <SidebarActionsPortal />
             <div className="flex h-full overflow-hidden" onMouseMove={handleResizeMove} onMouseUp={handleResizeUp}>
                 {/* Resizable Sidebar - Only show for non-patients */}
                 {/* Resizable Sidebar - Only show for non-patients */}
-                {!isPatient && (
+                {!isPatient && isFoodSidebarVisible && (
                     <>
                         <div
                             className="hidden md:flex border-r bg-white flex-col shadow-sm z-20 shrink-0 relative group"
@@ -3317,293 +3408,162 @@ export default function PatientDetailPage({ params }: { params: Promise<{ id: st
                 )}
 
                 <Tabs value={activeMainTab} onValueChange={setActiveMainTab} className="flex-1 flex flex-col min-w-0 bg-gray-50">
-                    <div className="flex flex-col border-b bg-white flex-1 min-h-0 overflow-hidden">
-                        {/* Mobile Patient Header */}
-                        <div className="md:hidden bg-slate-50 border-b p-3 space-y-2 shrink-0">
-                            <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                    <Link href="/patients">
-                                        <Button variant="ghost" size="icon" className="h-8 w-8 -ml-2"><ArrowLeft size={18} /></Button>
-                                    </Link>
-                                    <div>
-                                        <h1 className="font-bold text-sm">{patient?.full_name}</h1>
-                                        <div className="text-[10px] text-muted-foreground flex gap-2">
-                                            <span>{calculateAge(patient?.birth_date)} Yaş</span>
-                                            <span>BMI: {calculateBMI(patient?.weight, patient?.height)?.value}</span>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <Badge variant={patient?.status === 'archived' ? 'secondary' : 'default'} className="text-[10px] h-5">
-                                        {patient?.status === 'archived' ? 'Arşivli' : 'Aktif'}
-                                    </Badge>
-                                </div>
-                            </div>
-                            {/* Liked/Disliked Quick View */}
-                            {(patient?.liked_foods || patient?.disliked_foods) && (
-                                <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
-                                    {patient?.liked_foods?.map((f: string) => (
-                                        <Badge key={f} variant="outline" className="text-[10px] whitespace-nowrap bg-green-50 text-green-700 border-green-200">
-                                            <Heart className="w-3 h-3 mr-1" /> {f}
-                                        </Badge>
-                                    ))}
-                                    {patient?.disliked_foods?.map((f: string) => (
-                                        <Badge key={f} variant="outline" className="text-[10px] whitespace-nowrap bg-red-50 text-red-700 border-red-200">
-                                            <AlertTriangle className="w-3 h-3 mr-1" /> {f}
-                                        </Badge>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
+                    <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+                        
+                        {/* Compact Header for Collapsed Sidebar */}
+                        {isSidebarCollapsed && (
+                            <div className="flex items-center gap-4 px-6 py-2.5 bg-white border-b border-slate-200 shadow-[0_1px_2px_rgba(0,0,0,0.02)] z-10 shrink-0 overflow-x-auto no-scrollbar">
+                                <span className="text-sm font-extrabold bg-gradient-to-br from-slate-700 to-slate-900 bg-clip-text text-transparent uppercase tracking-wider shrink-0">{patient?.full_name}</span>
+                                
+                                {displayDietType && (
+                                    <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold shrink-0 border ${getDietTheme(displayDietType).bg} ${getDietTheme(displayDietType).text} ${getDietTheme(displayDietType).border}`}>
+                                        {displayDietType}
+                                    </span>
+                                )}
 
-                        <div className="hidden md:flex items-center justify-between p-4 border-b gap-4 bg-white">
-                            <div className="flex items-center gap-4 flex-1 overflow-hidden">
-                                <Link href="/patients">
-                                    <Button variant="ghost" size="icon" className="h-8 w-8"><ArrowLeft size={18} /></Button>
-                                </Link>
-
-                                <div className="flex items-center gap-4 overflow-hidden flex-1">
-                                    <div className="h-6 w-px bg-gray-200 shrink-0 hidden md:block"></div>
-
-                                    {/* Stats & Weekly Summary Container */}
-                                    <div className="flex items-center gap-4 overflow-x-auto no-scrollbar mask-linear-fade flex-1">
-
-                                        {/* 1. TABS (Moved Here) */}
-                                        <TabsList className="h-8 -ml-1">
-                                            <TabsTrigger value="diet" className="text-xs h-7 px-3">Diyet Programı</TabsTrigger>
-                                            <TabsTrigger value="measurements" className="text-xs h-7 px-3">Vücut Ölçümleri</TabsTrigger>
-                                            <TabsTrigger value="analysis" className="text-xs h-7 px-3">🧠 AI Analiz</TabsTrigger>
-                                        </TabsList>
-
-                                        {/* 2. VIEW TOGGLES (Moved Here - Only visible for Diet) */}
-                                        {activeMainTab === 'diet' && (
-                                            <div className="flex items-center gap-1 bg-gray-100/50 p-1 rounded-lg border border-gray-200/50 mr-2">
-                                                <Button
-                                                    variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
-                                                    size="icon"
-                                                    className="h-6 w-6"
-                                                    onClick={() => setViewMode('grid')}
-                                                    title="Izgara Görünümü"
-                                                >
-                                                    <LayoutGrid size={14} />
-                                                </Button>
-                                                <Button
-                                                    variant={viewMode === 'list' ? 'secondary' : 'ghost'}
-                                                    size="icon"
-                                                    className="h-6 w-6"
-                                                    onClick={() => setViewMode('list')}
-                                                    title="Liste Görünümü"
-                                                >
-                                                    <List size={14} />
-                                                </Button>
-                                            </div>
-                                        )}
-
-                                        <div className="h-6 w-px bg-gray-200 shrink-0 mx-2"></div>
-
-
-                                        {(patient.weight && patient.height) && (
-                                            <div className="flex items-center gap-3 text-xs shrink-0 border-r pr-4">
-                                                <div className="flex items-center gap-2 px-2 py-1 bg-blue-50 text-blue-700 rounded border border-blue-100">
-                                                    <span className="font-semibold">{currentWeight} kg</span>
-                                                    <span className="text-blue-300">|</span>
-                                                    <span className="font-semibold">{patient.height} cm</span>
-                                                    {age && <span className="text-gray-400 ml-0.5">({age}y)</span>}
-                                                </div>
-
-                                                {bmi && (
-                                                    <div className={`flex items-center gap-1 px-2 py-1 rounded border font-semibold ${bmi.value > 25 ? 'bg-orange-50 text-orange-700 border-orange-100' :
-                                                        bmi.value < 18.5 ? 'bg-yellow-50 text-yellow-700 border-yellow-100' :
-                                                            'bg-green-50 text-green-700 border-green-100'
-                                                        }`}>
-                                                        <span>VKI: {bmi.value}</span>
-                                                    </div>
-                                                )}
-                                                {targets && (
-                                                    <div className={`flex items-center gap-2 px-2 py-1 rounded border ${getDietTheme(displayDietType).bg} ${getDietTheme(displayDietType).border} ${getDietTheme(displayDietType).text}`}>
-                                                        <span className="text-[10px] uppercase tracking-widest font-semibold opacity-90">{displayDietType}</span>
-                                                        <div className="flex items-center gap-4 font-bold text-sm text-gray-700">
-                                                            <span>{formatDiff(weeklyAvgStats?.cal || 0, targets.calories, 'calories')}</span>
-                                                            <span className="text-gray-300 font-light">|</span>
-                                                            <span className="text-orange-600">{formatDiff(weeklyAvgStats?.carb || 0, targets.carb, 'carb')}</span>
-                                                            <span className="text-blue-600">{formatDiff(weeklyAvgStats?.pro || 0, targets.protein, 'protein')}</span>
-                                                            <span className="text-yellow-600">{formatDiff(weeklyAvgStats?.fat || 0, targets.fat, 'fat')}</span>
-                                                        </div>
-                                                    </div>
-                                                )}
-                                            </div>
+                                {(patient?.weight && patient?.height) && (
+                                    <div className="flex items-center gap-3 px-3 py-1 bg-blue-50/50 border border-blue-100/50 rounded-lg shrink-0">
+                                        <div className="flex items-center gap-1"><span className="text-[9px] font-bold text-blue-500 uppercase tracking-widest">Kilo</span><span className="text-xs font-bold text-blue-800 tracking-tight">{currentWeight} <span className="text-[9px] font-normal opacity-70">kg</span></span></div>
+                                        <div className="w-px h-3 bg-blue-200/60"></div>
+                                        <div className="flex items-center gap-1"><span className="text-[9px] font-bold text-blue-500 uppercase tracking-widest">Boy</span><span className="text-xs font-bold text-blue-800 tracking-tight">{patient.height} <span className="text-[9px] font-normal opacity-70">cm</span></span></div>
+                                        {bmi && (
+                                            <>
+                                                <div className="w-px h-3 bg-blue-200/60"></div>
+                                                <div className="flex items-center gap-1"><span className="text-[9px] font-bold text-blue-500 uppercase tracking-widest">VKİ</span><span className={`text-xs font-bold tracking-tight ${bmi.value > 25 ? 'text-orange-600' : bmi.value < 18.5 ? 'text-yellow-600' : 'text-green-600'}`}>{bmi.value}</span></div>
+                                            </>
                                         )}
                                     </div>
+                                )}
 
-                                    <div className="flex items-center gap-2 pl-2 mt-0 ml-0 shrink-0 border-none">
-                                        {/* Moved logic: Removed border-l and margin logic that might conflict with new placement */}
-                                        <Button size="icon" variant="ghost" className="h-10 w-10 hover:bg-green-50" title="Excel İçe Aktar" onClick={() => { setAutoStartGoogleSheets(false); setImportDialogOpen(true); }}>
-                                            {/* Microsoft Excel Official Brand Icon */}
-                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="28" height="28" className="drop-shadow-sm">
-                                                <path fill="#217346" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z" />
-                                                <path fill="#33C481" d="M14 2V8h6" opacity=".5" />
-                                                <rect x="6.5" y="10" width="4" height="2" fill="#fff" fillOpacity=".8" />
-                                                <rect x="6.5" y="13.5" width="4" height="2" fill="#fff" fillOpacity=".8" />
-                                                <rect x="6.5" y="17" width="4" height="2" fill="#fff" fillOpacity=".8" />
-                                                <rect x="12" y="10" width="5.5" height="2" fill="#fff" fillOpacity=".8" />
-                                                <rect x="12" y="13.5" width="5.5" height="2" fill="#fff" fillOpacity=".8" />
-                                                <rect x="12" y="17" width="5.5" height="2" fill="#fff" fillOpacity=".8" />
-                                                <rect x="2" y="7" width="10" height="10" rx="1" fill="#107C41" stroke="#fff" strokeWidth="1" />
-                                                <path fill="#fff" d="M9.8 15.5l-1.9-3.2l-2 3.2H4.2l2.8-4.3L4.4 7h1.6l1.8 3.1L9.6 7h1.6l-2.6 4.2l2.8 4.3z" />
-                                            </svg>
-                                        </Button>
-                                        <Button size="icon" variant="ghost" className="h-10 w-10 hover:bg-blue-50" title="Google Drive'dan İçe Aktar" onClick={() => { setAutoStartGoogleSheets(true); setImportDialogOpen(true); }}>
-                                            {/* Google Drive Official Brand Icon */}
-                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 87.3 78" width="28" height="28" className="drop-shadow-sm">
-                                                <path fill="#FFD04B" d="m6.6 66.85 25.3-43.8 25.3 43.8z" />
-                                                <path fill="#0066DA" d="m43.85 23.05 12.65-21.9h29.2l-12.65 21.9z" />
-                                                <path fill="#00AC47" d="m0 66.85 12.65 21.9h50.6l-12.65-21.9z" />
-                                                <path fill="#EA4335" d="m19.25 44.95-12.65 21.9-6.6-11.45 12.65-21.9z" />
-                                                <path fill="#00832D" d="m0 66.85 6.6 11.45 6.05 10.45h50.6l-6.05-10.45-6.6-11.45z" />
-                                                <path fill="#2684FC" d="m43.85 23.05 12.65-21.9h29.2l-12.65 21.9z" />
-                                                <path fill="#FFBA00" d="m63.25 66.85-6.6-11.45-12.65-21.9-6.05 10.45 6.05 10.45 12.65 21.9z" />
-                                                <path d="M30.9 23.1L18.3 44.9L6.6 66.8L0 78h25.3l5.8-10.9L43.8 23.1l-12.9 0z" fill="#FFC107" />
-                                                <path d="M43.8 23.1L56.5 1.2H85.7L73 23.1L43.8 23.1z" fill="#4285F4" />
-                                                <path d="M18.3 44.9l12.6-21.8 25.6 43.8H31.4L18.3 44.9z" fill="#1967D2" opacity=".2" />
-                                                <path fill="#34A853" d="M6.6 66.8L18.3 44.9H69.4L56.5 66.8H6.6z" />
-                                            </svg>
-                                        </Button>
-                                        <Button
-                                            size="icon"
-                                            variant="ghost"
-                                            className={`h-10 w-10 ${showMealBadges ? 'text-blue-600 hover:bg-blue-50' : 'text-gray-400 hover:bg-gray-100'}`}
-                                            onClick={handleToggleMealBadges}
-                                            title={showMealBadges ? 'Sayı Rozetlerini Gizle' : 'Sayı Rozetlerini Göster'}
-                                        >
-                                            <span className={`text-lg font-bold ${showMealBadges ? '' : 'line-through opacity-50'}`}>🏷️</span>
-                                        </Button>
-                                        <div className="h-6 w-px bg-gray-200 mx-2"></div>
-                                        <Button
-                                            size="icon"
-                                            variant="ghost"
-                                            className={`h-10 w-10 ${patient.status === 'archived' ? 'text-green-600 hover:bg-green-50' : 'text-gray-400 hover:text-gray-900 hover:bg-gray-100'}`}
-                                            onClick={handleToggleArchive}
-                                            title={patient.status === 'archived' ? 'Hastayı Aktifleştir' : 'Hastayı Arşivle'}
-                                        >
-                                            {patient.status === 'archived' ? <RefreshCw size={20} /> : <Archive size={20} />}
-                                        </Button>
+                                {targets && (
+                                    <div className="flex items-center gap-3 px-3 py-1 bg-slate-50 border border-slate-200/50 rounded-lg text-[10px] font-bold shrink-0 ml-auto shadow-sm">
+                                        <span className="text-[9px] text-slate-400 uppercase tracking-widest mr-1 font-extrabold">HEDEF</span>
+                                        <div className="flex items-center gap-1"><span className="text-slate-400">KCAL</span><span className="text-slate-700 tracking-tight">{Math.round(targets.calories)}</span></div>
+                                        <div className="w-px h-3 bg-slate-200"></div>
+                                        <div className="flex items-center gap-1"><span className="text-orange-400">KRB</span><span className="text-orange-600 tracking-tight">{Math.round(targets.carb)} g</span></div>
+                                        <div className="w-px h-3 bg-slate-200"></div>
+                                        <div className="flex items-center gap-1"><span className="text-blue-400">PRO</span><span className="text-blue-600 tracking-tight">{Math.round(targets.protein)} g</span></div>
+                                        <div className="w-px h-3 bg-slate-200"></div>
+                                        <div className="flex items-center gap-1"><span className="text-yellow-500">YAĞ</span><span className="text-yellow-600 tracking-tight">{Math.round(targets.fat)} g</span></div>
                                     </div>
-                                </div>
+                                )}
                             </div>
+                        )}
 
-                        </div>
-
-
-
-                        <div className="flex-1 overflow-hidden flex flex-col">
-
-                            {/* Removed Inner Tabs Wrapper - Using Outer Tabs as Provider */}
+                        <div className="flex-1 overflow-hidden flex flex-col bg-white border-b">
                             <div className="flex-1 flex flex-col min-h-0">
-                                {/* REMOVED TABS LIST FROM HERE */}
 
                                 <TabsContent value="diet" className="flex-1 flex flex-col min-h-0 mt-0 data-[state=active]:flex">
 
                                     <Tabs value={activeWeekId || ''} onValueChange={setActiveWeekId} className="flex-1 flex flex-col min-h-0">
-                                        <div className="flex items-center gap-2 mb-4 shrink-0 w-full overflow-hidden">
-                                            <TabsList className="flex items-start justify-start gap-2 bg-transparent p-0 h-auto overflow-x-auto min-w-0 flex-1 no-scrollbar custom-tabs-list">
-                                                {visibleWeeks.map((week) => {
-                                                    const dt = dietTypesList.find(d => d.id === week.assigned_diet_type_id)
-                                                    const theme = getDietTheme(dt?.name)
-                                                    const abbrev = dt?.abbreviation || 'G'
-                                                    const isActive = activeWeekId === week.id
+                                        <div className="flex items-center gap-2 mb-4 shrink-0 w-full pb-1">
+                                            <div className="flex-1 overflow-x-auto no-scrollbar">
+                                                <TabsList className="inline-flex items-center justify-start gap-1 bg-slate-100/50 border border-slate-200/60 p-1 h-auto min-w-0 no-scrollbar custom-tabs-list flex-nowrap w-max rounded-xl">
+                                                    {visibleWeeks.map((week) => {
+                                                        const dt = dietTypesList.find(d => d.id === week.assigned_diet_type_id)
+                                                        const abbrev = dt?.abbreviation || 'G'
+                                                        const isActive = activeWeekId === week.id
 
-                                                    return (
-                                                        <TabsTrigger
-                                                            key={week.id}
-                                                            value={week.id}
-                                                            className={`
-                                                            relative group !flex-none flex flex-col items-start justify-center gap-0.5 py-2 px-3 rounded-xl border transition-all duration-200 w-auto
-                                                            ${theme.activeBg} ${theme.activeText} data-[state=active]:border-transparent data-[state=active]:shadow-md
-                                                            data-[state=inactive]:${theme.bg} data-[state=inactive]:${theme.text} data-[state=inactive]:${theme.border} data-[state=inactive]:hover:brightness-95
-                                                        `}
-                                                            onDoubleClick={() => openWeekEditor(week)}
-                                                        >
-                                                            <div className="flex items-center justify-between w-full mb-1">
-                                                                <div className="flex items-center gap-2">
-                                                                    <span className="font-semibold text-xs tracking-tight whitespace-nowrap">{week.title}</span>
-                                                                    <span className={`text-[10px] font-mono px-1 rounded ${isActive ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-500'}`}>
-                                                                        {abbrev}
-                                                                    </span>
-                                                                </div>
-                                                            </div>
+                                                        const weekStart = week.start_date ? new Date(week.start_date) : null;
+                                                        const weekEnd = week.end_date ? new Date(week.end_date) : null;
+                                                        if (weekStart) weekStart.setHours(0,0,0,0);
+                                                        if (weekEnd) weekEnd.setHours(23,59,59,999);
+                                                        const now = new Date();
+                                                        const isCurrentWeek = weekStart && weekEnd && (now >= weekStart && now <= weekEnd);
 
-
-                                                            {week.start_date && week.end_date && (
-                                                                <span className={`text-[10px] whitespace-nowrap ${isActive ? 'text-indigo-100' : 'text-gray-400'}`}>
-                                                                    {formatShortDate(new Date(week.start_date))} - {formatShortDate(new Date(week.end_date))}
-                                                                </span>
-                                                            )}
-
-                                                            <div
-                                                                className="absolute -top-1.5 -right-1.5 opacity-0 group-hover:opacity-100 transition-opacity bg-white shadow-sm border rounded-full p-0.5 cursor-pointer hover:bg-gray-100 text-gray-500 z-10"
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation()
-                                                                    e.preventDefault()
-                                                                }}
+                                                        return (
+                                                            <TabsTrigger
+                                                                key={week.id}
+                                                                value={week.id}
+                                                                className={`
+                                                                relative group flex flex-col items-start justify-center py-1.5 px-3 rounded-lg border transition-all duration-200 min-w-[90px] max-w-[160px]
+                                                                ${isActive ? 'bg-white shadow-[0_1px_3px_rgba(0,0,0,0.06)] border-slate-200/70' : 'border-transparent hover:bg-slate-200/50'}
+                                                            `}
+                                                                onDoubleClick={() => openWeekEditor(week)}
                                                             >
-                                                                <DropdownMenu>
-                                                                    <DropdownMenuTrigger asChild>
-                                                                        <div className="h-4 w-4 flex items-center justify-center rounded-full hover:bg-gray-200">
-                                                                            <MoreHorizontal size={12} />
-                                                                        </div>
-                                                                    </DropdownMenuTrigger>
-                                                                    <DropdownMenuContent align="start">
-                                                                        <DropdownMenuItem onClick={(e) => {
-                                                                            e.stopPropagation()
-                                                                            openWeekEditor(week)
-                                                                        }}>
-                                                                            <Pencil className="mr-2 h-3.5 w-3.5" />
-                                                                            <span>Düzenle</span>
-                                                                        </DropdownMenuItem>
-                                                                        <DropdownMenuItem onClick={(e) => {
-                                                                            e.stopPropagation()
-                                                                            setWeekCopyDialogData({ open: true, week })
-                                                                        }}>
-                                                                            <Copy className="mr-2 h-3.5 w-3.5" />
-                                                                            <span>Başka Hastaya Kopyala</span>
-                                                                        </DropdownMenuItem>
-                                                                    </DropdownMenuContent>
-                                                                </DropdownMenu>
-                                                            </div>
-                                                        </TabsTrigger>
-                                                    )
-                                                })}
-                                                
-                                                {/* Week Loop Button */}
+                                                                <div className="flex items-center justify-between w-full mb-0.5 gap-2">
+                                                                    <div className="flex items-center gap-1.5 overflow-hidden">
+                                                                        <span className={`font-bold text-[11px] tracking-tight whitespace-nowrap truncate ${isActive ? 'text-blue-700' : 'text-slate-600 group-hover:text-slate-800'}`}>{week.title}</span>
+                                                                        {isCurrentWeek && (
+                                                                            <span className="flex h-1.5 w-1.5 relative shrink-0" title="Geçerli Hafta">
+                                                                                <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${isActive ? 'bg-blue-400' : 'bg-slate-400'}`}></span>
+                                                                                <span className={`relative inline-flex rounded-full h-1.5 w-1.5 ${isActive ? 'bg-blue-500' : 'bg-slate-400'}`}></span>
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                    
+                                                                    {isActive && abbrev !== 'G' && (
+                                                                        <span className="text-[8px] font-mono px-1 rounded bg-blue-50 text-blue-600/70 shrink-0">
+                                                                            {abbrev}
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+
+                                                                {week.start_date && week.end_date && (
+                                                                    <span className={`text-[9px] font-medium whitespace-nowrap ${isActive ? 'text-slate-500' : 'text-slate-400'}`}>
+                                                                        {formatShortDate(new Date(week.start_date))} - {formatShortDate(new Date(week.end_date))}
+                                                                    </span>
+                                                                )}
+
+                                                                <div
+                                                                    className="absolute -top-1.5 -right-1.5 opacity-0 group-hover:opacity-100 transition-opacity bg-white shadow-md border rounded-full p-0.5 cursor-pointer hover:bg-gray-100 text-gray-500 z-10"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation()
+                                                                        e.preventDefault()
+                                                                    }}
+                                                                >
+                                                                    <DropdownMenu>
+                                                                        <DropdownMenuTrigger asChild>
+                                                                            <div className="h-4 w-4 flex items-center justify-center rounded-full hover:bg-gray-200">
+                                                                                <MoreHorizontal size={12} />
+                                                                            </div>
+                                                                        </DropdownMenuTrigger>
+                                                                        <DropdownMenuContent align="start">
+                                                                            <DropdownMenuItem onClick={(e) => {
+                                                                                e.stopPropagation()
+                                                                                openWeekEditor(week)
+                                                                            }}>
+                                                                                <Pencil className="mr-2 h-3.5 w-3.5" />
+                                                                                <span>Düzenle</span>
+                                                                            </DropdownMenuItem>
+                                                                            <DropdownMenuItem onClick={(e) => {
+                                                                                e.stopPropagation()
+                                                                                setWeekCopyDialogData({ open: true, week })
+                                                                            }}>
+                                                                                <Copy className="mr-2 h-3.5 w-3.5" />
+                                                                                <span>Başka Hastaya Kopyala</span>
+                                                                            </DropdownMenuItem>
+                                                                        </DropdownMenuContent>
+                                                                    </DropdownMenu>
+                                                                </div>
+                                                            </TabsTrigger>
+                                                        )
+                                                    })}
+                                                </TabsList>
+                                            </div>
+
+                                            <div className="flex items-center gap-2 shrink-0 ml-2 pr-1 border-l pl-3">
                                                 <Button 
                                                     variant="outline" 
-                                                    className="shrink-0 h-auto py-2 px-3 rounded-xl border-dashed border-2 hover:bg-gray-50 flex flex-col items-center justify-center gap-1 min-w-[100px] shadow-sm bg-white"
-                                                    onClick={() => setWeekLoopDialogOpen(true)}
-                                                    title="Hafta Döngüsü Oluştur"
+                                                    size="sm" 
+                                                    onClick={addNewWeek} 
+                                                    title="Yeni Hafta Ekle" 
+                                                    className="h-10 px-3 rounded-xl border-emerald-500 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 hover:text-emerald-800 transition-all flex items-center gap-2 shrink-0 shadow-sm"
                                                 >
-                                                    <RefreshCw size={16} className="text-gray-500" />
-                                                    <span className="text-xs text-gray-600 font-medium">Hafta Döngüsü</span>
-                                                    <span className="text-[9px] text-gray-400">Oluştur</span>
+                                                    <Plus size={16} />
+                                                    <span className="text-[10px] font-bold uppercase tracking-tight">Yeni Hafta</span>
                                                 </Button>
-                                            </TabsList>
-
-                                            <div className="flex-1"></div>
-                                            <Button variant="outline" size="icon" onClick={() => handleAutoGenerate()} disabled={isGeneratingPlan} title="Otomatik Plan Oluştur (Sihirli Değnek)">
-                                                {isGeneratingPlan ? <RefreshCw className="animate-spin" size={18} /> : <Wand2 size={18} className="text-purple-600" />}
-                                            </Button>
-
-                                            <Button variant="outline" size="icon" onClick={handleUndo} title="Geri Al">
-                                                <RotateCcw size={18} className="text-blue-600" />
-                                            </Button>
-
-                                            <Button variant="outline" size="icon" onClick={handleReset} title="Haftayı Sıfırla">
-                                                <Eraser size={18} className="text-red-500" />
-                                            </Button>
-
-                                            <Button variant="outline" size="icon" onClick={addNewWeek} title="Yeni Hafta Ekle">
-                                                <Plus size={18} />
-                                            </Button>
-
+                                                <Button 
+                                                    variant="outline" 
+                                                    size="sm" 
+                                                    onClick={() => setWeekLoopDialogOpen(true)} 
+                                                    title="Hafta Döngüsü" 
+                                                    className="h-10 px-3 rounded-xl border-blue-500 bg-blue-50 text-blue-700 hover:bg-blue-100 hover:text-blue-800 transition-all flex items-center gap-2 shrink-0 shadow-sm"
+                                                >
+                                                    <RefreshCw size={14} />
+                                                    <span className="text-[10px] font-bold uppercase tracking-tight">Döngü</span>
+                                                </Button>
+                                            </div>
                                         </div>
                                         <div className="flex-1 overflow-auto pb-20">
                                             {activeWeekId ? (
@@ -3624,6 +3584,7 @@ export default function PatientDetailPage({ params }: { params: Promise<{ id: st
                                                             formatDiff={formatDiff}
                                                             macroTolerances={macroTolerances}
                                                             mealCounts={showMealBadges ? mealCounts : undefined}
+                                                            showIcons={showMealBadges}
                                                             allFoods={foods}
                                                             readOnly={isPatient}
                                                             patientId={patient?.id}
@@ -3652,6 +3613,7 @@ export default function PatientDetailPage({ params }: { params: Promise<{ id: st
                                                             formatDiff={formatDiff}
                                                             macroTolerances={macroTolerances}
                                                             mealCounts={showMealBadges ? mealCounts : undefined}
+                                                            showIcons={showMealBadges}
                                                             patientId={patient?.id}
                                                             macroTargetMode={patient?.macro_target_mode}
                                                             allFoods={foods || []}
@@ -3677,9 +3639,7 @@ export default function PatientDetailPage({ params }: { params: Promise<{ id: st
                                     <PatientMeasurements patientId={patient.id} />
                                 </TabsContent>
 
-                                <TabsContent value="analysis" className="flex-1 flex flex-col min-h-0 mt-0 p-4 overflow-y-auto data-[state=active]:flex">
-                                    <PatientAnalysisPanel patientId={patient.id} weekId={activeWeekId} />
-                                </TabsContent>
+
                             </div>
                         </div>
                     </div>
@@ -3699,6 +3659,21 @@ export default function PatientDetailPage({ params }: { params: Promise<{ id: st
             </DragOverlay>
 
             {/* DEBUG BAR REMOVED */}
+
+            {/* AI Analysis Overlay */}
+            <Sheet open={aiAnalysisSheetOpen} onOpenChange={setAiAnalysisSheetOpen}>
+                <SheetContent side="right" className="w-full sm:max-w-[700px] md:max-w-[900px] p-0 flex flex-col">
+                    <SheetHeader className="px-6 py-4 border-b bg-gray-50 shrink-0">
+                        <SheetTitle className="text-purple-700 flex items-center gap-2">
+                            <Sparkles size={18} />
+                            AI Analizi
+                        </SheetTitle>
+                    </SheetHeader>
+                    <div className="flex-1 overflow-y-auto bg-gray-50/30 p-4">
+                        {aiAnalysisSheetOpen && <PatientAnalysisPanel patientId={patient.id} weekId={activeWeekId} />}
+                    </div>
+                </SheetContent>
+            </Sheet>
 
             {/* Week Edit Dialog */}
             <Dialog open={weekDialogOpen} onOpenChange={setWeekDialogOpen}>
@@ -4106,7 +4081,7 @@ function MealReorderButtons({ meal, meals, onUpdate, size = 12, vertical = false
 }
 
 // ================== GRID VIEW MEAL SLOT (DROPPABLE) ==================
-function DroppableMealSlot({ dayId, dayDate, mealType, meals, onUpdate, onToggleLock, dislikedFoods = [], activeDietRules, mealCounts, nearbyUsedFoodIds = [], allFoods = [], targets, formatDiff, dayTotals, readOnly = false, patientId, manualMatches, bans, cards, onShowRecipe, patientDiseases = [], patientLabs = [], patientMedicationRules = [], scalableUnits = [], days = [], patientDietType }: {
+function DroppableMealSlot({ dayId, dayDate, mealType, meals, onUpdate, onToggleLock, dislikedFoods = [], activeDietRules, mealCounts, nearbyUsedFoodIds = [], allFoods = [], targets, formatDiff, dayTotals, readOnly = false, patientId, manualMatches, bans, cards, onShowRecipe, patientDiseases = [], patientLabs = [], patientMedicationRules = [], scalableUnits = [], days = [], patientDietType, showIcons = true }: {
     dayId: string,
     dayDate?: Date,
     mealType: string,
@@ -4446,10 +4421,10 @@ function DroppableMealSlot({ dayId, dayDate, mealType, meals, onUpdate, onToggle
                             )}
                             <div className={readOnly ? "cursor-default" : "cursor-pointer"} onClick={() => !readOnly && setEditingMeal(meal)}>
                                 <div className="font-medium leading-tight break-words pr-4">
-                                    <SeasonalityIcon food={meal.foods} date={dayDate} />
-                                    {isDisliked && <span className="mr-0.5 cursor-help" title="Hastanın sevmediği besin listesinde">🚫</span>}
+                                    {showIcons && <SeasonalityIcon food={meal.foods} date={dayDate} />}
+                                    {showIcons && isDisliked && <span className="mr-0.5 cursor-help" title="Hastanın sevmediği besin listesinde">🚫</span>}
                                     {/* Unified warnings tooltip (grid view) */}
-                                    {((!compatibility.compatible || compatibility.recommended || compatibility.medicationWarning) && (compatibility.warnings?.length > 0 || compatibility.reason)) && (
+                                    {showIcons && ((!compatibility.compatible || compatibility.recommended || compatibility.medicationWarning) && (compatibility.warnings?.length > 0 || compatibility.reason)) && (
                                         <TooltipProvider>
                                             <Tooltip>
                                                 <TooltipTrigger asChild>
@@ -4547,9 +4522,9 @@ function DroppableMealSlot({ dayId, dayDate, mealType, meals, onUpdate, onToggle
                                             </Tooltip>
                                         </TooltipProvider>
                                     )}
-                                    {isCustom && <span className="text-purple-500 mr-0.5 cursor-help" title="Veritabanında kayıtlı değil (Özel yemek)">✦</span>}
-                                    {meal.is_consumed && <span className="text-green-500 mr-0.5" title="Tüketildi">✓</span>}
-                                    {isSwapped && (
+                                    {showIcons && isCustom && <span className="text-purple-500 mr-0.5 cursor-help" title="Veritabanında kayıtlı değil (Özel yemek)">✦</span>}
+                                    {showIcons && meal.is_consumed && <span className="text-green-500 mr-0.5" title="Tüketildi">✓</span>}
+                                    {showIcons && isSwapped && (
                                         <span title={swappedBy === 'dietitian' ? "Diyetisyen tarafından değiştirildi" : "Hasta tarafından değiştirildi"}>
                                             <RotateCcw size={10} className={`inline mr-0.5 animate-in fade-in ${swappedBy === 'dietitian' ? 'text-purple-600' : 'text-amber-600'}`} />
                                             <RotateCcw size={10} className={`inline mr-0.5 animate-in fade-in ${swappedBy === 'dietitian' ? 'text-purple-600' : 'text-amber-600'}`} />
@@ -4557,7 +4532,7 @@ function DroppableMealSlot({ dayId, dayDate, mealType, meals, onUpdate, onToggle
                                     )}
 
                                     {/* GENERATION SOURCE INDICATOR */}
-                                    {meal.generation_meta && !readOnly && (
+                                    {showIcons && meal.generation_meta && !readOnly && (
                                         <span className="mr-0.5 cursor-help" title={`Kaynak: ${meal.generation_meta.rule || 'Otomatik'}`}>
                                             <Sparkles size={10} className="inline text-indigo-400 mb-0.5" />
                                         </span>
@@ -4589,7 +4564,7 @@ function DroppableMealSlot({ dayId, dayDate, mealType, meals, onUpdate, onToggle
                                         }
                                         return null
                                     })()}
-                                    {onShowRecipe && (() => {
+                                    {showIcons && onShowRecipe && (() => {
                                         const hasCustomImage = !!meal.foods?.image_url
                                         const isUserProposal = meal.foods?.meta?.source === 'user_proposal'
                                         const skipAutoMatch = hasCustomImage || isUserProposal
@@ -4635,7 +4610,7 @@ function DroppableMealSlot({ dayId, dayDate, mealType, meals, onUpdate, onToggle
                                             </>
                                         )
                                     })()}
-                                    {(meal.portion_multiplier || 1) !== 1 && <span className="text-blue-500 text-[9px] ml-0.5">({meal.portion_multiplier}x)</span>}
+                                    {showIcons && (meal.portion_multiplier || 1) !== 1 && <span className="text-blue-500 text-[9px] ml-0.5">({meal.portion_multiplier}x)</span>}
                                 </div>
                                 <div className="text-[9px] text-gray-500 mt-0.5">
                                     {mealCalories} kcal
@@ -4799,7 +4774,7 @@ function DroppableMealSlot({ dayId, dayDate, mealType, meals, onUpdate, onToggle
     )
 }
 
-function DietWeekGridView({ weekId, refreshTrigger, startDate, mealTypes, onToggleLock, onToggleNoteLock, dislikedFoods = [], patientDiseases = [], activeDietRules, targets, formatDiff, macroTolerances, mealCounts, allFoods = [], readOnly = false, patientId, manualMatches, bans, cards, onShowRecipe, patientLabs = [], macroTargetMode, patientMedicationRules = [], scalableUnits = [], patientDietType }: {
+function DietWeekGridView({ weekId, refreshTrigger, startDate, mealTypes, onToggleLock, onToggleNoteLock, dislikedFoods = [], patientDiseases = [], activeDietRules, targets, formatDiff, macroTolerances, mealCounts, allFoods = [], readOnly = false, patientId, manualMatches, bans, cards, onShowRecipe, patientLabs = [], macroTargetMode, patientMedicationRules = [], scalableUnits = [], patientDietType, showIcons = true }: {
     weekId: string,
     refreshTrigger: number,
     startDate?: string | null,
@@ -5071,7 +5046,7 @@ function DietWeekGridView({ weekId, refreshTrigger, startDate, mealTypes, onTogg
 }
 
 // ================== LIST VIEW WITH DROP ZONES ==================
-function DietWeekListView({ weekId, refreshTrigger, startDate, mealTypes, onToggleLock, onToggleNoteLock, dislikedFoods = [], patientDiseases = [], activeDietRules, targets, formatDiff, macroTolerances, mealCounts, allFoods = [], readOnly = false, patientId, manualMatches, bans, cards, onShowRecipe, patientLabs = [], macroTargetMode, patientMedicationRules = [], scalableUnits = [], patientDietType }: {
+function DietWeekListView({ weekId, refreshTrigger, startDate, mealTypes, onToggleLock, onToggleNoteLock, dislikedFoods = [], patientDiseases = [], activeDietRules, targets, formatDiff, macroTolerances, mealCounts, allFoods = [], readOnly = false, patientId, manualMatches, bans, cards, onShowRecipe, patientLabs = [], macroTargetMode, patientMedicationRules = [], scalableUnits = [], patientDietType, showIcons = true }: {
     weekId: string,
     refreshTrigger: number,
     startDate?: string | null,
@@ -5355,7 +5330,7 @@ function SeasonalityIcon({ food, date }: { food: any, date?: Date }) {
 }
 
 // ================== LIST VIEW MEAL SLOT (DROPPABLE) ==================
-function ListViewMealSlot({ dayId, mealType, meals, mealTotals, onUpdate, onToggleLock, dislikedFoods = [], activeDietRules, dayDate, nearbyUsedFoodIds = [], patientId, days = [], targets, allFoods = [], manualMatches, bans, cards, onShowRecipe, patientDiseases = [], patientLabs = [], patientMedicationRules = [], scalableUnits = [], patientDietType }: {
+function ListViewMealSlot({ dayId, mealType, meals, mealTotals, onUpdate, onToggleLock, dislikedFoods = [], activeDietRules, dayDate, nearbyUsedFoodIds = [], patientId, days = [], targets, allFoods = [], manualMatches, bans, cards, onShowRecipe, patientDiseases = [], patientLabs = [], patientMedicationRules = [], scalableUnits = [], patientDietType, showIcons = true }: {
     dayId: string,
     mealType: string,
     meals: any[],
@@ -5850,9 +5825,9 @@ function ListViewMealSlot({ dayId, mealType, meals, mealTotals, onUpdate, onTogg
                                             }
                                             return null
                                         })()}
-                                        {!isCustom && <SeasonalityIcon food={meal.foods} date={dayDate} />}
+                                        {showIcons && !isCustom && <SeasonalityIcon food={meal.foods} date={dayDate} />}
                                         {scaledFoodName}
-                                        {onShowRecipe && (() => {
+                                        {showIcons && onShowRecipe && (() => {
                                             const hasCustomImage = !!meal.foods?.image_url
                                             const isUserProposal = meal.foods?.meta?.source === 'user_proposal'
                                             const skipAutoMatch = hasCustomImage || isUserProposal
@@ -5901,8 +5876,8 @@ function ListViewMealSlot({ dayId, mealType, meals, mealTotals, onUpdate, onTogg
                                                 </>
                                             )
                                         })()}
-                                        {(meal.portion_multiplier || 1) !== 1 && <span className="text-blue-600 ml-1">({meal.portion_multiplier}x)</span>}
-                                        {!compatibility.compatible && <span className="text-yellow-600 ml-2 text-sm cursor-help" title={`Diyet türü/kuralları ile uyumsuz: ${compatibility.reason}`}>⚠️</span>}
+                                        {showIcons && (meal.portion_multiplier || 1) !== 1 && <span className="text-blue-600 ml-1">({meal.portion_multiplier}x)</span>}
+                                        {showIcons && !compatibility.compatible && <span className="text-yellow-600 ml-2 text-sm cursor-help" title={`Diyet türü/kuralları ile uyumsuz: ${compatibility.reason}`}>⚠️</span>}
                                     </span>
                                 </td>
                                 <td className="px-4 py-2 text-right w-16">{Math.round(((meal.calories > 0 ? meal.calories : meal.foods?.calories) || 0) * (meal.portion_multiplier || 1))}</td>

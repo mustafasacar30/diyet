@@ -2,13 +2,14 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Users, FileText, LayoutDashboard, UtensilsCrossed, ClipboardList, Eye, Shield, UserCog, Stethoscope, MessageCircle, Activity, Sparkles, ChefHat, Image as ImageIcon, Menu, LogOut } from 'lucide-react'
+import { Users, FileText, LayoutDashboard, UtensilsCrossed, ClipboardList, Eye, Shield, UserCog, Stethoscope, MessageCircle, Activity, Sparkles, ChefHat, Image as ImageIcon, Menu, LogOut, ChevronLeft, ChevronRight, ScrollText, ArrowLeft } from 'lucide-react'
 import { useAuth } from '@/contexts/auth-context'
 import { Button } from '@/components/ui/button'
 import React, { useState } from 'react'
 import { UnreadListener } from '@/components/layout/unread-listener'
-import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet'
 import AppStartupLoader from '@/components/ui/app-startup-loader'
+import { SidebarProvider } from '@/contexts/sidebar-context'
 
 export default function DashboardLayout({
     children,
@@ -21,9 +22,41 @@ export default function DashboardLayout({
     const { isImpersonating, stopImpersonation, profile, signOut, user, loading, isStaff, isAdmin } = useAuth()
     const [unreadCount, setUnreadCount] = useState(0)
     const [sheetOpen, setSheetOpen] = useState(false)
+    const [sidebarWidth, setSidebarWidth] = useState(260)
+    const [isResizing, setIsResizing] = useState(false)
+    const isSidebarCollapsed = sidebarWidth <= 60
+    const [sidebarMode, setSidebarMode] = useState<'main' | 'patient'>('main')
+
+    React.useEffect(() => {
+        if (!isResizing) return;
+        const handleMouseMove = (e: MouseEvent) => {
+            let newWidth = e.clientX;
+            if (newWidth < 220 && newWidth > 120) newWidth = 220; // Snap to min width
+            if (newWidth <= 120) newWidth = 52; // Collapse
+            if (newWidth > 600) newWidth = 600; // Max width
+            setSidebarWidth(newWidth);
+        };
+        const handleMouseUp = () => setIsResizing(false);
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
+        return () => {
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+        };
+    }, [isResizing]);
+    const isPatientDetail = pathname?.toLowerCase().includes('/patients/') && pathname !== '/patients'
     const startupName = profile?.full_name || user?.user_metadata?.full_name || (user?.email ? user.email.split('@')[0] : null)
 
     // --- HOOKS SECTION (Must be top level) ---
+
+    // Sync sidebar mode to patient if we enter a patient detail page
+    React.useEffect(() => {
+        if (isPatientDetail) {
+            setSidebarMode('patient')
+        } else {
+            setSidebarMode('main')
+        }
+    }, [isPatientDetail])
 
     // 0. AUTHENTICATED USER ON LOGIN PAGE -> REDIRECT (allow /register for Google OAuth completion)
     React.useEffect(() => {
@@ -114,7 +147,7 @@ export default function DashboardLayout({
     const adminTabs = []
 
     if (isStaff) {
-        knowledgeTabs.push({ href: '/admin/recipes', label: 'Tarif Kartları', icon: UtensilsCrossed })
+        knowledgeTabs.push({ href: '/admin/recipes', label: 'Tarif Kartları', icon: ScrollText })
         knowledgeTabs.push({ href: '/admin/diseases', label: 'Hastalıklar', icon: Activity })
 
         aiTabs.push({ href: '/admin/food-proposals', label: 'Yemek Önerileri', icon: Sparkles })
@@ -130,27 +163,37 @@ export default function DashboardLayout({
     }
 
     const allTabs = [...clinicalTabs, ...knowledgeTabs, ...aiTabs, ...adminTabs]
-    const isPatientDetail = pathname?.toLowerCase().includes('/patients/') && pathname !== '/patients'
     const targetUserId = profile?.id || user.id
 
     const renderNavGroup = (title: string, items: any[]) => {
         if (items.length === 0) return null;
         return (
             <div className="mb-6">
-                <h4 className="px-5 text-[11px] font-bold text-slate-400/80 uppercase tracking-widest mb-3">{title}</h4>
+                {!isSidebarCollapsed && (
+                    <h4 className="px-5 text-[11px] font-bold text-slate-400/80 uppercase tracking-widest mb-3 transition-opacity duration-300">
+                        {title}
+                    </h4>
+                )}
+                {isSidebarCollapsed && (
+                    <div className="px-5 border-b border-slate-200/30 mb-3 mx-2" />
+                )}
                 <div className="space-y-1">
                     {items.map(tab => {
                         const isActive = pathname === tab.href || (tab.href !== '/' && pathname?.startsWith(tab.href))
                         return (
-                            <div key={tab.href} onClick={() => { router.push(tab.href); setSheetOpen(false) }}>
-                                <div className={`flex items-center gap-3 px-4 py-2.5 mx-3 rounded-xl transition-all duration-200 cursor-pointer text-sm font-medium
+                            <div key={tab.href} onClick={() => { router.push(tab.href); setSheetOpen(false) }} className="relative group">
+                                <div className={`flex items-center transition-all duration-300 cursor-pointer text-sm font-medium relative border
+                                    ${isSidebarCollapsed ? 'w-9 h-9 mx-auto justify-center rounded-lg' : 'py-2.5 px-4 mx-3 rounded-xl gap-3'}
                                     ${isActive 
-                                    ? 'bg-blue-600 shadow-md shadow-blue-500/20 text-white' 
-                                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}>
-                                    <tab.icon size={18} className={isActive ? 'text-white' : 'text-slate-500'} />
-                                    <span className="flex-1">{tab.label}</span>
+                                    ? 'bg-blue-600 shadow-lg shadow-blue-500/20 text-white border-blue-500' 
+                                    : 'bg-white/10 border-transparent text-slate-600 hover:bg-white/40 hover:border-slate-200/40 hover:text-slate-900'}`}>
+                                    <tab.icon size={isSidebarCollapsed ? 18 : 18} className={`shrink-0 transition-all duration-300 ${isActive ? 'text-white' : 'text-slate-500 group-hover:text-blue-600'}`} />
+                                    {!isSidebarCollapsed && <span className="flex-1 truncate">{tab.label}</span>}
+                                    
                                     {tab.label === 'Mesajlar' && unreadCount > 0 && (
-                                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center shadow-sm ${isActive ? 'bg-white text-blue-600' : 'bg-red-500 text-white'}`}>
+                                        <span className={`text-[10px] font-bold px-1 py-0.5 rounded-full min-w-[16px] text-center shadow-sm 
+                                            ${isSidebarCollapsed ? 'absolute -top-1 -right-1 z-10 scale-75' : ''}
+                                            ${isActive ? 'bg-white text-blue-600' : 'bg-red-500 text-white'}`}>
                                             {unreadCount}
                                         </span>
                                     )}
@@ -164,48 +207,121 @@ export default function DashboardLayout({
     }
 
     return (
-        <div className="h-screen flex flex-col bg-[#F8FAFC] overflow-hidden font-sans">
+        <SidebarProvider initialWidth={sidebarWidth}>
+            <div className="h-screen flex flex-col bg-[#F8FAFC] overflow-hidden font-sans">
             <UnreadListener userId={targetUserId} onUpdate={setUnreadCount} />
             <ImpersonationBanner />
 
             <div className="flex flex-1 overflow-hidden">
                 {/* BACKDROP BLUR SIDEBAR (Desktop) */}
-                <aside className="hidden md:flex flex-col w-[260px] bg-white/70 backdrop-blur-3xl border-r border-slate-200/60 shrink-0 z-20 shadow-[4px_0_24px_rgba(0,0,0,0.02)]">
+                <aside 
+                    className={`hidden md:flex flex-col bg-[#F9FBFC] border-r border-slate-200/50 shrink-0 z-20 shadow-[1px_0_10px_rgba(0,0,0,0.01)] relative ${isResizing ? 'transition-none select-none' : 'transition-all duration-300'}`}
+                    style={{ width: `${sidebarWidth}px` }}
+                >
+                    {/* Resize Handle - Elegant Thin Line */}
                     <div 
-                        onClick={() => router.push('/')}
-                        className="h-16 flex items-center px-6 shrink-0 cursor-pointer border-b border-slate-200/30 hover:bg-white/40 transition-colors"
+                        className="absolute top-0 -right-[0.5px] w-[1px] h-full bg-slate-200/50 z-40 group-hover:bg-blue-400/50 transition-colors" 
+                    />
+                    
+                    <div 
+                        className="absolute top-0 -right-1.5 w-3.5 h-full cursor-col-resize z-50" 
+                        onMouseDown={(e) => {
+                            e.preventDefault();
+                            setIsResizing(true);
+                        }} 
+                    />
+
+                    {/* Toggle Button */}
+                    <button 
+                        onClick={() => setSidebarWidth(isSidebarCollapsed ? 260 : 52)}
+                        className="absolute -right-3 top-8 w-6 h-6 bg-blue-600 border border-blue-400 hover:bg-blue-700 hover:scale-110 rounded-full flex items-center justify-center shadow-[0_0_15px_rgba(37,99,235,0.4)] z-50 group transition-all duration-300"
                     >
-                        <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-green-500 to-teal-500 flex items-center justify-center shadow-lg shadow-teal-500/30 mr-3">
-                            <Sparkles className="w-4 h-4 text-white" />
-                        </div>
-                        <div className="font-bold bg-gradient-to-br from-slate-700 to-slate-900 bg-clip-text text-transparent tracking-tight text-xl">
-                            Diyet Plan
-                        </div>
+                        {isSidebarCollapsed ? (
+                            <ChevronRight className="w-3.5 h-3.5 text-white" />
+                        ) : (
+                            <ChevronLeft className="w-3.5 h-3.5 text-white" />
+                        )}
+                    </button>
+
+                    <div className={`h-16 flex items-center shrink-0 border-b border-slate-200/30 transition-all duration-300 ${isSidebarCollapsed ? 'px-0 justify-center' : 'px-4'}`}>
+                        {isPatientDetail && sidebarMode === 'patient' ? (
+                            <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                onClick={() => setSidebarMode('main')}
+                                className={`group flex items-center bg-blue-50/50 hover:bg-blue-100/50 border border-blue-100/50 text-blue-700 transition-all ${isSidebarCollapsed ? 'w-10 h-10 p-0 rounded-lg justify-center' : 'w-full h-10 px-3 rounded-xl gap-2'}`}
+                                title="Ana Menüye Dön"
+                            >
+                                <ArrowLeft className={`transition-transform duration-300 group-hover:-translate-x-1 ${isSidebarCollapsed ? 'h-5 w-5' : 'h-4 w-4'}`} />
+                                {!isSidebarCollapsed && <span className="font-bold text-xs uppercase tracking-tight">Ana Menü</span>}
+                            </Button>
+                        ) : isPatientDetail && sidebarMode === 'main' ? (
+                            <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                onClick={() => setSidebarMode('patient')}
+                                className={`group flex items-center bg-emerald-50/50 hover:bg-emerald-100/50 border border-emerald-100/50 text-emerald-700 transition-all ${isSidebarCollapsed ? 'w-10 h-10 p-0 rounded-lg justify-center' : 'w-full h-10 px-3 rounded-xl gap-2'}`}
+                                title="Hastaya Dön"
+                            >
+                                <Users className={`transition-transform duration-300 group-hover:scale-110 ${isSidebarCollapsed ? 'h-5 w-5' : 'h-4 w-4'}`} />
+                                {!isSidebarCollapsed && <span className="font-bold text-xs uppercase tracking-tight">Hastaya Dön</span>}
+                            </Button>
+                        ) : (
+                            <div 
+                                onClick={() => router.push('/')}
+                                className={`flex items-center cursor-pointer hover:bg-white/40 transition-all duration-300 w-full ${isSidebarCollapsed ? 'justify-center' : 'gap-3'}`}
+                            >
+                                <div className={`rounded-xl bg-gradient-to-br from-green-500 to-teal-500 flex items-center justify-center shadow-lg shadow-teal-500/30 transition-all duration-300 ${isSidebarCollapsed ? 'w-10 h-10' : 'w-8 h-8'}`}>
+                                    <Sparkles className="w-4 h-4 text-white" />
+                                </div>
+                                {!isSidebarCollapsed && (
+                                    <div className="font-extrabold bg-gradient-to-br from-slate-700 to-slate-900 bg-clip-text text-transparent tracking-tighter text-lg uppercase transition-all duration-300">
+                                        Diyet Plan
+                                    </div>
+                                )}
+                            </div>
+                        )}
                     </div>
 
-                    <div className="flex-1 overflow-y-auto py-6 scrollbar-hide">
-                        {renderNavGroup('Klinik & Hastalar', clinicalTabs)}
-                        {renderNavGroup('Veritabanı', knowledgeTabs)}
-                        {renderNavGroup('Yapay Zeka', aiTabs)}
-                        {renderNavGroup('Sistem', adminTabs)}
+                    <div className="flex-1 overflow-hidden py-6 space-y-4">
+                        <div className={sidebarMode === 'main' ? 'block' : 'hidden'}>
+                            {renderNavGroup('Klinik & Hastalar', clinicalTabs)}
+                            {renderNavGroup('Veritabanı', knowledgeTabs)}
+                            {renderNavGroup('Yapay Zeka', aiTabs)}
+                            {renderNavGroup('Sistem', adminTabs)}
+                        </div>
+
+                        <div className={`px-1 ${sidebarMode === 'patient' ? 'block' : 'hidden'}`}>
+                            <div id="sidebar-patient-name-slot" className="px-5 text-[11px] font-bold text-blue-600/70 uppercase tracking-widest mb-4 empty:hidden"></div>
+                            {/* This is where the Portal will inject patient actions */}
+                            <div id="sidebar-actions-slot" className="space-y-1" />
+                        </div>
                     </div>
 
                     {/* Profile Section */}
-                    <div className="p-4 mt-auto border-t border-slate-200/50 bg-white/40 backdrop-blur-md">
-                        <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-700 font-bold shrink-0 shadow-inner">
+                    <div className={`p-4 mt-auto border-t border-slate-200/50 bg-white/20 backdrop-blur-md transition-all duration-300 ${isSidebarCollapsed ? 'px-0 flex flex-col items-center' : ''}`}>
+                            <div className={`rounded-full bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-700 font-bold shrink-0 shadow-inner transition-all duration-300 ${isSidebarCollapsed ? 'w-8 h-8 text-xs' : 'w-10 h-10'}`}>
                                 {profile?.full_name?.charAt(0) || 'U'}
                             </div>
-                            <div className="flex-1 min-w-0">
-                                <p className="text-sm font-semibold text-slate-800 truncate">{profile?.full_name}</p>
-                                <p className="text-xs text-slate-500 capitalize truncate">{profile?.role === 'dietitian' ? 'Diyetisyen' : profile?.role}</p>
-                            </div>
-                            <Button variant="ghost" size="icon" onClick={handleLogout} className="text-slate-400 hover:text-red-600 hover:bg-red-50 shrink-0 h-8 w-8">
+
+                            {!isSidebarCollapsed && (
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-bold text-slate-800 truncate">{profile?.full_name}</p>
+                                    <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">{isAdmin ? 'Yönetici' : 'Diyetisyen'}</p>
+                                </div>
+                            )}
+
+                            <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                onClick={handleLogout} 
+                                className={`text-slate-400 hover:text-red-600 hover:bg-red-50 shrink-0 transition-all duration-300 ${isSidebarCollapsed ? 'h-9 w-9' : 'h-8 w-8'}`}
+                                title="Çıkış Yap"
+                            >
                                 <LogOut size={16} />
                             </Button>
                         </div>
-                    </div>
-                </aside>
+                    </aside>
 
                 {/* Main Content Area */}
                 <main className="flex-1 flex flex-col relative z-0 min-w-0 bg-transparent">
@@ -220,6 +336,8 @@ export default function DashboardLayout({
                                         </Button>
                                     </SheetTrigger>
                                     <SheetContent side="left" className="w-[280px] p-0 flex flex-col bg-slate-50">
+                                        <SheetTitle className="sr-only">Menü</SheetTitle>
+                                        <SheetDescription className="sr-only">Navigasyon menüsü</SheetDescription>
                                         <div className="h-16 flex items-center px-6 border-b border-slate-200/50 bg-white">
                                             <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-green-500 to-teal-500 flex items-center justify-center shadow-lg shadow-teal-500/30 mr-3">
                                                 <Sparkles className="w-4 h-4 text-white" />
@@ -246,12 +364,6 @@ export default function DashboardLayout({
 
                     {/* Page Container */}
                     <div className={`flex flex-col flex-1 overflow-hidden transition-all ${!isPatientDetail ? 'mt-14 md:mt-0' : 'mt-[100px] md:mt-0'}`}>
-                        {/* Desktop Portal Topbar (Only for Patient Detail) */}
-                        <div className={`hidden md:flex shrink-0 bg-white/40 backdrop-blur-xl border-b border-slate-200/50 transition-all z-10 ${isPatientDetail ? 'h-14 items-center px-4' : 'h-0 overflow-hidden'}`}>
-                             {/* The Portal target */}
-                             <div id="header-actions-slot" className="flex items-center w-full gap-2 overflow-x-auto no-scrollbar" />
-                        </div>
-
                         {/* Page Body */}
                         <div className={`flex-1 overflow-y-auto bg-transparent ${isPatientDetail ? 'flex flex-col min-h-0' : 'p-4 md:p-6 lg:p-8'}`}>
                             {children}
@@ -260,5 +372,6 @@ export default function DashboardLayout({
                 </main>
             </div>
         </div>
+    </SidebarProvider>
     )
 }
