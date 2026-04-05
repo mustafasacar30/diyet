@@ -120,7 +120,7 @@ function RichTagItem({ tag, index, onRemove, onUpdate, showMatchScope }: { tag: 
                         </div>
                         <div className="grid gap-1.5">
                             <Label htmlFor={`warning-${index}`} className="text-xs text-amber-700 font-semibold flex items-center gap-1">
-                                <AlertTriangle size={10} /> Uyarılar
+                                <AlertTriangle size={10} /> Uyarı / Mekanizma
                             </Label>
                             <Textarea
                                 id={`warning-${index}`}
@@ -132,7 +132,7 @@ function RichTagItem({ tag, index, onRemove, onUpdate, showMatchScope }: { tag: 
                         </div>
                         <div className="grid gap-1.5">
                             <Label htmlFor={`info-${index}`} className="text-xs text-blue-700 font-semibold flex items-center gap-1">
-                                <Info size={10} /> Öneriler
+                                <Info size={10} /> Öneri / Tıbbi Not
                             </Label>
                             <Textarea
                                 id={`info-${index}`}
