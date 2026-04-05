@@ -3504,8 +3504,8 @@ export default function PatientDetailPage({ params }: { params: Promise<{ id: st
                                 <TabsContent value="diet" className="flex-1 flex flex-col min-h-0 mt-0 data-[state=active]:flex">
 
                                     <Tabs value={activeWeekId || ''} onValueChange={setActiveWeekId} className="flex-1 flex flex-col min-h-0">
-                                        <div className="flex items-center gap-2 mb-4 shrink-0">
-                                            <TabsList className="flex items-start justify-start gap-2 bg-transparent p-0 h-auto overflow-x-auto no-scrollbar w-full custom-tabs-list">
+                                        <div className="flex items-center gap-2 mb-4 shrink-0 w-full overflow-hidden">
+                                            <TabsList className="flex items-start justify-start gap-2 bg-transparent p-0 h-auto overflow-x-auto min-w-0 flex-1 no-scrollbar custom-tabs-list">
                                                 {visibleWeeks.map((week) => {
                                                     const dt = dietTypesList.find(d => d.id === week.assigned_diet_type_id)
                                                     const theme = getDietTheme(dt?.name)

@@ -2,13 +2,12 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Users, FileText, LayoutDashboard, UtensilsCrossed, ClipboardList, Eye, Shield, UserCog, Stethoscope, MessageCircle, Activity, Sparkles, ChefHat, Image as ImageIcon } from 'lucide-react'
+import { Users, FileText, LayoutDashboard, UtensilsCrossed, ClipboardList, Eye, Shield, UserCog, Stethoscope, MessageCircle, Activity, Sparkles, ChefHat, Image as ImageIcon, Menu, LogOut } from 'lucide-react'
 import { useAuth } from '@/contexts/auth-context'
 import { Button } from '@/components/ui/button'
 import React, { useState } from 'react'
 import { UnreadListener } from '@/components/layout/unread-listener'
 import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from '@/components/ui/sheet'
-import { Menu } from 'lucide-react'
 import AppStartupLoader from '@/components/ui/app-startup-loader'
 
 export default function DashboardLayout({
@@ -23,8 +22,6 @@ export default function DashboardLayout({
     const [unreadCount, setUnreadCount] = useState(0)
     const [sheetOpen, setSheetOpen] = useState(false)
     const startupName = profile?.full_name || user?.user_metadata?.full_name || (user?.email ? user.email.split('@')[0] : null)
-
-
 
     // --- HOOKS SECTION (Must be top level) ---
 
@@ -54,51 +51,27 @@ export default function DashboardLayout({
     // --- RENDER EARLY RETURNS ---
 
     if (!loading && user && pathname === '/login') {
-        return (
-            <AppStartupLoader
-                displayName={startupName}
-                title="Panel aciliyor"
-                subtitle="Hesabiniz dogrulaniyor..."
-            />
-        )
+        return <AppStartupLoader displayName={startupName} title="Panel aciliyor" subtitle="Hesabiniz dogrulaniyor..." />
     }
 
-    // 1. GUEST PAGE CHECK
     if (isPublicAuthPath) {
         return <>{children}</>
     }
 
-    // 2. LOADING STATE
     if (loading) {
-        return (
-            <AppStartupLoader
-                displayName={startupName}
-                title="Veriler yukleniyor"
-            />
-        )
+        return <AppStartupLoader displayName={startupName} title="Veriler yukleniyor" />
     }
-
-    // 3. UNAUTHENTICATED REDIRECT
 
     if (!user) {
         return null
     }
 
-    // 4. PATIENT PORTAL (Bypass Layout)
     if (pathname === '/patient' || pathname?.startsWith('/patient/')) {
         return <>{children}</>
     }
 
-    // 5. PATIENT PROTECTION (Redirect from Admin routes)
-
     if (profile?.role === 'patient') {
-        return (
-            <AppStartupLoader
-                displayName={startupName}
-                title="Hasta alanı açılıyor"
-                subtitle="Kişisel paneliniz hazırlanıyor..."
-            />
-        )
+        return <AppStartupLoader displayName={startupName} title="Hasta alanı açılıyor" subtitle="Kişisel paneliniz hazırlanıyor..." />
     }
 
     // --- ADMIN / PROFESSIONAL LAYOUT ---
@@ -118,184 +91,174 @@ export default function DashboardLayout({
             <div className="bg-amber-100 border-b border-amber-200 text-amber-900 px-4 py-2 flex items-center justify-between text-sm shadow-sm relative z-[60]">
                 <div className="flex items-center gap-2 font-medium">
                     <Eye className="h-4 w-4" />
-                    <span>
-                        Dikkat: Şu anda <strong>{profile?.full_name || 'Başka bir kullanıcı'}</strong> ({profile?.role}) adına sistemi görüntülüyorsunuz.
-                    </span>
+                    <span>Dikkat: Şu anda <strong>{profile?.full_name || 'Başka bir kullanıcı'}</strong> ({profile?.role}) adına sistemi görüntülüyorsunuz.</span>
                 </div>
-                <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-7 bg-white hover:bg-amber-50 border-amber-300 text-amber-900"
-                    onClick={() => {
-                        stopImpersonation()
-                        router.push('/admin/users')
-                    }}
-                >
-                    Moddan Çık
-                </Button>
+                <Button variant="outline" size="sm" className="h-7 bg-white hover:bg-amber-50 border-amber-300 text-amber-900" onClick={() => { stopImpersonation(); router.push('/admin/users') }}>Moddan Çık</Button>
             </div>
         )
     }
 
-    const tabs = [
+    // Define Groups
+    const clinicalTabs = [
         { href: '/admin', label: 'Genel Bakış', icon: LayoutDashboard },
         { href: '/patients', label: 'Hastalar', icon: Users },
         { href: '/admin/messages', label: 'Mesajlar', icon: MessageCircle },
         { href: '/programs', label: 'Programlar', icon: ClipboardList },
+    ]
+
+    const knowledgeTabs = [
         { href: '/foods', label: 'Yemek Listesi', icon: UtensilsCrossed },
     ]
 
+    const aiTabs = []
+    const adminTabs = []
+
     if (isStaff) {
+        knowledgeTabs.push({ href: '/admin/recipes', label: 'Tarif Kartları', icon: UtensilsCrossed })
+        knowledgeTabs.push({ href: '/admin/diseases', label: 'Hastalıklar', icon: Activity })
+
+        aiTabs.push({ href: '/admin/food-proposals', label: 'Yemek Önerileri', icon: Sparkles })
+        aiTabs.push({ href: '/admin/food-discovery', label: 'AI Keşif', icon: ChefHat })
+        aiTabs.push({ href: '/admin/card-maker', label: 'Kart Maker', icon: ImageIcon })
+
         if (isAdmin) {
-            tabs.push({ href: '/admin/users', label: 'Yönetici', icon: Shield })
-            tabs.push({ href: '/admin/dietitians', label: 'Diyetisyenler', icon: UserCog })
-            tabs.push({ href: '/admin/doctors', label: 'Doktorlar', icon: Stethoscope })
-            tabs.push({ href: '/admin/logs', label: 'Sistem Logları', icon: ClipboardList })
+            adminTabs.push({ href: '/admin/users', label: 'Yönetici', icon: Shield })
+            adminTabs.push({ href: '/admin/dietitians', label: 'Diyetisyenler', icon: UserCog })
+            adminTabs.push({ href: '/admin/doctors', label: 'Doktorlar', icon: Stethoscope })
+            adminTabs.push({ href: '/admin/logs', label: 'Sistem Logları', icon: ClipboardList })
         }
-        tabs.push({ href: '/admin/recipes', label: 'Tarif Kartları', icon: UtensilsCrossed })
-        tabs.push({ href: '/admin/food-proposals', label: 'Yemek Önerileri', icon: Sparkles })
-        tabs.push({ href: '/admin/food-discovery', label: 'AI Keşif', icon: ChefHat })
-        tabs.push({ href: '/admin/card-maker', label: 'Kart Maker', icon: ImageIcon })
-        tabs.push({ href: '/admin/diseases', label: 'Hastalıklar', icon: Activity })
     }
 
+    const allTabs = [...clinicalTabs, ...knowledgeTabs, ...aiTabs, ...adminTabs]
     const isPatientDetail = pathname?.toLowerCase().includes('/patients/') && pathname !== '/patients'
-
-    // Determine User ID for Unread Listener
     const targetUserId = profile?.id || user.id
 
-    console.log("DashboardLayout Path Check:", { pathname, isPatientDetail })
-
-    return (
-        <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
-            {/* Listener Component - Isolated */}
-            <UnreadListener userId={targetUserId} onUpdate={setUnreadCount} />
-
-            <ImpersonationBanner />
-
-            {/* Top Navigation */}
-            <header className={`bg-white border-b flex items-center px-4 shrink-0 relative z-[100] pointer-events-auto shadow-sm ${isPatientDetail ? 'h-12 justify-between' : 'h-14'}`}>
-                <div className="flex items-center">
-                    {/* Mobile Menu Trigger */}
-                    <div className="md:hidden mr-4">
-                        <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-                            <SheetTrigger asChild>
-                                <Button variant="ghost" size="icon" className="-ml-2">
-                                    <Menu className="h-6 w-6" />
-                                </Button>
-                            </SheetTrigger>
-                            <SheetContent side="left" className="w-[280px] p-4 flex flex-col gap-4">
-                                <SheetHeader className="text-left border-b pb-4">
-                                    <SheetTitle className="bg-gradient-to-r from-green-600 to-teal-500 bg-clip-text text-transparent font-bold text-xl">
-                                        {profile?.full_name || 'Diyet Plan'}
-                                    </SheetTitle>
-                                    <p className="text-sm text-muted-foreground">{profile?.role === 'dietitian' ? 'Diyetisyen' : profile?.role}</p>
-                                </SheetHeader>
-                                <div className="flex flex-col gap-1 overflow-y-auto flex-1">
-                                    {tabs.map(tab => {
-                                        const isActive = pathname === tab.href || (tab.href !== '/' && pathname?.startsWith(tab.href))
-                                        return (
-                                            <button
-                                                key={tab.href}
-                                                onClick={(e) => {
-                                                    e.stopPropagation()
-                                                    setSheetOpen(false)
-                                                    router.push(tab.href)
-                                                }}
-                                                className={`flex items-center gap-3 px-3 py-3 rounded-md transition-colors text-sm font-medium ${isActive
-                                                    ? 'bg-blue-50 text-blue-700'
-                                                    : 'text-gray-600 hover:bg-gray-100'
-                                                    }`}
-                                            >
-                                                <tab.icon size={20} />
-                                                {tab.label}
-                                                {tab.label === 'Mesajlar' && unreadCount > 0 && (
-                                                    <span className="ml-auto bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
-                                                        {unreadCount}
-                                                    </span>
-                                                )}
-                                            </button>
-                                        )
-                                    })}
-                                </div>
-                                <div className="border-t pt-4 mt-auto">
-                                    <Button
-                                        variant="outline"
-                                        className="w-full justify-start gap-2 text-red-600 hover:text-red-700 hover:bg-red-50"
-                                        onClick={handleLogout}
-                                    >
-                                        <div className="h-4 w-4" /> {/* Placeholder for alignment if needed, or stick to default */}
-                                        Çıkış Yap
-                                    </Button>
-                                </div>
-                            </SheetContent>
-                        </Sheet>
-                    </div>
-
-                    <div
-                        onClick={() => router.push('/')}
-                        className={`font-bold bg-gradient-to-r from-green-600 to-teal-500 bg-clip-text text-transparent mr-8 cursor-pointer relative z-[101] pointer-events-auto hidden md:block ${isPatientDetail ? 'text-lg' : 'text-xl'}`}
-                    >
-                        {profile?.full_name || 'Diyet Plan'}
-                    </div>
-
-                    {/* Navigation Tabs (Desktop) */}
-                    <nav className="hidden md:flex gap-1 relative z-[101] pointer-events-auto">
-                        {tabs.map(tab => {
-                            const isActive = pathname === tab.href || (tab.href !== '/' && pathname?.startsWith(tab.href))
-                            return (
-                                <button
-                                    key={tab.href}
-                                    onClick={(e) => {
-                                        e.stopPropagation()
-                                        router.push(tab.href)
-                                    }}
-                                    className={`rounded-md flex items-center transition-colors relative z-[102] cursor-pointer pointer-events-auto ${isPatientDetail ? 'px-3 py-1.5 text-sm gap-1.5' : 'px-4 py-2 text-sm gap-2'
-                                        } ${isActive
-                                            ? 'bg-blue-50 text-blue-700 font-medium'
-                                            : 'text-gray-600 hover:bg-gray-100'
-                                        }`}
-                                >
-                                    <tab.icon size={isPatientDetail ? 16 : 18} />
-                                    {tab.label}
+    const renderNavGroup = (title: string, items: any[]) => {
+        if (items.length === 0) return null;
+        return (
+            <div className="mb-6">
+                <h4 className="px-5 text-[11px] font-bold text-slate-400/80 uppercase tracking-widest mb-3">{title}</h4>
+                <div className="space-y-1">
+                    {items.map(tab => {
+                        const isActive = pathname === tab.href || (tab.href !== '/' && pathname?.startsWith(tab.href))
+                        return (
+                            <div key={tab.href} onClick={() => { router.push(tab.href); setSheetOpen(false) }}>
+                                <div className={`flex items-center gap-3 px-4 py-2.5 mx-3 rounded-xl transition-all duration-200 cursor-pointer text-sm font-medium
+                                    ${isActive 
+                                    ? 'bg-blue-600 shadow-md shadow-blue-500/20 text-white' 
+                                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}>
+                                    <tab.icon size={18} className={isActive ? 'text-white' : 'text-slate-500'} />
+                                    <span className="flex-1">{tab.label}</span>
                                     {tab.label === 'Mesajlar' && unreadCount > 0 && (
-                                        <span className="ml-1 bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center flex items-center justify-center">
+                                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center shadow-sm ${isActive ? 'bg-white text-blue-600' : 'bg-red-500 text-white'}`}>
                                             {unreadCount}
                                         </span>
                                     )}
-                                </button>
-                            )
-                        })}
-                    </nav>
+                                </div>
+                            </div>
+                        )
+                    })}
                 </div>
+            </div>
+        )
+    }
 
-                {/* Slot for Dynamic Header Actions (Portal Target) */}
-                <div id="header-actions-slot" className="flex items-center gap-2 ml-auto" />
+    return (
+        <div className="h-screen flex flex-col bg-[#F8FAFC] overflow-hidden font-sans">
+            <UnreadListener userId={targetUserId} onUpdate={setUnreadCount} />
+            <ImpersonationBanner />
 
-                {/* Right Side: User Info & Logout */}
-                <div className={`flex items-center gap-3 pointer-events-auto relative z-[102] ${isPatientDetail ? 'ml-4 border-l pl-4' : 'ml-auto'}`}>
-                    <div className="text-right hidden md:block">
-                        <div className="text-sm font-medium leading-none">{profile?.full_name || 'Kullanıcı'}</div>
-                        <div className="text-xs text-muted-foreground capitalize">{profile?.role === 'dietitian' ? 'Diyetisyen' : profile?.role || ''}</div>
-                    </div>
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={handleLogout}
-                        className={`text-gray-500 hover:text-red-600 hover:bg-red-50 ${isPatientDetail ? 'h-8' : ''}`}
+            <div className="flex flex-1 overflow-hidden">
+                {/* BACKDROP BLUR SIDEBAR (Desktop) */}
+                <aside className="hidden md:flex flex-col w-[260px] bg-white/70 backdrop-blur-3xl border-r border-slate-200/60 shrink-0 z-20 shadow-[4px_0_24px_rgba(0,0,0,0.02)]">
+                    <div 
+                        onClick={() => router.push('/')}
+                        className="h-16 flex items-center px-6 shrink-0 cursor-pointer border-b border-slate-200/30 hover:bg-white/40 transition-colors"
                     >
-                        Çıkış
-                    </Button>
-                </div>
-            </header>
+                        <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-green-500 to-teal-500 flex items-center justify-center shadow-lg shadow-teal-500/30 mr-3">
+                            <Sparkles className="w-4 h-4 text-white" />
+                        </div>
+                        <div className="font-bold bg-gradient-to-br from-slate-700 to-slate-900 bg-clip-text text-transparent tracking-tight text-xl">
+                            Diyet Plan
+                        </div>
+                    </div>
 
-            {/* Main Content */}
-            <main className="flex-1 relative z-0 overflow-hidden flex flex-col bg-gray-50 min-h-0">
-                <div className={`${isPatientDetail ? 'flex-1 min-h-0 flex flex-col overflow-hidden' : 'flex-1 overflow-auto p-4 md:p-6 w-full'}`}>
-                    {children}
-                </div>
-            </main>
+                    <div className="flex-1 overflow-y-auto py-6 scrollbar-hide">
+                        {renderNavGroup('Klinik & Hastalar', clinicalTabs)}
+                        {renderNavGroup('Veritabanı', knowledgeTabs)}
+                        {renderNavGroup('Yapay Zeka', aiTabs)}
+                        {renderNavGroup('Sistem', adminTabs)}
+                    </div>
+
+                    {/* Profile Section */}
+                    <div className="p-4 mt-auto border-t border-slate-200/50 bg-white/40 backdrop-blur-md">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-700 font-bold shrink-0 shadow-inner">
+                                {profile?.full_name?.charAt(0) || 'U'}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <p className="text-sm font-semibold text-slate-800 truncate">{profile?.full_name}</p>
+                                <p className="text-xs text-slate-500 capitalize truncate">{profile?.role === 'dietitian' ? 'Diyetisyen' : profile?.role}</p>
+                            </div>
+                            <Button variant="ghost" size="icon" onClick={handleLogout} className="text-slate-400 hover:text-red-600 hover:bg-red-50 shrink-0 h-8 w-8">
+                                <LogOut size={16} />
+                            </Button>
+                        </div>
+                    </div>
+                </aside>
+
+                {/* Main Content Area */}
+                <main className="flex-1 flex flex-col relative z-0 min-w-0 bg-transparent">
+                    {/* Mobile Header (Hidden on Desktop) */}
+                    <header className={`md:hidden bg-white/80 backdrop-blur-xl border-b border-slate-200/60 flex flex-col fixed top-0 w-full z-30 transition-all ${isPatientDetail ? 'h-auto' : 'h-14'}`}>
+                        <div className="flex items-center justify-between px-4 h-14 shrink-0">
+                            <div className="flex items-center">
+                                <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+                                    <SheetTrigger asChild>
+                                        <Button variant="ghost" size="icon" className="-ml-2 text-slate-600">
+                                            <Menu className="h-6 w-6" />
+                                        </Button>
+                                    </SheetTrigger>
+                                    <SheetContent side="left" className="w-[280px] p-0 flex flex-col bg-slate-50">
+                                        <div className="h-16 flex items-center px-6 border-b border-slate-200/50 bg-white">
+                                            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-green-500 to-teal-500 flex items-center justify-center shadow-lg shadow-teal-500/30 mr-3">
+                                                <Sparkles className="w-4 h-4 text-white" />
+                                            </div>
+                                            <div className="font-bold bg-gradient-to-br from-slate-700 to-slate-900 bg-clip-text text-transparent text-xl">Diyet Plan</div>
+                                        </div>
+                                        <div className="flex-1 overflow-y-auto py-4">
+                                            {renderNavGroup('Klinik & Hastalar', clinicalTabs)}
+                                            {renderNavGroup('Veritabanı', knowledgeTabs)}
+                                            {renderNavGroup('Yapay Zeka', aiTabs)}
+                                            {renderNavGroup('Sistem', adminTabs)}
+                                        </div>
+                                    </SheetContent>
+                                </Sheet>
+                                <div className="font-bold bg-gradient-to-br from-slate-700 to-slate-900 bg-clip-text text-transparent text-lg ml-2">Diyet Plan</div>
+                            </div>
+                            <Button variant="ghost" size="icon" onClick={handleLogout} className="text-slate-400 hover:text-red-600 h-8 w-8">
+                                <LogOut size={18} />
+                            </Button>
+                        </div>
+                        {/* Mobile Slot for Patient Toolbar */}
+                        <div id="mobile-header-actions-slot" className={`flex items-center w-full gap-2 px-2 pb-2 overflow-x-auto no-scrollbar ${isPatientDetail ? 'flex' : 'hidden'}`} />
+                    </header>
+
+                    {/* Page Container */}
+                    <div className={`flex flex-col flex-1 overflow-hidden transition-all ${!isPatientDetail ? 'mt-14 md:mt-0' : 'mt-[100px] md:mt-0'}`}>
+                        {/* Desktop Portal Topbar (Only for Patient Detail) */}
+                        <div className={`hidden md:flex shrink-0 bg-white/40 backdrop-blur-xl border-b border-slate-200/50 transition-all z-10 ${isPatientDetail ? 'h-14 items-center px-4' : 'h-0 overflow-hidden'}`}>
+                             {/* The Portal target */}
+                             <div id="header-actions-slot" className="flex items-center w-full gap-2 overflow-x-auto no-scrollbar" />
+                        </div>
+
+                        {/* Page Body */}
+                        <div className={`flex-1 overflow-y-auto bg-transparent ${isPatientDetail ? 'flex flex-col min-h-0' : 'p-4 md:p-6 lg:p-8'}`}>
+                            {children}
+                        </div>
+                    </div>
+                </main>
+            </div>
         </div>
     )
 }
-
