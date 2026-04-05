@@ -4107,7 +4107,8 @@ function DroppableMealSlot({ dayId, dayDate, mealType, meals, onUpdate, onToggle
     patientMedicationRules?: any[],
     scalableUnits?: string[],
     days?: any[],
-    patientDietType?: string | null
+    patientDietType?: string | null,
+    showIcons?: boolean
 }) {
     const { user, profile } = useAuth()
 
@@ -4799,7 +4800,8 @@ function DietWeekGridView({ weekId, refreshTrigger, startDate, mealTypes, onTogg
     macroTargetMode?: string,
     patientMedicationRules?: any[],
     scalableUnits?: string[],
-    patientDietType?: string | null
+    patientDietType?: string | null,
+    showIcons?: boolean
 }) {
     const [days, setDays] = useState<any[]>([])
     const [loading, setLoading] = useState(true)
@@ -5071,7 +5073,8 @@ function DietWeekListView({ weekId, refreshTrigger, startDate, mealTypes, onTogg
     macroTargetMode?: string,
     patientMedicationRules?: any[],
     scalableUnits?: string[],
-    patientDietType?: string | null
+    patientDietType?: string | null,
+    showIcons?: boolean
 }) {
     const [days, setDays] = useState<any[]>([])
     const [loading, setLoading] = useState(true)
@@ -5353,7 +5356,8 @@ function ListViewMealSlot({ dayId, mealType, meals, mealTotals, onUpdate, onTogg
     patientLabs?: any[],
     patientMedicationRules?: any[],
     scalableUnits?: string[],
-    patientDietType?: string
+    patientDietType?: string,
+    showIcons?: boolean
 }) {
     const { user, profile } = useAuth()
 
