@@ -115,7 +115,7 @@ type Disease = {
 
 type UIDiseaseRule = {
     id?: string
-    type: 'positive' | 'negative'
+    type: 'positive' | 'negative' | 'warning'
     keyword: string
     metadata?: Record<string, { warning?: string; info?: string }>
     match_name: boolean
@@ -125,7 +125,7 @@ type UIDiseaseRule = {
 type DBDiseaseRule = {
     id: string
     disease_id: string
-    rule_type: 'positive' | 'negative'
+    rule_type: 'positive' | 'negative' | 'warning'
     keywords: string[]
     tags: string[]
     match_name: boolean
