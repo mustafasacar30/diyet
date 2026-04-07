@@ -219,12 +219,15 @@ export default function DiseasesPage() {
             // Process Keywords
             const processKeywords = (list: any[], type: 'compatible' | 'incompatible') => {
                 if (!Array.isArray(list)) return []
-                return list.map(item => ({
-                    keyword: item.keyword,
-                    match_type: 'both' as 'both', // Default
-                    warning: item.mechanism, // Map mechanism to warning field for BOTH types (interpreted distinctively in renderKeywordBadge)
-                    info: item.advice // Map advice to info field for BOTH types
-                }))
+                return list.flatMap(item => {
+                    const keywords = typeof item.keyword === 'string' ? item.keyword.split(/[\/,]/).map((k: string) => k.trim()).filter(Boolean) : [item.keyword];
+                    return keywords.map((k: string) => ({
+                        keyword: k,
+                        match_type: 'both' as 'both', // Default
+                        warning: item.mechanism, // Map mechanism to warning field for BOTH types (interpreted distinctively in renderKeywordBadge)
+                        info: item.advice // Map advice to info field for BOTH types
+                    }))
+                })
             }
 
             // Merge with existing (though usually this is for new items, so overwrite or append is fine. Append to be safe)
@@ -306,18 +309,22 @@ export default function DiseasesPage() {
                 const positives: RichTag[] = []
 
                 data.interaction_rules.forEach((rule: any) => {
-                    const tag: RichTag = {
-                        text: rule.keyword, // Assuming keyword maps directly
-                        match_name: rule.match_name ?? true,
-                        match_tags: rule.match_tags ?? true,
-                        // Map new fields from prompt
-                        warning: rule.mechanism, // Map mechanism to warning
-                        info: rule.clinical_advice // Map clinical_advice to info
-                    }
+                    let kWordsStr = typeof rule.keyword === 'string' ? rule.keyword : String(rule.keyword);
+                    const keywords = kWordsStr.split(/[\/,]/).map((s: string) => s.trim()).filter(Boolean);
+                    
+                    keywords.forEach((kw: string) => {
+                        const tag: RichTag = {
+                            text: kw,
+                            match_name: rule.match_name ?? true,
+                            match_tags: rule.match_tags ?? true,
+                            warning: rule.mechanism,
+                            info: rule.clinical_advice
+                        }
 
-                    if (rule.rule_type === 'negative') negatives.push(tag)
-                    else if (rule.rule_type === 'warning') warnings.push(tag)
-                    else if (rule.rule_type === 'positive') positives.push(tag)
+                        if (rule.rule_type === 'negative') negatives.push(tag)
+                        else if (rule.rule_type === 'warning') warnings.push(tag)
+                        else if (rule.rule_type === 'positive') positives.push(tag)
+                    })
                 })
 
                 // Blocked Keywords (Global ignore list)
@@ -775,6 +782,7 @@ export default function DiseasesPage() {
 
     // State for RichTag inputs
     const [negativeTags, setNegativeTags] = useState<RichTag[]>([])
+    const [warningTags, setWarningTags] = useState<RichTag[]>([])
     const [positiveTags, setPositiveTags] = useState<RichTag[]>([])
 
     // ... (keep disease state)
@@ -813,6 +821,7 @@ export default function DiseasesPage() {
             if (data.rules && Array.isArray(data.rules)) {
 
                 const negatives: RichTag[] = []
+                const warnings: RichTag[] = []
                 const positives: RichTag[] = []
 
                 data.rules.forEach((rule: any) => {
@@ -822,16 +831,20 @@ export default function DiseasesPage() {
                     else if (typeof rule.keyword === 'string') keywords = [rule.keyword]
 
                     keywords.forEach(k => {
-                        const tag: RichTag = {
-                            text: k,
-                            match_name: true,
-                            match_tags: true,
-                            warning: rule.warning, // Reason -> Warning
-                            info: rule.info // Clinical Advice -> Info
-                        }
+                        const splitK = k.split(/[\/,]/).map((s: string) => s.trim()).filter(Boolean);
+                        splitK.forEach((sk: string) => {
+                            const tag: RichTag = {
+                                text: sk,
+                                match_name: true,
+                                match_tags: true,
+                                warning: rule.warning, // Reason -> Warning
+                                info: rule.info // Clinical Advice -> Info
+                            }
 
-                        if (rule.type === 'negative') negatives.push(tag)
-                        else if (rule.type === 'positive') positives.push(tag)
+                            if (rule.type === 'negative') negatives.push(tag)
+                            else if (rule.type === 'warning') warnings.push(tag)
+                            else if (rule.type === 'positive') positives.push(tag)
+                        });
                     })
                 })
 
@@ -854,6 +867,7 @@ export default function DiseasesPage() {
                 }
 
                 setNegativeTags(prev => mergeTags(prev, negatives))
+                setWarningTags(prev => mergeTags(prev, warnings))
                 setPositiveTags(prev => mergeTags(prev, positives))
 
                 alert(`AI Başarıyla Tamamlandı!\n\n${data.name}\n\nKurallar mevcut listeyle birleştirildi.`)
@@ -875,6 +889,7 @@ export default function DiseasesPage() {
 
             // Transform existing rules to RichTags
             const neg: RichTag[] = []
+            const warn: RichTag[] = []
             const pos: RichTag[] = []
 
             disease.rules?.forEach(r => {
@@ -888,15 +903,18 @@ export default function DiseasesPage() {
                 }
 
                 if (r.type === 'negative') neg.push(tag)
+                else if (r.type === 'warning') warn.push(tag)
                 else if (r.type === 'positive') pos.push(tag)
             })
 
             setNegativeTags(neg)
+            setWarningTags(warn)
             setPositiveTags(pos)
         } else {
             setEditingDisease(null)
             setFormData({ name: '', description: '' })
             setNegativeTags([])
+            setWarningTags([])
             setPositiveTags([])
         }
         setIsDialogOpen(true)
@@ -982,7 +1000,7 @@ export default function DiseasesPage() {
 
             // 2. Sync Rules
             // Prepare rules data
-            const prepareRuleData = (tags: RichTag[], type: 'positive' | 'negative') => {
+            const prepareRuleData = (tags: RichTag[], type: 'positive' | 'negative' | 'warning') => {
                 if (tags.length === 0) return null
 
                 const keywords = tags.map(t => t.text)
@@ -1010,6 +1028,7 @@ export default function DiseasesPage() {
             }
 
             const negRule = prepareRuleData(negativeTags, 'negative')
+            const warnRule = prepareRuleData(warningTags, 'warning')
             const posRule = prepareRuleData(positiveTags, 'positive')
 
             // Delete old rules
@@ -1021,7 +1040,7 @@ export default function DiseasesPage() {
             if (deleteError) throw deleteError
 
             // Insert new rules
-            const rulesToInsert = [negRule, posRule].filter(Boolean)
+            const rulesToInsert = [negRule, warnRule, posRule].filter(Boolean)
 
             if (rulesToInsert.length > 0) {
                 // Try with keyword_metadata first
@@ -1265,6 +1284,31 @@ export default function DiseasesPage() {
                                             value={negativeTags}
                                             onChange={setNegativeTags}
                                             placeholder="Örn: Buğday/Arpa/Çavdar; Gluten içerir; Çölyak hastaları için tehlikeli"
+                                            className="min-h-[80px] bg-white"
+                                            showMatchScope={true}
+                                            defaultMatchName={true}
+                                            defaultMatchTags={true}
+                                        />
+                                    </div>
+
+                                    {/* WARNING (Dikkat Edilmeli) RichTagInput */}
+                                    <div className="space-y-2 border rounded-lg p-4 bg-orange-50/30 border-orange-200 mt-4">
+                                        <Label className="text-orange-700 font-semibold flex items-center gap-2 text-sm">
+                                            <AlertTriangle className="h-4 w-4" />
+                                            Dikkat Edilmeli (Warning)
+                                        </Label>
+                                        <p className="text-xs text-orange-600/80 mb-1">
+                                            Belli koşullarda veya miktarlarda tüketilebilecek gıdalar.
+                                        </p>
+                                        <div className="grid grid-cols-[1fr_1fr_1fr] gap-2 text-[10px] text-gray-500 font-semibold uppercase tracking-wider px-2 border-b pb-1 mb-1">
+                                            <span>Etiket / Besin</span>
+                                            <span>⚠️ Uyarı</span>
+                                            <span>ℹ️ Öneri / Bilgi</span>
+                                        </div>
+                                        <RichTagInput
+                                            value={warningTags}
+                                            onChange={setWarningTags}
+                                            placeholder="Örn: Süt; Seyreltilerek içilmeli"
                                             className="min-h-[80px] bg-white"
                                             showMatchScope={true}
                                             defaultMatchName={true}
@@ -1791,6 +1835,15 @@ export default function DiseasesPage() {
                                 </TabsContent>
 
                                 <TabsContent value="interactions" className="space-y-6 mt-4">
+                                    <div className="bg-gray-50 border rounded-md p-3 mb-4 shadow-sm flex items-center justify-between">
+                                        <div>
+                                            <h3 className="text-lg font-bold text-gray-800">{editingMedication?.name || medFormData.name}</h3>
+                                            {medFormData.generic_name && (
+                                                <p className="text-sm text-gray-500">Etken Madde: {medFormData.generic_name}</p>
+                                            )}
+                                        </div>
+                                    </div>
+
                                     <div className="space-y-6 pt-4">
                                         <p className="text-sm text-gray-500">
                                             Bu ilaçla etkileşime giren besinleri ve etiketleri tanımlayın.

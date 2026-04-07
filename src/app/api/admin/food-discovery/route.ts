@@ -155,7 +155,7 @@ export async function POST(req: Request) {
 
         const genAI = new GoogleGenerativeAI(geminiKey)
 
-        const { prompt } = await req.json()
+        const { prompt, userId, teamOwnerId } = await req.json()
 
         if (!prompt) {
             return NextResponse.json({ error: 'Prompt gereklidir' }, { status: 400 })
@@ -274,13 +274,48 @@ export async function POST(req: Request) {
 
             verifiedFoods.push({
                 ...food,
+                id: crypto.randomUUID(),
                 usda_verified: usdaData?.verified || false,
                 usda_details: usdaData?.details || null,
             })
         }
 
+        const owner = teamOwnerId || userId
+        const metaValues: any = { pending_approval: true }
+        if (owner) {
+            metaValues.team_owner_id = owner
+        }
+
+        // Insert into foods table to make it visible to the team immediately
+        const foodsToInsert = verifiedFoods.map((f: any) => ({
+            id: f.id,
+            name: f.suggested_name,
+            calories: f.calories || 0,
+            protein: f.protein || 0,
+            carbs: f.carbs || 0,
+            fat: f.fat || 0,
+            portion_unit: f.portion_unit || 'porsiyon',
+            category: 'AI Önerisi',
+            role: 'mainDish',
+            ingredients: Array.isArray(f.ingredients) ? f.ingredients.join(', ') : f.ingredients,
+            recipe_text: f.recipe_text,
+            meta: metaValues,
+            tags: f.tags || []
+        }))
+
+        if (foodsToInsert.length > 0) {
+            const { error: foodsError } = await supabaseAdmin
+                .from('foods')
+                .insert(foodsToInsert)
+            
+            if (foodsError) {
+                console.error("Foods Insert Error:", foodsError)
+            }
+        }
+
         // Insert into food_proposals
         const proposalsToInsert = verifiedFoods.map((f: any) => ({
+            id: f.id,
             suggested_name: f.suggested_name,
             calories: f.calories,
             protein: f.protein,
@@ -290,6 +325,7 @@ export async function POST(req: Request) {
             recipe_text: f.recipe_text,
             portion_unit: f.portion_unit || 'porsiyon',
             status: 'pending',
+            user_id: owner || null,
             ai_analysis: {
                 generated_tags: f.tags || [],
                 prompt_used: prompt,

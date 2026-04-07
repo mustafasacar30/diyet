@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import { useState, useEffect } from "react"
 import { supabase } from "@/lib/supabase"
@@ -12,6 +12,7 @@ import { DragEndEvent } from "@dnd-kit/core"
 import { arrayMove } from "@dnd-kit/sortable"
 import { Switch } from "@/components/ui/switch"
 import { resolveTeamScopeContextFromAuth } from "@/lib/team-scope"
+import { useAuth } from "@/contexts/auth-context"
 
 export default function RulesPage() {
     const [rules, setRules] = useState<PlanningRule[]>([])
@@ -23,7 +24,7 @@ export default function RulesPage() {
     const [settingsOpen, setSettingsOpen] = useState(false)
     const [editingRule, setEditingRule] = useState<PlanningRule | null>(null)
     const [isAcceptingSuggestion, setIsAcceptingSuggestion] = useState<string | null>(null)
-    const [scopeMode, setScopeMode] = useState<'global' | 'team'>('global')
+    const { scopeMode } = useAuth()
     const [scopeActionLoading, setScopeActionLoading] = useState(false)
     const [teamRuleCount, setTeamRuleCount] = useState(0)
     const [teamScope, setTeamScope] = useState<{
@@ -384,21 +385,6 @@ export default function RulesPage() {
                     <p className="text-muted-foreground">Otomatik planlayıcı için davranış kuralları tanımlayın.</p>
                 </div>
                 <div className="flex gap-2">
-                    {canToggleScopeMode && (
-                        <div className="flex items-center gap-3 rounded-md border bg-white px-3 py-2">
-                            <span className={`text-sm ${scopeMode === 'global' ? 'font-semibold text-gray-900' : 'text-gray-500'}`}>
-                                Global Mod
-                            </span>
-                            <Switch
-                                checked={scopeMode === 'team'}
-                                onCheckedChange={(checked) => setScopeMode(checked ? 'team' : 'global')}
-                                aria-label="Rules scope mode switch"
-                            />
-                            <span className={`text-sm ${scopeMode === 'team' ? 'font-semibold text-gray-900' : 'text-gray-500'}`}>
-                                Takım Modu
-                            </span>
-                        </div>
-                    )}
                     <Button variant="outline" className="gap-2" onClick={() => setSettingsOpen(true)}>
                         <Settings size={16} />
                         Planlayıcı Ayarları

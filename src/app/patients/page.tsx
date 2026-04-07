@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import { useState, useEffect } from "react"
 import { supabase } from "@/lib/supabase"
@@ -65,7 +65,7 @@ type Patient = {
 }
 
 export default function PatientsPage() {
-    const { isAdmin, impersonateUser, profile } = useAuth()
+    const { isAdmin, impersonateUser, profile, scopeMode, setScopeMode } = useAuth()
     const isDoctor = profile?.role === 'doctor'
     // Dietitians can create/edit but NOT delete or assign others
     const canDelete = isAdmin || isDoctor
@@ -73,7 +73,6 @@ export default function PatientsPage() {
     const [patients, setPatients] = useState<Patient[]>([])
     const [loading, setLoading] = useState(true)
     const [search, setSearch] = useState("")
-    const [scopeMode, setScopeMode] = useState<'global' | 'team'>('global')
     const [teamScope, setTeamScope] = useState<{
         userId: string | null
         role: string | null
@@ -439,21 +438,6 @@ export default function PatientsPage() {
                 </div>
 
                 <div className="flex items-center gap-3">
-                    {canToggleScopeMode && (
-                        <div className="flex items-center gap-3 rounded-md border bg-white px-3 py-2">
-                            <span className={`text-sm ${scopeMode === 'global' ? 'font-semibold text-gray-900' : 'text-gray-500'}`}>
-                                Global Mod
-                            </span>
-                            <Switch
-                                checked={scopeMode === 'team'}
-                                onCheckedChange={(checked) => setScopeMode(checked ? 'team' : 'global')}
-                                aria-label="Patients scope mode switch"
-                            />
-                            <span className={`text-sm ${scopeMode === 'team' ? 'font-semibold text-gray-900' : 'text-gray-500'}`}>
-                                Takım Modu
-                            </span>
-                        </div>
-                    )}
                     <Button className="gap-2 bg-green-600 hover:bg-green-700 text-white" onClick={openCreateDialog}>
                         <Plus size={18} />
                         Yeni Hasta Ekle

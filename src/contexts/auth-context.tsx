@@ -6,6 +6,8 @@ import { supabase } from '@/lib/supabase'
 
 export type UserRole = 'admin' | 'doctor' | 'dietitian' | 'patient'
 
+export type ScopeMode = 'global' | 'team'
+
 type UserProfile = {
     id: string
     role: UserRole
@@ -13,6 +15,7 @@ type UserProfile = {
     avatar_url: string | null
     title: string | null
     valid_until?: string | null
+    is_global_access?: boolean | null
 }
 
 type AuthContextType = {
@@ -24,6 +27,8 @@ type AuthContextType = {
     isDietitian: boolean
     isPatient: boolean
     isStaff: boolean
+    scopeMode: ScopeMode
+    setScopeMode: (mode: ScopeMode) => void
     refreshProfile: () => Promise<void>
     impersonateUser: (userId: string) => Promise<void>
     stopImpersonation: () => void
@@ -40,6 +45,8 @@ const AuthContext = createContext<AuthContextType>({
     isDietitian: false,
     isPatient: false,
     isStaff: false,
+    scopeMode: 'global',
+    setScopeMode: () => { },
     refreshProfile: async () => { },
     impersonateUser: async () => { },
     stopImpersonation: () => { },
@@ -52,6 +59,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [profile, setProfile] = useState<UserProfile | null>(null)
     const [loading, setLoading] = useState(true)
     const [impersonatedId, _setImpersonatedId] = useState<string | null>(null)
+    const [scopeMode, _setScopeMode] = useState<ScopeMode>('global')
 
     // Ref to hold impersonatedId for closures (avoids stale state in listeners)
     const impersonatedIdRef = useRef<string | null>(null)
@@ -62,12 +70,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         _setImpersonatedId(id)
     }
 
-    // Load impersonation state from local storage on mount
+    const setScopeMode = (mode: ScopeMode) => {
+        _setScopeMode(mode)
+        localStorage.setItem('scope_mode', mode)
+    }
+
+    // Load impersonation state and scope mode from local storage on mount
     useEffect(() => {
-        const stored = localStorage.getItem('impersonated_user_id')
-        if (stored) {
-            console.log("📦 Loading impersonation from storage:", stored)
-            setImpersonatedId(stored)
+        const storedImpersonatedId = localStorage.getItem('impersonated_user_id')
+        if (storedImpersonatedId) {
+            console.log("📦 Loading impersonation from storage:", storedImpersonatedId)
+            setImpersonatedId(storedImpersonatedId)
+        }
+
+        const storedScopeMode = localStorage.getItem('scope_mode') as ScopeMode | null
+        if (storedScopeMode === 'team' || storedScopeMode === 'global') {
+            _setScopeMode(storedScopeMode)
         }
     }, [])
 
@@ -178,6 +196,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setProfile(null)
             setImpersonatedId(null)
             localStorage.removeItem('impersonated_user_id')
+            localStorage.removeItem('scope_mode')
         } catch (error) {
             console.error("Error signing out:", error)
         }
@@ -187,11 +206,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         user,
         profile,
         loading,
-        isAdmin: profile?.role === 'admin',
+        isAdmin: profile?.role === 'admin' || (profile?.role === 'doctor' && !!profile?.is_global_access && scopeMode === 'global'),
         isDoctor: profile?.role === 'doctor',
         isDietitian: profile?.role === 'dietitian',
         isPatient: profile?.role === 'patient',
         isStaff: ['admin', 'doctor', 'dietitian'].includes(profile?.role || ''),
+        scopeMode,
+        setScopeMode,
         refreshProfile: async () => {
             if (user) await fetchProfile(user.id)
         },
@@ -209,3 +230,4 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 }
 
 export const useAuth = () => useContext(AuthContext)
+

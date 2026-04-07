@@ -39,15 +39,61 @@ export function PatientAssignmentDialog({ open, onOpenChange, patient, onSuccess
         setOriginalIds(new Set())
 
         try {
-            // 1. Fetch all Dietitians
-            const { data: dietitiansData, error: dietitiansError } = await supabase
-                .from('profiles')
-                .select('id, full_name')
-                .eq('role', 'dietitian')
-                .order('full_name')
+            // Resolve current user's team scope
+            const { data: { user } } = await supabase.auth.getUser()
+            const userId = user?.id || null
 
-            if (dietitiansError) throw dietitiansError
-            setDietitians(dietitiansData || [])
+            let userRole: string | null = null
+            let isGlobalAccess = false
+
+            if (userId) {
+                const { data: profileData } = await supabase
+                    .from('profiles')
+                    .select('role, is_global_access')
+                    .eq('id', userId)
+                    .maybeSingle()
+                userRole = profileData?.role || null
+                isGlobalAccess = !!profileData?.is_global_access
+            }
+
+            const isCurrentUserAdmin = userRole === 'admin' || (userRole === 'doctor' && isGlobalAccess)
+            const isCurrentUserDoctor = userRole === 'doctor'
+
+            if (isCurrentUserDoctor && !isCurrentUserAdmin && userId) {
+                // Doctor: only show dietitians from their team
+                const { data: teamMembers, error: teamError } = await supabase
+                    .from('team_members')
+                    .select('member_id')
+                    .eq('supervisor_id', userId)
+                    .eq('status', 'active')
+
+                if (teamError) throw teamError
+
+                const teamMemberIds = (teamMembers || []).map(m => m.member_id).filter(Boolean)
+
+                if (teamMemberIds.length === 0) {
+                    setDietitians([])
+                } else {
+                    const { data: teamDietitians, error: dError } = await supabase
+                        .from('profiles')
+                        .select('id, full_name')
+                        .in('id', teamMemberIds)
+                        .order('full_name')
+
+                    if (dError) throw dError
+                    setDietitians(teamDietitians || [])
+                }
+            } else {
+                // Admin: show all dietitians
+                const { data: dietitiansData, error: dietitiansError } = await supabase
+                    .from('profiles')
+                    .select('id, full_name')
+                    .eq('role', 'dietitian')
+                    .order('full_name')
+
+                if (dietitiansError) throw dietitiansError
+                setDietitians(dietitiansData || [])
+            }
 
             // 2. Fetch current assignments for this patient (multiple)
             const { data: assignmentData, error: assignmentError } = await supabase

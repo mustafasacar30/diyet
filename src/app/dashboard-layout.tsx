@@ -2,9 +2,10 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Users, FileText, LayoutDashboard, UtensilsCrossed, ClipboardList, Eye, Shield, UserCog, Stethoscope, MessageCircle, Activity, Sparkles, ChefHat, Image as ImageIcon, Menu, LogOut, ChevronLeft, ChevronRight, ScrollText, ArrowLeft } from 'lucide-react'
+import { Users, FileText, LayoutDashboard, UtensilsCrossed, ClipboardList, Eye, Shield, UserCog, Stethoscope, MessageCircle, Activity, Sparkles, ChefHat, Image as ImageIcon, Menu, LogOut, ChevronLeft, ChevronRight, ScrollText, ArrowLeft, ArrowRightLeft } from 'lucide-react'
 import { useAuth } from '@/contexts/auth-context'
 import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/ui/switch'
 import React, { useState } from 'react'
 import { UnreadListener } from '@/components/layout/unread-listener'
 import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet'
@@ -19,7 +20,7 @@ export default function DashboardLayout({
     const pathname = usePathname()
     const router = useRouter()
     const isPublicAuthPath = pathname === '/login' || pathname === '/register' || pathname?.startsWith('/auth/callback')
-    const { isImpersonating, stopImpersonation, profile, signOut, user, loading, isStaff, isAdmin } = useAuth()
+    const { isImpersonating, stopImpersonation, profile, signOut, user, loading, isStaff, isAdmin, scopeMode, setScopeMode } = useAuth()
     const [unreadCount, setUnreadCount] = useState(0)
     const [sheetOpen, setSheetOpen] = useState(false)
     const [sidebarWidth, setSidebarWidth] = useState(260)
@@ -150,14 +151,21 @@ export default function DashboardLayout({
         knowledgeTabs.push({ href: '/admin/recipes', label: 'Tarif Kartları', icon: ScrollText })
         knowledgeTabs.push({ href: '/admin/diseases', label: 'Hastalıklar', icon: Activity })
 
-        aiTabs.push({ href: '/admin/food-proposals', label: 'Yemek Önerileri', icon: Sparkles })
         aiTabs.push({ href: '/admin/food-discovery', label: 'AI Keşif', icon: ChefHat })
         aiTabs.push({ href: '/admin/card-maker', label: 'Kart Maker', icon: ImageIcon })
 
+        // Doctor team view (non-admin doctors)
+        if (profile?.role === 'doctor' && !isAdmin) {
+            clinicalTabs.push({ href: '/admin/teams', label: 'Takımım', icon: Users })
+        }
+
         if (isAdmin) {
+            aiTabs.unshift({ href: '/admin/food-proposals', label: 'Yemek Önerileri', icon: Sparkles })
+            
             adminTabs.push({ href: '/admin/users', label: 'Yönetici', icon: Shield })
             adminTabs.push({ href: '/admin/dietitians', label: 'Diyetisyenler', icon: UserCog })
             adminTabs.push({ href: '/admin/doctors', label: 'Doktorlar', icon: Stethoscope })
+            adminTabs.push({ href: '/admin/teams', label: 'Takım Yapılandırması', icon: Users })
             adminTabs.push({ href: '/admin/logs', label: 'Sistem Logları', icon: ClipboardList })
         }
     }
@@ -299,27 +307,56 @@ export default function DashboardLayout({
                     </div>
 
                     {/* Profile Section */}
-                    <div className={`p-4 mt-auto border-t border-slate-200/50 bg-white/20 backdrop-blur-md transition-all duration-300 ${isSidebarCollapsed ? 'px-0 flex flex-col items-center' : ''}`}>
-                            <div className={`rounded-full bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-700 font-bold shrink-0 shadow-inner transition-all duration-300 ${isSidebarCollapsed ? 'w-8 h-8 text-xs' : 'w-10 h-10'}`}>
-                                {profile?.full_name?.charAt(0) || 'U'}
-                            </div>
-
-                            {!isSidebarCollapsed && (
-                                <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-bold text-slate-800 truncate">{profile?.full_name}</p>
-                                    <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">{isAdmin ? 'Yönetici' : 'Diyetisyen'}</p>
+                    <div className={`p-4 mt-auto border-t border-slate-200/50 bg-white/20 backdrop-blur-md transition-all duration-300 flex flex-col gap-3 ${isSidebarCollapsed ? 'px-0 items-center' : ''}`}>
+                            {/* Scope Toggle for Admin-authorized Doctors */}
+                            {profile?.role === 'doctor' && !!profile?.is_global_access && (
+                                <div className={`flex items-center justify-between pb-3 mb-1 border-b border-slate-200/50 ${isSidebarCollapsed ? 'flex-col gap-2' : ''}`}>
+                                    {!isSidebarCollapsed ? (
+                                        <>
+                                            <span className={`text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 ${scopeMode === 'global' ? 'text-blue-600' : 'text-slate-500'}`}>
+                                                <ArrowRightLeft size={12} />
+                                                {scopeMode === 'global' ? 'Global Mod' : 'Takım Modu'}
+                                            </span>
+                                            <Switch 
+                                                checked={scopeMode === 'team'}
+                                                onCheckedChange={(c) => setScopeMode(c ? 'team' : 'global')}
+                                                className="scale-75 data-[state=unchecked]:bg-blue-600"
+                                            />
+                                        </>
+                                    ) : (
+                                        <div className="flex flex-col items-center gap-2 relative group" title={scopeMode === 'global' ? 'Global Mod' : 'Takım Modu'}>
+                                            <Switch 
+                                                checked={scopeMode === 'team'}
+                                                onCheckedChange={(c) => setScopeMode(c ? 'team' : 'global')}
+                                                className="scale-50 data-[state=unchecked]:bg-blue-600"
+                                            />
+                                        </div>
+                                    )}
                                 </div>
                             )}
 
-                            <Button 
-                                variant="ghost" 
-                                size="icon" 
-                                onClick={handleLogout} 
-                                className={`text-slate-400 hover:text-red-600 hover:bg-red-50 shrink-0 transition-all duration-300 ${isSidebarCollapsed ? 'h-9 w-9' : 'h-8 w-8'}`}
-                                title="Çıkış Yap"
-                            >
-                                <LogOut size={16} />
-                            </Button>
+                            <div className={`flex items-center w-full ${isSidebarCollapsed ? 'flex-col gap-3' : 'gap-3'}`}>
+                                <div className={`rounded-full bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-700 font-bold shrink-0 shadow-inner transition-all duration-300 ${isSidebarCollapsed ? 'w-8 h-8 text-xs' : 'w-10 h-10'}`}>
+                                    {profile?.full_name?.charAt(0) || 'U'}
+                                </div>
+
+                                {!isSidebarCollapsed && (
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-sm font-bold text-slate-800 truncate">{profile?.full_name}</p>
+                                        <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">{isAdmin ? 'Yönetici' : 'Diyetisyen'}</p>
+                                    </div>
+                                )}
+
+                                <Button 
+                                    variant="ghost" 
+                                    size="icon" 
+                                    onClick={handleLogout} 
+                                    className={`text-slate-400 hover:text-red-600 hover:bg-red-50 shrink-0 transition-all duration-300 ${isSidebarCollapsed ? 'h-9 w-9' : 'h-8 w-8'}`}
+                                    title="Çıkış Yap"
+                                >
+                                    <LogOut size={16} />
+                                </Button>
+                            </div>
                         </div>
                     </aside>
 

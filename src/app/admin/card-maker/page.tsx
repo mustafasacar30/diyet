@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useRef, useCallback } from "react"
 import { supabase } from "@/lib/supabase"
+import { useAuth } from "@/contexts/auth-context"
+import { resolveTeamScopeContextFromAuth } from "@/lib/team-scope"
 import { Search, ChefHat, ExternalLink, RefreshCw, CheckCircle2, CircleDot, Pencil, Database, Trash2, Image as ImageIcon, HelpCircle, EyeOff, Eye, Undo2 } from 'lucide-react'
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -51,6 +53,7 @@ function makeSafeFileName(str: string): string {
 }
 
 export default function CardMakerPage() {
+    const { scopeMode } = useAuth()
     const [foods, setFoods] = useState<FoodItem[]>([])
     const [filteredFoods, setFilteredFoods] = useState<FoodItem[]>([])
     const [search, setSearch] = useState('')
@@ -139,6 +142,11 @@ export default function CardMakerPage() {
         window.addEventListener('message', handleMessage)
         return () => window.removeEventListener('message', handleMessage)
     }, [])
+
+    // Re-fetch foods when scope mode changes (team/global toggle)
+    useEffect(() => {
+        fetchFoods()
+    }, [scopeMode])
 
     const fetchDiscoverySettings = async () => {
         const { data } = await supabase.from('system_settings').select('value').eq('key', 'discovery_search_sites').maybeSingle()
@@ -295,6 +303,13 @@ export default function CardMakerPage() {
     async function fetchFoods() {
         setIsLoading(true)
         try {
+            // Resolve team scope for filtering
+            const teamScope = await resolveTeamScopeContextFromAuth()
+            // Respect UI toggle: even admin in 'team' mode should see team-filtered view
+            const isTeamMode = scopeMode === 'team' || (!teamScope.canUseGlobal && !!teamScope.teamOwnerId)
+            // For admin in team mode, use their own userId as teamOwnerId
+            const teamOwnerId = teamScope.teamOwnerId || (isTeamMode ? teamScope.userId : null)
+
             const { data, error } = await supabase
                 .from('foods')
                 .select('*')
@@ -303,7 +318,16 @@ export default function CardMakerPage() {
                 .order('name')
 
             if (error) throw error
-            const allFoods = (data || []) as (FoodItem & { hidden_from_cardmaker?: boolean })[]
+
+            let allFoods = (data || []) as (FoodItem & { hidden_from_cardmaker?: boolean })[]
+
+            // Client-side team filtering
+            if (isTeamMode && teamOwnerId) {
+                // Team mode: show ONLY this team's own foods
+                allFoods = allFoods.filter(food => {
+                    return food.meta?.team_owner_id === teamOwnerId
+                })
+            }
             
             // Build hidden IDs set from DB column
             const hiddenIds = new Set<string>()

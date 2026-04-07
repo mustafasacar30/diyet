@@ -15,7 +15,28 @@ export async function GET(req: NextRequest) {
 
         if (error) throw error;
 
-        return NextResponse.json({ proposals: data });
+        let populatedData = data;
+        if (data && data.length > 0) {
+            const userIds = [...new Set(data.filter(p => p.user_id).map(p => p.user_id))];
+            if (userIds.length > 0) {
+                const { data: profilesData } = await supabaseAdmin
+                    .from('profiles')
+                    .select('id, full_name, role')
+                    .in('id', userIds);
+
+                const profilesMap = (profilesData || []).reduce((acc: any, profile: any) => {
+                    acc[profile.id] = profile;
+                    return acc;
+                }, {});
+
+                populatedData = data.map(p => ({
+                    ...p,
+                    profiles: p.user_id ? profilesMap[p.user_id] || null : null
+                }));
+            }
+        }
+
+        return NextResponse.json({ proposals: populatedData });
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
@@ -32,10 +53,11 @@ export async function POST(req: NextRequest) {
         if (action === 'approve') {
             if (!foodData) return NextResponse.json({ error: 'Missing food data for approval' }, { status: 400 });
 
-            // 1. Insert into foods
+            // 1. Upsert into foods (may already exist if added by team member)
             const { data: newFood, error: insertError } = await supabaseAdmin
                 .from('foods')
-                .insert({
+                .upsert({
+                    id: id,
                     name: foodData.name,
                     calories: foodData.calories,
                     protein: foodData.protein,
@@ -45,7 +67,7 @@ export async function POST(req: NextRequest) {
                     standard_amount: foodData.base_amount || foodData.standard_amount || 1,
                     category: foodData.category || 'Kullanıcı Önerisi',
                     role: foodData.role || 'mainDish',
-                    // Add other fields from FoodEditDialog if needed
+                    hidden_from_cardmaker: false, // Unhide on approval
                     min_quantity: foodData.min_quantity,
                     max_quantity: foodData.max_quantity,
                     step: foodData.step,
@@ -71,7 +93,7 @@ export async function POST(req: NextRequest) {
                         image_url: foodData.image_url 
                     },
                     ai_analysis: foodData.ai_analysis || null
-                })
+                }, { onConflict: 'id' })
                 .select()
                 .single();
 

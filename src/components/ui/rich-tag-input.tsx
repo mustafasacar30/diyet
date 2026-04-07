@@ -1,6 +1,6 @@
 
 import React, { useState, useRef } from 'react'
-import { X, AlertTriangle, Info, Edit2 } from 'lucide-react'
+import { X, AlertTriangle, Info, Edit2, Copy } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -38,7 +38,7 @@ interface RichTagInputProps {
     splitOnSlash?: boolean
 }
 
-function RichTagItem({ tag, index, onRemove, onUpdate, showMatchScope }: { tag: RichTag, index: number, onRemove: (index: number) => void, onUpdate: (index: number, newTag: RichTag) => void, showMatchScope?: boolean }) {
+function RichTagItem({ tag, index, onRemove, onUpdate, showMatchScope, onDuplicateSplit }: { tag: RichTag, index: number, onRemove: (index: number) => void, onUpdate: (index: number, newTag: RichTag) => void, showMatchScope?: boolean, onDuplicateSplit?: (index: number) => void }) {
     const [open, setOpen] = useState(false)
     const [tempTag, setTempTag] = useState(tag)
 
@@ -71,6 +71,16 @@ function RichTagItem({ tag, index, onRemove, onUpdate, showMatchScope }: { tag: 
                                     <span className="text-[8px] opacity-60 ml-0.5">
                                         {tag.match_name && '📝'}{tag.match_tags && '🏷️'}
                                     </span>
+                                )}
+                                {onDuplicateSplit && tag.text.match(/[\/,]/) && (
+                                    <button
+                                        type="button"
+                                        onClick={(e) => { e.stopPropagation(); onDuplicateSplit(index); }}
+                                        title="Ayrıştır ve Alta Ekle"
+                                        className="hover:bg-blue-100 text-blue-600 rounded-full p-0.5 transition-colors shrink-0 ml-1"
+                                    >
+                                        <Copy size={10} />
+                                    </button>
                                 )}
                                 <button
                                     type="button"
@@ -110,7 +120,19 @@ function RichTagItem({ tag, index, onRemove, onUpdate, showMatchScope }: { tag: 
                     </div>
                     <div className="grid gap-3">
                         <div className="grid gap-1.5">
-                            <Label htmlFor={`text-${index}`} className="text-xs">Besin/Etiket Adı</Label>
+                            <div className="flex justify-between items-center">
+                                <Label htmlFor={`text-${index}`} className="text-xs">Besin/Etiket Adı</Label>
+                                <Button 
+                                    type="button"
+                                    size="sm" 
+                                    variant="ghost" 
+                                    className="h-5 px-1 py-0 text-[10px] text-muted-foreground hover:text-foreground" 
+                                    onClick={() => navigator.clipboard.writeText(tempTag.text)}
+                                    title="Metni Kopyala"
+                                >
+                                    <Copy size={10} className="mr-1" /> Kopyala
+                                </Button>
+                            </div>
                             <Input
                                 id={`text-${index}`}
                                 value={tempTag.text}
@@ -195,11 +217,11 @@ export function RichTagInput({ value = [], onChange, placeholder, className, sho
             const warning = parts[1] || undefined
             const info = parts[2] || undefined
 
-            // Split keywords by "/" to handle multiple items sharing same metadata
+            // Split keywords by "/" or "," to handle multiple items sharing same metadata
             // e.g. "Süt / Peynir / Yoğurt" -> ["Süt", "Peynir", "Yoğurt"]
             let keywords = [keywordsPart]
             if (splitOnSlash) {
-                keywords = keywordsPart.split('/').map(k => k.trim()).filter(Boolean)
+                keywords = keywordsPart.split(/[\/,]/).map(k => k.trim()).filter(Boolean)
             } else {
                 keywords = [keywordsPart.trim()]
             }
@@ -283,6 +305,37 @@ export function RichTagInput({ value = [], onChange, placeholder, className, sho
         }
     }
 
+    const duplicateAndSplitTag = (index: number) => {
+        const tag = value[index]
+        const keywords = tag.text.split(/[\/,]/).map(s => s.trim()).filter(Boolean)
+        
+        const newTags: RichTag[] = []
+        let changed = false
+
+        keywords.forEach(kw => {
+            if (!value.some(t => t.text.toLowerCase() === kw.toLowerCase())) {
+                newTags.push({
+                    text: kw,
+                    warning: tag.warning,
+                    info: tag.info,
+                    match_name: tag.match_name,
+                    match_tags: tag.match_tags
+                })
+                changed = true
+            }
+        })
+
+        if (changed) {
+            onChange([...value, ...newTags])
+            // Optional UX enhancement: Remove original tag if it successfully split to multiple
+            if (keywords.length > 1) {
+                // If we want to remove the original combined tag after splitting:
+                // We'll leave it as requested: 'ayrı olarak alta yapıştırılsın'
+                // the user can manually delete the original one if they prefer.
+            }
+        }
+    }
+
     return (
         <div
             className={`p-2 bg-white border rounded-md focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-black cursor-text ${className}`}
@@ -299,6 +352,7 @@ export function RichTagInput({ value = [], onChange, placeholder, className, sho
                             onRemove={removeTag}
                             onUpdate={updateTag}
                             showMatchScope={showMatchScope}
+                            onDuplicateSplit={duplicateAndSplitTag}
                         />
                     ))}
                 </div>

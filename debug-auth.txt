@@ -358,3 +358,57 @@
 2026-03-23T23:29:00.911Z - Auth User Verified: c3eba3b2-2324-4a7d-b740-cc814f945fc1 (lipodemmerkezi@gmail.com)
 2026-03-23T23:29:01.297Z - Updating Profile: full_name, title, max_devices, valid_until
 2026-03-23T23:29:01.600Z - ✅ Update Process Completed Successfully
+2026-04-07T20:04:40.574Z - ----------------------------------------
+2026-04-07T20:04:40.578Z - API CALLED: /api/admin/users/update
+2026-04-07T20:04:40.589Z - Cookie Header Length: 3197
+2026-04-07T20:04:40.591Z - Auth Header Present: true
+2026-04-07T20:04:40.597Z - Checking Auth...
+2026-04-07T20:04:40.608Z - Verifying Bearer Token...
+2026-04-07T20:04:40.807Z - ✅ Token valid! User: 9c691075-82c8-47f8-93a0-78f553fa2643
+2026-04-07T20:04:40.811Z - Checking Admin Role...
+2026-04-07T20:04:41.029Z - Profile Role: admin
+2026-04-07T20:04:41.033Z - Target User ID: b92dd638-3ecb-4442-96c9-40ee19438f30
+2026-04-07T20:04:41.036Z - Updating Auth: email, password, email_confirm
+2026-04-07T20:04:41.229Z - Auth User Verified: b92dd638-3ecb-4442-96c9-40ee19438f30 (diyetisyen@demo.com)
+2026-04-07T20:04:41.569Z - Updating Profile: full_name, title, max_devices, valid_until
+2026-04-07T20:04:41.784Z - ✅ Update Process Completed Successfully
+2026-04-07T20:05:02.556Z - ----------------------------------------
+2026-04-07T20:05:02.560Z - API CALLED: /api/admin/users/update
+2026-04-07T20:05:02.564Z - Cookie Header Length: 3197
+2026-04-07T20:05:02.570Z - Auth Header Present: true
+2026-04-07T20:05:02.573Z - Checking Auth...
+2026-04-07T20:05:02.579Z - Verifying Bearer Token...
+2026-04-07T20:05:02.780Z - ✅ Token valid! User: 9c691075-82c8-47f8-93a0-78f553fa2643
+2026-04-07T20:05:02.783Z - Checking Admin Role...
+2026-04-07T20:05:03.002Z - Profile Role: admin
+2026-04-07T20:05:03.007Z - Target User ID: b92dd638-3ecb-4442-96c9-40ee19438f30
+2026-04-07T20:05:03.010Z - Updating Auth: email, password, email_confirm
+2026-04-07T20:05:03.218Z - Auth User Verified: b92dd638-3ecb-4442-96c9-40ee19438f30 (diyetisyen1@demo.com)
+2026-04-07T20:05:03.521Z - Auth Update Error: Error updating user
+2026-04-07T20:05:03.525Z - 🔥 UNHANDLED ERROR: Kullanıcı kimlik bilgileri güncellenemedi: Error updating user
+2026-04-07T20:05:12.276Z - ----------------------------------------
+2026-04-07T20:05:12.280Z - API CALLED: /api/admin/users/update
+2026-04-07T20:05:12.284Z - Cookie Header Length: 3197
+2026-04-07T20:05:12.290Z - Auth Header Present: true
+2026-04-07T20:05:12.292Z - Checking Auth...
+2026-04-07T20:05:12.298Z - Verifying Bearer Token...
+2026-04-07T20:05:12.488Z - ✅ Token valid! User: 9c691075-82c8-47f8-93a0-78f553fa2643
+2026-04-07T20:05:12.492Z - Checking Admin Role...
+2026-04-07T20:05:12.699Z - Profile Role: admin
+2026-04-07T20:05:12.704Z - Target User ID: b92dd638-3ecb-4442-96c9-40ee19438f30
+2026-04-07T20:05:12.707Z - Updating Auth: password
+2026-04-07T20:05:12.905Z - Auth User Verified: b92dd638-3ecb-4442-96c9-40ee19438f30 (diyetisyen1@demo.com)
+2026-04-07T20:05:13.182Z - Updating Profile: full_name, title, max_devices, valid_until
+2026-04-07T20:05:13.386Z - ✅ Update Process Completed Successfully
+2026-04-07T20:05:33.012Z - ----------------------------------------
+2026-04-07T20:05:33.014Z - API CALLED: /api/admin/users/update
+2026-04-07T20:05:33.020Z - Cookie Header Length: 3197
+2026-04-07T20:05:33.023Z - Auth Header Present: true
+2026-04-07T20:05:33.028Z - Checking Auth...
+2026-04-07T20:05:33.034Z - Verifying Bearer Token...
+2026-04-07T20:05:33.231Z - ✅ Token valid! User: 9c691075-82c8-47f8-93a0-78f553fa2643
+2026-04-07T20:05:33.234Z - Checking Admin Role...
+2026-04-07T20:05:33.447Z - Profile Role: admin
+2026-04-07T20:05:33.458Z - Target User ID: c1878d30-b828-404f-bedf-f173b3b0ac31
+2026-04-07T20:05:33.462Z - Updating Profile: full_name, title, max_devices, valid_until
+2026-04-07T20:05:33.720Z - ✅ Update Process Completed Successfully

@@ -124,6 +124,17 @@ export function checkCompatibility(food: any, rules?: DietRules, patientDiseases
                                     info: kwMeta.info
                                 })
                             }
+                        } else if (rule.rule_type === 'warning') {
+                            if (!warnings.some(w => w.source === 'disease' && w.sourceName === disease.name && w.keyword === kw)) {
+                                warnings.push({
+                                    source: 'disease',
+                                    sourceName: disease.name,
+                                    type: 'warning',
+                                    keyword: kw,
+                                    warning: kwMeta.warning,
+                                    info: kwMeta.info
+                                })
+                            }
                         } else {
                             isRecommended = true
                             if (!recommendations.includes(disease.name)) {

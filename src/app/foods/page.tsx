@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import { useState, useEffect, useMemo } from "react"
 import { supabase } from "@/lib/supabase"
@@ -54,11 +54,14 @@ import { applyTeamFoodOverrides, deleteTeamFoodOverride, upsertTeamFoodOverride 
 import { deleteTeamFoodMicronutrientOverride, saveFoodMicronutrientsByScope } from "@/lib/team-food-micronutrient-overrides"
 
 
+import { useAuth } from "@/contexts/auth-context"
+
 const ROLE_LABELS = SHARED_ROLE_LABELS
 
 type ScopedFood = Food & {
     scope_source?: 'global' | 'team'
     base_food_id?: string
+    meta?: any
     micronutrients?: string[]
 }
 
@@ -403,7 +406,7 @@ export default function FoodsPage() {
     // Sorting state
     const [sortConfig, setSortConfig] = useState<{ key: keyof ScopedFood; direction: 'asc' | 'desc' } | null>(null)
     const [showHidden, setShowHidden] = useState(false)
-    const [scopeMode, setScopeMode] = useState<'global' | 'team'>('global')
+    const { scopeMode } = useAuth()
 
     // Dialog state
     const [isDialogOpen, setIsDialogOpen] = useState(false)
@@ -689,11 +692,7 @@ export default function FoodsPage() {
 
             if (error) throw error
 
-            let finalFoods: ScopedFood[] = ((data || []) as ScopedFood[]).map((food) => ({
-                ...food,
-                base_food_id: food.base_food_id || food.id,
-                scope_source: 'global',
-            }))
+            let finalFoods: ScopedFood[] = []
 
             try {
                 const { userId, role, canUseGlobal, teamOwnerId } = await resolveTeamScopeContextFromAuth()
@@ -711,6 +710,25 @@ export default function FoodsPage() {
                     !!mergedTeamOwnerId &&
                     (!canUseGlobal || (canToggleForCurrentUser && scopeMode === 'team'))
 
+                const filteredData = (data || []).filter((f: any) => {
+                    const isPending = f.meta?.pending_approval === true;
+                    if (!isPending) return true; // Keep global foods
+                    
+                    if (mergedTeamOwnerId) {
+                        return f.meta?.team_owner_id === mergedTeamOwnerId;
+                    }
+                    return false; // Hide pending foods if not in team mode
+                });
+
+                finalFoods = (filteredData as ScopedFood[]).map((food) => {
+                    const isOwnPendingFood = food.meta?.pending_approval === true && food.meta?.team_owner_id === mergedTeamOwnerId;
+                    return {
+                        ...food,
+                        base_food_id: food.base_food_id || food.id,
+                        scope_source: isOwnPendingFood ? 'team' : 'global',
+                    }
+                })
+
                 if (shouldUseTeamScope) {
                     finalFoods = await applyTeamFoodOverrides(finalFoods, mergedTeamOwnerId)
                 }
@@ -722,6 +740,11 @@ export default function FoodsPage() {
                     canUseGlobal: true,
                     teamOwnerId: null,
                 })
+                finalFoods = ((data || []) as ScopedFood[]).map((food) => ({
+                    ...food,
+                    base_food_id: food.base_food_id || food.id,
+                    scope_source: 'global',
+                }))
             }
 
             setFoods(finalFoods)
@@ -748,7 +771,7 @@ export default function FoodsPage() {
 
         // 0. Hidden Filter (DB Column hidden_from_cardmaker)
         if (!showHidden) {
-            data = data.filter(f => !f.hidden_from_cardmaker)
+            data = data.filter(f => !f.hidden_from_cardmaker || f.scope_source === 'team')
         }
 
         if (searchQuery && searchQuery.trim().length > 0) {
@@ -1042,12 +1065,27 @@ export default function FoodsPage() {
 
                 if (error) throw error
             } else {
-                // INSERT
-                const { error } = await supabase
-                    .from('foods')
-                    .insert([foodData])
+                if (hasTeamScope && !!effectiveTeamOwnerId) {
+                    const teamOwner = teamScope.userId || effectiveTeamOwnerId
 
-                if (error) throw error
+                    const res = await fetch('/api/team-foods', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            userId: teamScope.userId,
+                            teamOwnerId: teamOwner,
+                            foodData: { ...values, tags: tagsArray }
+                        })
+                    });
+
+                    if (!res.ok) {
+                        const errData = await res.json();
+                        throw new Error(errData.error || 'Could not save team food properly');
+                    }
+                } else {
+                    const { error } = await supabase.from('foods').insert(foodData);
+                    if (error) throw error;
+                }
             }
 
             await loadFoods() // Reload to get consistent state
@@ -1344,23 +1382,6 @@ export default function FoodsPage() {
 
     return (
         <div className="space-y-4">
-            {canToggleScopeMode && (
-                <div className="flex justify-end">
-                    <div className="flex items-center gap-3 rounded-md border bg-white px-3 py-2">
-                        <span className={`text-sm ${scopeMode === 'global' ? 'font-semibold text-gray-900' : 'text-gray-500'}`}>
-                            Global Mod
-                        </span>
-                        <Switch
-                            checked={scopeMode === 'team'}
-                            onCheckedChange={(checked) => setScopeMode(checked ? 'team' : 'global')}
-                            aria-label="Foods scope mode switch"
-                        />
-                        <span className={`text-sm ${scopeMode === 'team' ? 'font-semibold text-gray-900' : 'text-gray-500'}`}>
-                            Takım Modu
-                        </span>
-                    </div>
-                </div>
-            )}
 
             {hasTeamScope && (
                 <div className="rounded-lg border border-violet-200 bg-violet-50 p-3 text-xs text-violet-800">
@@ -1497,17 +1518,12 @@ export default function FoodsPage() {
                         <Button
                             size="sm"
                             onClick={() => {
-                                if (hasTeamScope) {
-                                    alert('Takım modunda yeni global yemek ekleme kapali. Mevcut yemekleri duzenleyerek takıminiza ozel hale getirebilirsiniz.')
-                                    return
-                                }
                                 setEditingFood({} as any)
                                 setIsDialogOpen(true)
                             }}
-                            disabled={hasTeamScope}
                             className="bg-gradient-to-r from-green-600 to-teal-600 text-white h-7 text-xs px-3"
                         >
-                            <Plus className="mr-1 h-3 w-3" /> {hasTeamScope ? 'Takımda Kapali' : 'Ekle'}
+                            <Plus className="mr-1 h-3 w-3" /> Ekle
                         </Button>
                     </div>
                 </div>
@@ -1847,10 +1863,35 @@ export default function FoodsPage() {
                         mode={editingFood.id ? 'edit' : 'create'}
                         onUpdate={loadFoods}
                         onSave={hasTeamScope ? async (data: any) => {
-                            if (!editingFood?.id) {
-                                throw new Error('Takım modunda yeni yemek ekleme kapali.')
-                            }
                             const { micronutrients, ...updates } = data || {}
+                            
+                            if (!editingFood?.id) {
+                                // CREATE NEW FOOD via server API (bypasses RLS)
+                                const { data: authData } = await supabase.auth.getUser()
+                                const teamOwner = effectiveTeamOwnerId || authData.user?.id
+
+                                const res = await fetch('/api/team-foods', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        foodData: updates,
+                                        teamOwnerId: teamOwner,
+                                        userId: authData.user?.id,
+                                    })
+                                })
+                                const result = await res.json()
+                                if (!res.ok) throw new Error(result.error || 'Team food creation failed')
+                                
+                                return {
+                                    ...updates,
+                                    id: result.food.id,
+                                    base_food_id: result.food.id,
+                                    micronutrients: Array.isArray(micronutrients) ? micronutrients : [],
+                                    scope_source: 'team',
+                                    hidden_from_cardmaker: true,
+                                }
+                            }
+                            
                             await persistFoodUpdate(editingFood, updates)
                             if (Array.isArray(micronutrients)) {
                                 const baseFoodId = editingFood.base_food_id || editingFood.id

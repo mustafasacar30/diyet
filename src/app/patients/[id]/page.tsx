@@ -24,7 +24,7 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from "@/components/ui/sheet"
-import { Plus, Calendar, Save, Calculator, ChefHat, FileText, ChevronRight, ChevronLeft, MoreHorizontal, Copy, Pencil, Trash2, Sliders, X, AlertTriangle, Settings, RefreshCw, Wand2, Search, Filter, BookOpenText, Printer, ArrowLeft, Heart, Info, Archive, LayoutGrid, List, StickyNote, Activity, Menu, RotateCcw, Eraser, Grid3X3, Sparkles, Lock, Unlock, ChevronUp, ChevronDown, Camera, Image, ClipboardList } from "lucide-react"
+import { Plus, Calendar, Save, Calculator, ChefHat, FileText, ChevronRight, ChevronLeft, MoreHorizontal, Copy, Pencil, Trash2, Sliders, X, AlertTriangle, Settings, RefreshCw, Wand2, Search, Filter, BookOpenText, Printer, ArrowLeft, Heart, Info, Archive, LayoutGrid, List, StickyNote, Activity, Menu, RotateCcw, Eraser, Grid3X3, Sparkles, Lock, Unlock, ChevronUp, ChevronDown, Camera, Image, ClipboardList, Check } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
     Select,
@@ -346,6 +346,7 @@ export default function PatientDetailPage({ params }: { params: Promise<{ id: st
     const [dietPlanId, setDietPlanId] = useState<string | null>(null)
     const [foods, setFoods] = useState<any[]>([])
     const [weekCopyDialogData, setWeekCopyDialogData] = useState<{ open: boolean, week: DietWeek } | null>(null)
+    const [blockedFoodDialog, setBlockedFoodDialog] = useState<{ open: boolean, food: any | null, dropData: any | null, reason: string | null }>({ open: false, food: null, dropData: null, reason: null })
     // === WEEK LOOP EDITOR ===
     const [weekLoopDialogOpen, setWeekLoopDialogOpen] = useState(false)
     const [copiedWeekInitModalOpen, setCopiedWeekInitModalOpen] = useState(false)
@@ -880,6 +881,7 @@ export default function PatientDetailPage({ params }: { params: Promise<{ id: st
         fetchFoods()
         fetchDietTypes()
         fetchSlotSettings()
+        
     }, [id])
 
     // Sync slotConfigs from activeWeek whenever it changes
@@ -2950,9 +2952,42 @@ export default function PatientDetailPage({ params }: { params: Promise<{ id: st
         }
     }
 
+    
+    async function insertMealToDB(food: any, dropData: any) {
+        if (!food || !dropData) return
+        const { data: existingMeals } = await supabase
+            .from('diet_meals')
+            .select('sort_order')
+            .eq('diet_day_id', dropData.dayId)
+            .eq('meal_time', dropData.mealTime)
+            .order('sort_order', { ascending: false })
+            .limit(1)
+
+        const nextOrder = (existingMeals?.[0]?.sort_order || 0) + 1
+
+        const { data: insertedData, error } = await supabase.from('diet_meals').insert([{
+            diet_day_id: dropData.dayId,
+            food_id: food.id,
+            meal_time: dropData.mealTime,
+            portion_multiplier: 1,
+            sort_order: nextOrder,
+            calories: food.calories,
+            protein: food.protein,
+            carbs: food.carbs,
+            fat: food.fat,
+            is_consumed: true
+        }]).select()
+
+        if (error) {
+            console.error("DB INSERT ERROR:", error)
+            alert(`Hata: ${error.message}`)
+        } else {
+            setRefreshTrigger(prev => prev + 1)
+        }
+    }
+
     async function handleDragEnd(event: DragEndEvent) {
         setActiveDragFood(null) // Clear the drag overlay
-
         handleResizeUp() // Ensure resize stops too if drag ends (safety)
 
         const { active, over } = event
@@ -2970,45 +3005,11 @@ export default function PatientDetailPage({ params }: { params: Promise<{ id: st
             // Check Restrictions
             const compatibility = checkCompatibility(food, activeDietRules)
             if (!compatibility.compatible && compatibility.severity === 'block') {
-                alert(`BU YEMEK ENGELLENDİ!\n\n${compatibility.reason}`)
-                setActiveDragFood(null)
+                setBlockedFoodDialog({ open: true, food, dropData, reason: compatibility.reason })
                 return
             }
 
-            const { data: existingMeals } = await supabase
-                .from('diet_meals')
-                .select('sort_order')
-                .eq('diet_day_id', dropData.dayId)
-                .eq('meal_time', dropData.mealTime)
-                .order('sort_order', { ascending: false })
-                .limit(1)
-
-            const nextOrder = (existingMeals?.[0]?.sort_order || 0) + 1
-
-            console.log('Inserting meal:', { dayId: dropData.dayId, foodId: food.id, mealTime: dropData.mealTime, sortOrder: nextOrder })
-
-            const { data: insertedData, error } = await supabase.from('diet_meals').insert([{
-                diet_day_id: dropData.dayId,
-                food_id: food.id,
-                meal_time: dropData.mealTime,
-                portion_multiplier: 1,
-                sort_order: nextOrder,
-                // Hardcopy macros
-                calories: food.calories,
-                protein: food.protein,
-                carbs: food.carbs,
-                fat: food.fat,
-                is_consumed: true
-            }]).select()
-
-            console.log('Insert result:', { insertedData, error })
-
-            if (error) {
-                console.error("DB INSERT ERROR:", error)
-                alert(`Hata: ${error.message}`)
-            } else {
-                setRefreshTrigger(prev => prev + 1)
-            }
+            await insertMealToDB(food, dropData)
         }
     }
 
@@ -3318,6 +3319,48 @@ export default function PatientDetailPage({ params }: { params: Promise<{ id: st
 
 
     return (
+        <>
+            <Dialog open={blockedFoodDialog.open} onOpenChange={(open) => setBlockedFoodDialog(prev => ({ ...prev, open }))}>
+                <DialogContent className="max-w-md bg-white p-0 border-0 shadow-2xl rounded-2xl overflow-hidden">
+                    <div className="bg-red-50 p-6 text-center border-b border-red-100 flex flex-col items-center">
+                        <div className="bg-red-100 w-16 h-16 rounded-full flex items-center justify-center mb-4 shadow-sm">
+                            <AlertTriangle className="text-red-600 w-8 h-8" />
+                        </div>
+                        <DialogTitle className="text-xl font-black text-red-700 uppercase tracking-wider">
+                            Bu Yemek Engellendi!
+                        </DialogTitle>
+                    </div>
+                    <div className="p-6">
+                        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-center">
+                            <p className="text-[14px] text-gray-700 font-medium leading-relaxed">
+                                {blockedFoodDialog.reason}
+                            </p>
+                        </div>
+                    </div>
+                    <div className="px-6 pb-6 flex gap-3">
+                        <Button
+                            variant="outline"
+                            className="flex-1 h-12 rounded-xl text-gray-700 hover:bg-gray-50 border-gray-300 transition-colors"
+                            onClick={() => setBlockedFoodDialog({ open: false, food: null, dropData: null, reason: null })}
+                        >
+                            <X className="w-4 h-4 mr-2 opacity-70" />
+                            İptal
+                        </Button>
+                        <Button
+                            variant="destructive"
+                            className="flex-1 h-12 rounded-xl shadow-md hover:shadow-lg transition-all"
+                            onClick={async () => {
+                                await insertMealToDB(blockedFoodDialog.food, blockedFoodDialog.dropData);
+                                setBlockedFoodDialog({ open: false, food: null, dropData: null, reason: null });
+                            }}
+                        >
+                            <Check className="w-5 h-5 mr-2 opacity-90" />
+                            Yine de Ekle
+                        </Button>
+                    </div>
+                </DialogContent>
+            </Dialog>
+
         <DndContext onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
             <SidebarActionsPortal />
             <div className="flex h-full overflow-hidden" onMouseMove={handleResizeMove} onMouseUp={handleResizeUp}>
@@ -3354,6 +3397,7 @@ export default function PatientDetailPage({ params }: { params: Promise<{ id: st
                                 foodMicronutrients={foodMicronutrients}
                                 onSave={async (data) => { }}
                                 patientId={id}
+                                
                             />
 
                             {/* Resize Handle */}
@@ -3890,7 +3934,8 @@ export default function PatientDetailPage({ params }: { params: Promise<{ id: st
                     />
                 )
             }
-        </DndContext >
+        </DndContext>
+        </>
     )
 }
 
@@ -4158,18 +4203,6 @@ function DroppableMealSlot({ dayId, dayDate, mealType, meals, onUpdate, onToggle
         if (error) throw error
         return data
     }
-
-    const [foodTeamOwnerId, setFoodTeamOwnerId] = useState<string | null>(null)
-
-    useEffect(() => {
-        let mounted = true
-        resolveFoodTeamOwnerId().then((teamOwnerId) => {
-            if (mounted) setFoodTeamOwnerId(teamOwnerId)
-        })
-        return () => {
-            mounted = false
-        }
-    }, [user?.id, profile?.role, (profile as any)?.is_global_access])
 
     const hasLockedMeal = meals.some(m => m.is_locked)
     const { setNodeRef, isOver } = useDroppable({
@@ -4663,7 +4696,6 @@ function DroppableMealSlot({ dayId, dayDate, mealType, meals, onUpdate, onToggle
                             isOpen={!!editingMeal}
                             onClose={() => setEditingMeal(null)}
                             onUpdate={onUpdate}
-                            teamOwnerId={foodTeamOwnerId}
                             mode="create"
                             onCreate={async (newFood) => {
                                 if (editingMeal.id) {
@@ -4711,7 +4743,6 @@ function DroppableMealSlot({ dayId, dayDate, mealType, meals, onUpdate, onToggle
                                 onClose={() => setEditingMeal(null)}
                                 onUpdate={onUpdate}
                                 patientId={patientId}
-                                teamOwnerId={foodTeamOwnerId}
                                 onSave={async (updatedFoodData) => {
                                     const { micronutrients, ...foodsPayload } = updatedFoodData
                                     const teamOwnerId = await resolveFoodTeamOwnerId()
@@ -5408,18 +5439,6 @@ function ListViewMealSlot({ dayId, mealType, meals, mealTotals, onUpdate, onTogg
         return data
     }
 
-    const [foodTeamOwnerId, setFoodTeamOwnerId] = useState<string | null>(null)
-
-    useEffect(() => {
-        let mounted = true
-        resolveFoodTeamOwnerId().then((teamOwnerId) => {
-            if (mounted) setFoodTeamOwnerId(teamOwnerId)
-        })
-        return () => {
-            mounted = false
-        }
-    }, [user?.id, profile?.role, (profile as any)?.is_global_access])
-
     const hasLockedMeal = meals.some(m => m.is_locked)
     const { setNodeRef, isOver } = useDroppable({
         id: `list-slot-${dayId}-${mealType}`,
@@ -5909,7 +5928,6 @@ function ListViewMealSlot({ dayId, mealType, meals, mealTotals, onUpdate, onTogg
                         isOpen={!!editingMeal}
                         onClose={() => setEditingMeal(null)}
                         onUpdate={onUpdate}
-                        teamOwnerId={foodTeamOwnerId}
                         mode="create"
                         onCreate={async (newFood) => {
                             if (editingMeal.id) {
@@ -5999,7 +6017,6 @@ function ListViewMealSlot({ dayId, mealType, meals, mealTotals, onUpdate, onTogg
                             onClose={() => setEditingMeal(null)}
                             onUpdate={onUpdate}
                             patientId={patientId}
-                            teamOwnerId={foodTeamOwnerId}
                             onSave={async (updatedFoodData) => {
                                 const { micronutrients, ...foodsPayload } = updatedFoodData
                                 const teamOwnerId = await resolveFoodTeamOwnerId()

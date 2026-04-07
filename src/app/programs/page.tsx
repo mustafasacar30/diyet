@@ -1,8 +1,9 @@
-﻿'use client'
+'use client'
 
 import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/contexts/auth-context'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -76,7 +77,7 @@ function ProgramsContent() {
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
     const [programToDelete, setProgramToDelete] = useState<ProgramTemplate | null>(null)
     const [scopeActionProgramId, setScopeActionProgramId] = useState<string | null>(null)
-    const [scopeMode, setScopeMode] = useState<'global' | 'team'>('global')
+    const { scopeMode } = useAuth()
     const [teamScope, setTeamScope] = useState<{
         userId: string | null
         role: string | null
@@ -377,21 +378,6 @@ function ProgramsContent() {
                         Program şablonları ve diyet türlerini buradan yönetebilirsiniz.
                     </p>
                 </div>
-                {canToggleScopeMode && (
-                    <div className="flex items-center gap-3 rounded-md border bg-white px-3 py-2">
-                        <span className={`text-sm ${scopeMode === 'global' ? 'font-semibold text-gray-900' : 'text-gray-500'}`}>
-                            Global Mod
-                        </span>
-                        <Switch
-                            checked={scopeMode === 'team'}
-                            onCheckedChange={(checked) => setScopeMode(checked ? 'team' : 'global')}
-                            aria-label="Scope mode switch"
-                        />
-                        <span className={`text-sm ${scopeMode === 'team' ? 'font-semibold text-gray-900' : 'text-gray-500'}`}>
-                            Takım Modu
-                        </span>
-                    </div>
-                )}
             </div>
 
             <Tabs value={activeTab} onValueChange={(val) => {

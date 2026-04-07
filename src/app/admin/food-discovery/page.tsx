@@ -7,6 +7,8 @@ import Link from "next/link"
 import { supabase } from "@/lib/supabase"
 import { Settings, Save, Trash2 } from "lucide-react"
 import { useEffect } from "react"
+import { useAuth } from "@/contexts/auth-context"
+import { resolveTeamScopeContextFromAuth } from "@/lib/team-scope"
 
 const EXAMPLE_PROMPTS = [
     { icon: <MapPin size={14} />, text: "Denizli yöresinden, kış aylarında, ketojenik beslenmeye uygun 5 ana yemek" },
@@ -16,6 +18,7 @@ const EXAMPLE_PROMPTS = [
 ]
 
 export default function FoodDiscoveryPage() {
+    const { scopeMode } = useAuth()
     const [prompt, setPrompt] = useState("")
     const [loading, setLoading] = useState(false)
     const [result, setResult] = useState<{ success: boolean; count: number; proposals: any[] } | null>(null)
@@ -91,10 +94,18 @@ export default function FoodDiscoveryPage() {
         setError(null)
 
         try {
+            const teamScope = await resolveTeamScopeContextFromAuth()
+            const isTeamMode = scopeMode === 'team' || (!teamScope.canUseGlobal && !!teamScope.teamOwnerId)
+            const teamOwnerId = teamScope.teamOwnerId || (isTeamMode ? teamScope.userId : null)
+
             const res = await fetch("/api/admin/food-discovery", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ prompt: prompt.trim() }),
+                body: JSON.stringify({ 
+                    prompt: prompt.trim(),
+                    userId: teamScope.userId,
+                    teamOwnerId,
+                }),
             })
 
             const data = await res.json()

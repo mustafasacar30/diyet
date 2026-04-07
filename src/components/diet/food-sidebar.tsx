@@ -32,6 +32,8 @@ import { resolveTeamScopeContextFromAuth } from "@/lib/team-scope"
 import { getFoodMicronutrientsByScope } from "@/lib/team-food-micronutrient-overrides"
 
 import { FOOD_CATEGORIES } from "@/lib/constants/food-categories"
+import { useSidebar } from "@/contexts/sidebar-context"
+import { useAuth } from "@/contexts/auth-context"
 
 
 // ================== FILTER CONFIGURATION ==================
@@ -134,6 +136,8 @@ export function FoodSidebar({
     onSave?: (data: any) => Promise<any>,
     patientId?: string
 }) {
+    const { scopeMode } = useAuth()
+    const { isSidebarCollapsed } = useSidebar()
     const [filterFields, setFilterFields] = useState<FilterFieldConfig[]>(DEFAULT_FILTER_FIELDS)
     const [filters, setFilters] = useState<FilterCriteria[]>([
         { id: 1, field: 'name', value: '' },
@@ -267,6 +271,23 @@ export function FoodSidebar({
         // Include food_micronutrients for proper micronutrient association detection in checkCompatibility
         let query = supabase.from('foods').select('*, food_micronutrients(micronutrient_id)')
 
+        try {
+            const { userId, role, canUseGlobal, teamOwnerId } = await resolveTeamScopeContextFromAuth()
+            const canToggleForCurrentUser = role === 'doctor' && canUseGlobal && !!userId
+            const mergedTeamOwnerId =
+                canToggleForCurrentUser && scopeMode === 'team'
+                    ? userId
+                    : teamOwnerId
+
+            if (mergedTeamOwnerId) {
+                query = query.or(`hidden_from_cardmaker.is.null,hidden_from_cardmaker.eq.false,meta->>team_owner_id.eq.${mergedTeamOwnerId}`)
+            } else {
+                query = query.or('hidden_from_cardmaker.is.null,hidden_from_cardmaker.eq.false')
+            }
+        } catch (e) {
+            query = query.or('hidden_from_cardmaker.is.null,hidden_from_cardmaker.eq.false')
+        }
+
         for (const filter of filters) {
             if (!filter.value) continue
             switch (filter.field) {
@@ -322,6 +343,7 @@ export function FoodSidebar({
         const { data } = await query.limit(50)
         if (data) {
             let allFoods = [...data]
+
             // If viewing all categories or specifically "Kayıtsızlar", include custom foods
             const categoryFilter = filters.find(f => f.field === 'category')
             const shouldShowCustom = !categoryFilter?.value || categoryFilter.value === 'KAYITSIZLAR'
@@ -453,20 +475,26 @@ export function FoodSidebar({
     }, [displayedFoods, sortByCount, mealCounts, activeDietRules, patientDiseases, patientLabs, patientMedicationRules])
 
     return (
-        <div className="w-full border-r bg-white flex flex-col h-full">
+        <div className="w-full border-r bg-white flex flex-col h-full overflow-hidden">
+            
+            {/* LİPODEM MERKEZİ Branding Header */}
+            {!isSidebarCollapsed && (
+                <div className="p-4 border-b flex items-center justify-center font-bold tracking-widest text-[#1a5f7a] bg-slate-50">
+                    LİPODEM MERKEZİ
+                </div>
+            )}
 
             {/* Patient Info Header */}
-            <div className="p-3 border-b bg-gray-50/50 space-y-2">
-                {patientName && (
-                    <div className="group font-bold text-lg text-gray-800 flex items-center justify-between gap-2">
-                        <span>{patientName}</span>
-                        {onEditProfile && (
-                            <button onClick={onEditProfile} className="opacity-0 group-hover:opacity-100 p-1 hover:bg-gray-200 rounded transition-opacity" title="Profili Düzenle">
-                                <Edit2 size={14} className="text-gray-500" />
-                            </button>
-                        )}
-                    </div>
-                )}
+            {!isSidebarCollapsed && (
+                <div className="p-3 border-b bg-gray-50/50 space-y-2">
+                    <div className="group font-bold text-xs text-gray-500/80 flex items-center justify-between gap-2 px-1">
+                    <span className="uppercase tracking-wider">Hasta Tercihleri</span>
+                    {onEditProfile && (
+                        <button onClick={onEditProfile} className="opacity-0 group-hover:opacity-100 p-1 hover:bg-gray-200 rounded transition-opacity" title="Profili Düzenle">
+                            <Edit2 size={14} className="text-gray-500" />
+                        </button>
+                    )}
+                </div>
                 <div className="space-y-1">
                     {likedFoods && likedFoods.length > 0 && (
                         <div
@@ -505,6 +533,7 @@ export function FoodSidebar({
                     )}
                 </div>
             </div>
+            )}
 
             <div className="p-2 border-b space-y-2 bg-gray-50">
                 <div className="flex items-center justify-between">
@@ -728,6 +757,9 @@ function DraggableFoodItem({ food, onUpdate, dislikedFoods = [], activeDietRules
                                             </span>
                                         )}
                                         <span>{food.name}</span>
+                                        {food.meta?.team_owner_id && (
+                                            <span className="ml-1 px-1 bg-indigo-100 text-indigo-700 text-[8px] font-bold tracking-widest rounded uppercase">Takım</span>
+                                        )}
                                     </div>
                                     <div className="text-[10px] text-gray-500 flex gap-1.5 mt-0.5">
                                         <span>{Math.round(food.calories)}kcal</span>
