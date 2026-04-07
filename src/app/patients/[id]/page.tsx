@@ -3005,7 +3005,7 @@ export default function PatientDetailPage({ params }: { params: Promise<{ id: st
             // Check Restrictions
             const compatibility = checkCompatibility(food, activeDietRules)
             if (!compatibility.compatible && compatibility.severity === 'block') {
-                setBlockedFoodDialog({ open: true, food, dropData, reason: compatibility.reason })
+                setBlockedFoodDialog({ open: true, food, dropData, reason: compatibility.reason || null })
                 return
             }
 
