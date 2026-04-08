@@ -1137,6 +1137,7 @@
             title="Yapay Zekadan Yeni İsim ve Makro Üret"><span style="font-size:18px;">✨</span></button>
         </div>
         <div id="dishAutocomplete" class="autocomplete-list"></div>
+        <div id="existingFoodHint" style="display:none; margin-top:8px; padding:8px 10px; border-radius:8px; background:#fff8e6; border:1px solid #f3d8a8; color:#7a4f01; font-size:12px; line-height:1.35;"></div>
       </div>
 
       <div class="row">
@@ -1840,7 +1841,8 @@ Servis sayısı: {{SERVINGS}}
       copiedStyle: null,
       imageProvider: "",
       history: [],
-      historyIndex: -1
+      historyIndex: -1,
+      foodsIndex: []
     };
 
     // =====================================================
@@ -1853,6 +1855,7 @@ Servis sayısı: {{SERVINGS}}
       dishName: document.getElementById("dishName"),
       dishAiBtn: document.getElementById("dishAiBtn"),
       dishAutocomplete: document.getElementById("dishAutocomplete"),
+      existingFoodHint: document.getElementById("existingFoodHint"),
       servings: document.getElementById("servings"),
       imageAspect: document.getElementById("imageAspect"),
       textPromptTemplate: document.getElementById("textPromptTemplate"),
@@ -6312,6 +6315,61 @@ Beklenen JSON Şeması:
     const lipodemRepoDishes = new Set();
     let isFetchingDishes = false;
 
+    function normalizeDishText(v) {
+      if (!v) return "";
+      return v
+        .toLowerCase()
+        .replace(/ı/g, "i")
+        .replace(/i̇/g, "i")
+        .replace(/ö/g, "o")
+        .replace(/ü/g, "u")
+        .replace(/ş/g, "s")
+        .replace(/ğ/g, "g")
+        .replace(/ç/g, "c")
+        .replace(/[^a-z0-9\s]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+    }
+
+    function findExistingFoodMatches(query) {
+      const q = normalizeDishText(query);
+      if (!q || q.length < 2 || !Array.isArray(state.foodsIndex) || state.foodsIndex.length === 0) return [];
+
+      const tokens = q.split(" ").filter(Boolean);
+      const starts = [];
+      const contains = [];
+
+      for (const item of state.foodsIndex) {
+        const n = normalizeDishText(item?.name || "");
+        if (!n) continue;
+        const startsMatch = n.startsWith(q);
+        const tokenMatch = tokens.every(t => n.includes(t));
+        if (!startsMatch && !tokenMatch) continue;
+        const out = { name: item.name, category: item.category || "" };
+        if (startsMatch) starts.push(out);
+        else contains.push(out);
+      }
+
+      return [...starts, ...contains].slice(0, 5);
+    }
+
+    function renderExistingFoodHint(query) {
+      if (!els.existingFoodHint) return;
+      const matches = findExistingFoodMatches(query);
+      if (matches.length === 0) {
+        els.existingFoodHint.style.display = "none";
+        els.existingFoodHint.innerHTML = "";
+        return;
+      }
+
+      const matchText = matches
+        .map((m) => m.category ? `${m.name} (${m.category})` : m.name)
+        .join(", ");
+
+      els.existingFoodHint.innerHTML = `<strong>Veritabanında benzer/yakın yemekler var:</strong> ${matchText}<br><span style="font-size:11px; opacity:.8;">İsterseniz AI önerilerini yine kullanabilirsiniz.</span>`;
+      els.existingFoodHint.style.display = "block";
+    }
+
     async function ensureDishesLoaded() {
       if (lipodemRepoDishes.size > 0 || isFetchingDishes) return;
       isFetchingDishes = true;
@@ -6418,6 +6476,7 @@ Yanıtını KESİNLİKLE VE SADECE aşağıdaki gibi JSON olarak ver. Asla açı
           div.addEventListener("click", () => {
             els.dishName.value = item.n;
             els.dishAutocomplete.style.display = "none";
+            renderExistingFoodHint(item.n);
             // Set macros directly
             els.calEditor.value = item.cal;
             els.proEditor.value = item.p;
@@ -6455,6 +6514,7 @@ Yanıtını KESİNLİKLE VE SADECE aşağıdaki gibi JSON olarak ver. Asla açı
           e.preventDefault();
           els.dishName.value = dishName;
           els.dishAutocomplete.style.display = "none";
+          renderExistingFoodHint(dishName);
           // trigger filename suggestion explicitly
           els.lipodemFileName.value = makeSafeFileName(dishName) + ".jpg";
 
@@ -6478,6 +6538,7 @@ Yanıtını KESİNLİKLE VE SADECE aşağıdaki gibi JSON olarak ver. Asla açı
     els.dishName.addEventListener("input", (e) => {
       ensureDishesLoaded();
       const val = e.target.value;
+      renderExistingFoodHint(val);
 
       // Auto-suggest filename when dish name changes
       if (!els.lipodemFileName.value || els.lipodemFileName.value.endsWith(".jpg")) {
@@ -6888,6 +6949,11 @@ Yanıtını KESİNLİKLE VE SADECE aşağıdaki gibi JSON olarak ver. Asla açı
         console.log("[CardMaker] API keys injected from parent.");
       }
 
+      if (msg.type === 'SET_FOOD_INDEX') {
+        state.foodsIndex = Array.isArray(msg.foods) ? msg.foods : [];
+        renderExistingFoodHint(els.dishName?.value || "");
+      }
+
       if (msg.type === 'SET_VISUAL_TEMPLATES') {
         state.visualTemplates = msg.templates || [];
         renderVisualTemplatesList();
@@ -6900,6 +6966,7 @@ Yanıtını KESİNLİKLE VE SADECE aşağıdaki gibi JSON olarak ver. Asla açı
 
         // Fill dish name
         if (d.title && els.dishName) els.dishName.value = d.title;
+        renderExistingFoodHint(d.title || els.dishName.value);
 
         // Fill recipe state
         if (d.title) state.recipe.title = d.title;
@@ -6966,6 +7033,7 @@ Yanıtını KESİNLİKLE VE SADECE aşağıdaki gibi JSON olarak ver. Asla açı
     // Notify parent that card maker is ready
     if (window.parent !== window) {
       window.parent.postMessage({ type: 'CARD_MAKER_READY' }, '*');
+      window.parent.postMessage({ type: 'REQUEST_FOOD_INDEX' }, '*');
     }
 
     // =====================================================

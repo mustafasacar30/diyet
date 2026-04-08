@@ -12,9 +12,17 @@ interface ConversationListProps {
     onSelect: (id: string) => void
     currentUserId: string
     onStartGroup?: (userIds: string[], isGroup: boolean, title?: string) => void
+    allowGroupCreation?: boolean
 }
 
-export function ConversationList({ conversations, activeConversationId, onSelect, currentUserId, onStartGroup }: ConversationListProps) {
+export function ConversationList({
+    conversations,
+    activeConversationId,
+    onSelect,
+    currentUserId,
+    onStartGroup,
+    allowGroupCreation = true
+}: ConversationListProps) {
     const [isNewChatOpen, setIsNewChatOpen] = useState(false)
 
     return (
@@ -36,6 +44,7 @@ export function ConversationList({ conversations, activeConversationId, onSelect
             <NewChatDialog
                 open={isNewChatOpen}
                 onOpenChange={setIsNewChatOpen}
+                allowGroupCreation={allowGroupCreation}
                 onStartChat={(ids, isGroup, title) => {
                     if (onStartGroup) onStartGroup(ids, isGroup, title)
                 }}

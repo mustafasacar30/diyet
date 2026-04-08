@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { ArrowRight, Calendar, Droplets, Flame, Utensils, Scale, Activity, Save, Pencil, X, FileText, Target, Info, Camera, Beaker, Ruler, LayoutDashboard } from "lucide-react"
+import { ArrowRight, Calendar, Droplets, Flame, Utensils, Scale, Activity, Save, Pencil, X, FileText, Target, Info, Camera, Beaker, Ruler, LayoutDashboard, Loader2 } from "lucide-react"
 import Link from "next/link"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import LabResultsGrid from "@/components/diet/LabResultsGrid"
@@ -20,7 +20,6 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select"
-import AppStartupLoader from "@/components/ui/app-startup-loader"
 
 const ACTIVITY_LEVELS = [
     { value: 1, label: 'Sedanter', description: 'Masa başı iş, az hareket', multiplier: 0.8 },
@@ -437,13 +436,12 @@ export default function PatientDashboardPage() {
 
     if (loading) {
         return (
-            <AppStartupLoader
-                displayName={profile?.full_name}
-                title="Veriler yukleniyor"
-                subtitle="Kisisel gostergeleriniz hazirlaniyor..."
-                overlay
-                keepBottomNavVisible
-            />
+            <div className="flex min-h-[55vh] items-center justify-center px-4">
+                <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 shadow-sm">
+                    <Loader2 className="h-4 w-4 animate-spin text-emerald-600" />
+                    <span>Veriler yukleniyor...</span>
+                </div>
+            </div>
         )
     }
 

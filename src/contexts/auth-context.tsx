@@ -13,6 +13,7 @@ type UserProfile = {
     role: UserRole
     full_name: string | null
     avatar_url: string | null
+    logo_url?: string | null
     title: string | null
     valid_until?: string | null
     is_global_access?: boolean | null

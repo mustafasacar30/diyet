@@ -22,8 +22,7 @@ export function useChat(userId: string | undefined) {
 
             // AUTO-CREATE / SYNC logic for Patient to ensure Dietitian is in list
             // We do this check first
-            const { data: { user: currentUser } } = await supabase.auth.getUser()
-            // We can't check role easily without profile, but let's assume if I have assignments I am patient (or check profile)
+            await supabase.auth.getUser()
 
             // Simpler: Try to get my dietitian assignment
             // We use the raw table query which we just fixed RLS for, OR the RPC logic
@@ -343,15 +342,10 @@ export function useChat(userId: string | undefined) {
     async function addMembersToGroup(conversationId: string, userIds: string[]) {
         if (!userId) return
 
-        // Direct DB Insert
-        const rows = userIds.map(uid => ({
-            conversation_id: conversationId,
-            user_id: uid
-        }))
-
-        const { error } = await supabase
-            .from('participants')
-            .insert(rows)
+        const { error } = await supabase.rpc('add_group_members', {
+            target_conversation_id: conversationId,
+            new_member_ids: userIds
+        })
 
         if (error) {
             console.error("Failed to add members:", error)
@@ -365,11 +359,10 @@ export function useChat(userId: string | undefined) {
     async function removeMemberFromGroup(conversationId: string, targetUserId: string) {
         if (!userId) return
 
-        const { error } = await supabase
-            .from('participants')
-            .delete()
-            .eq('conversation_id', conversationId)
-            .eq('user_id', targetUserId)
+        const { error } = await supabase.rpc('remove_group_member', {
+            target_conversation_id: conversationId,
+            target_user_id: targetUserId
+        })
 
         if (error) {
             console.error("Failed to remove member:", error)
@@ -394,11 +387,9 @@ export function useChat(userId: string | undefined) {
 
         console.log(`Deleting Group: ${conversationId} by User: ${userId}`)
 
-        // DB Delete Conversation (Cascade handles messages/participants)
-        const { error: convError } = await supabase
-            .from('conversations')
-            .delete()
-            .eq('id', conversationId)
+        const { error: convError } = await supabase.rpc('delete_group_conversation', {
+            target_conversation_id: conversationId
+        })
 
         if (convError) {
             console.error("Conversation delete failed:", convError)

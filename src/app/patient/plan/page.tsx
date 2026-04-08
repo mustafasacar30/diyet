@@ -50,7 +50,8 @@ import {
     Scale,
     BookOpen,
     Edit2,
-    FileDown
+    FileDown,
+    Loader2
 } from "lucide-react"
 import {
     Select,
@@ -90,7 +91,6 @@ import {
 import { PhotoMealLogModal } from "@/components/diet/photo-meal-log-modal"
 import { FoodSearchSelector } from "@/components/diet/food-search-selector"
 import { sortFoodsByRole } from "@/utils/food-sorter"
-import AppStartupLoader from "@/components/ui/app-startup-loader"
 import { BalanceConfirmModal, BalanceChange } from "@/components/diet/balance-confirm-modal"
 import { generateWeeklyPlanPdf } from "@/utils/generate-weekly-pdf"
 
@@ -801,6 +801,7 @@ export default function PatientPlanPage() {
     const [activeWeek, setActiveWeek] = useState<any>(null)
     const [patientStatus, setPatientStatus] = useState<string | null>(null)
     const [patientInfo, setPatientInfo] = useState<any>(null) // For targets
+    const [pdfBranding, setPdfBranding] = useState<{ logoUrl: string | null, footerText: string | null } | null>(null)
     const [activeDietType, setActiveDietType] = useState<any>(null) // For targets
     const [patientDietTypes, setPatientDietTypes] = useState<any[]>([]) // For override
     const [dietTypesList, setDietTypesList] = useState<any[]>([]) // Global list
@@ -1166,8 +1167,12 @@ export default function PatientPlanPage() {
         }
     }
 
+    const initialFetchKeyRef = useRef<string>("")
     useEffect(() => {
         if (user) {
+            const fetchKey = `${user.id}:${profile?.id || ""}:${refreshTrigger}`
+            if (initialFetchKeyRef.current === fetchKey) return
+            initialFetchKeyRef.current = fetchKey
             // Keep the currently active week focused when a refresh is triggered (background refresh)
             fetchActivePlan(activeWeek?.id, true)
         }
@@ -1278,6 +1283,26 @@ export default function PatientPlanPage() {
 
             const actualPatientId = scopedPatientRecord.id
             setPatientStatus(scopedPatientRecord.status)
+
+            try {
+                const brandingRes = await fetch('/api/patient/pdf-branding', { method: 'GET' })
+                if (brandingRes.ok) {
+                    const branding = await brandingRes.json()
+                    if (branding?.logoUrl || branding?.footerText) {
+                        setPdfBranding({
+                            logoUrl: branding?.logoUrl || null,
+                            footerText: branding?.footerText || null,
+                        })
+                    } else {
+                        setPdfBranding(null)
+                    }
+                } else {
+                    setPdfBranding(null)
+                }
+            } catch (brandingError) {
+                console.warn('PDF branding fetch failed', brandingError)
+                setPdfBranding(null)
+            }
 
             // Save patient info immediately for targets & planner
             setPatientInfo({
@@ -2744,13 +2769,21 @@ export default function PatientPlanPage() {
 
     if (loading) {
         return (
-            <AppStartupLoader
-                displayName={profile?.full_name}
-                title="Veriler yukleniyor"
-                subtitle="Guvenli baglanti kuruluyor..."
-                overlay
-                keepBottomNavVisible
-            />
+            <div className="relative min-h-screen w-full overflow-hidden bg-slate-950">
+                <img
+                    src="/kapak-lite.jpg"
+                    alt=""
+                    aria-hidden="true"
+                    className="absolute inset-0 h-full w-full object-cover opacity-90"
+                />
+                <div className="absolute inset-0 bg-gradient-to-b from-slate-900/35 via-slate-900/35 to-slate-950/55" />
+                <div className="relative z-10 flex min-h-screen items-center justify-center px-4">
+                    <div className="flex items-center gap-3 rounded-2xl border border-white/25 bg-slate-900/45 px-5 py-3 text-sm text-white shadow-xl backdrop-blur-md">
+                        <Loader2 className="h-4 w-4 animate-spin text-emerald-300" />
+                        <span>Plan verileri yukleniyor...</span>
+                    </div>
+                </div>
+            </div>
         )
     }
 
@@ -4232,18 +4265,6 @@ export default function PatientPlanPage() {
         }
     }
 
-    if (loading) {
-        return (
-            <AppStartupLoader
-                displayName={profile?.full_name}
-                title="Plan hazirlaniyor"
-                subtitle="Ogünler ve hedefler eslestiriliyor..."
-                overlay
-                keepBottomNavVisible
-            />
-        )
-    }
-
     if (patientStatus === 'pending') {
         return (
             <div className="flex flex-col h-full bg-gray-50 min-h-screen p-4 items-center justify-center">
@@ -4638,15 +4659,14 @@ export default function PatientPlanPage() {
                                         onClick={async () => {
                                             try {
                                                 setIsPdfGenerating(true)
-                                                // Small delay for UX transition
-                                                await new Promise(r => setTimeout(r, 600))
-                                                
                                                 await generateWeeklyPlanPdf({
                                                     patientName: profile?.full_name || patientInfo?.full_name || 'Hasta',
                                                     weekNumber: activeWeek?.week_number || 1,
                                                     startDate: activeWeek?.start_date,
                                                     endDate: activeWeek?.end_date,
                                                     days: weekDays,
+                                                    logoUrl: pdfBranding?.logoUrl,
+                                                    footerText: pdfBranding?.footerText,
                                                     manualMatches: manualMatches || [],
                                                     bans: bans || [],
                                                     cards: cards || [],
@@ -5645,3 +5665,4 @@ export default function PatientPlanPage() {
         </div>
     )
 }
+

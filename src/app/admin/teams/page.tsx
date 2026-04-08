@@ -6,7 +6,9 @@ import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase"
 import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
-import { ArrowLeft, UserPlus, Trash2, Shield, UserCog, Users, ChevronRight, Plus } from "lucide-react"
+import { ArrowLeft, UserPlus, Trash2, Shield, UserCog, Users, ChevronRight, Plus, Save } from "lucide-react"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import {
     Dialog,
     DialogContent,
@@ -65,6 +67,8 @@ export default function AdminTeamsPage() {
     const [assignPatientDialogOpen, setAssignPatientDialogOpen] = useState(false)
     const [availablePatients, setAvailablePatients] = useState<PatientInfo[]>([])
     const [selectedPatientId, setSelectedPatientId] = useState<string>("")
+    const [teamFooterText, setTeamFooterText] = useState("")
+    const [teamFooterSaving, setTeamFooterSaving] = useState(false)
 
     useEffect(() => {
         // Allow admin and doctors
@@ -84,10 +88,12 @@ export default function AdminTeamsPage() {
     useEffect(() => {
         if (selectedDoctor) {
             loadTeam(selectedDoctor.id)
+            loadTeamBranding(selectedDoctor.id)
             setSelectedDietitian(null)
             setDietitianPatients([])
         } else {
             setTeamMembers([])
+            setTeamFooterText("")
             setSelectedDietitian(null)
             setDietitianPatients([])
         }
@@ -125,6 +131,48 @@ export default function AdminTeamsPage() {
                 profile: d.member
             }))
             setTeamMembers(formatted)
+        }
+    }
+
+    async function loadTeamBranding(supervisorId: string) {
+        try {
+            const res = await fetch(`/api/team-branding?supervisor_id=${encodeURIComponent(supervisorId)}`)
+            const result = await res.json()
+            if (!res.ok) {
+                console.error("Team branding load error:", result?.error)
+                setTeamFooterText("")
+                return
+            }
+            setTeamFooterText(result?.footerText || "")
+        } catch (error) {
+            console.error("Team branding load exception:", error)
+            setTeamFooterText("")
+        }
+    }
+
+    async function saveTeamBranding() {
+        if (!selectedDoctor) return
+
+        setTeamFooterSaving(true)
+        try {
+            const res = await fetch('/api/team-branding', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    supervisor_id: selectedDoctor.id,
+                    footer_text: teamFooterText,
+                })
+            })
+            const result = await res.json()
+            if (!res.ok) {
+                alert("Takım PDF metni kaydedilemedi: " + (result?.error || "Bilinmeyen hata"))
+                return
+            }
+            setTeamFooterText(result?.footerText || "")
+        } catch (error: any) {
+            alert("Takım PDF metni kaydedilemedi: " + (error?.message || "Bilinmeyen hata"))
+        } finally {
+            setTeamFooterSaving(false)
         }
     }
 
@@ -252,35 +300,26 @@ export default function AdminTeamsPage() {
     async function handleAssignPatient() {
         if (!selectedDietitian || !selectedPatientId || !selectedDoctor) return
 
-        // First check if there's a "parked" assignment under the doctor
-        const { data: parked } = await supabase
-            .from('patient_assignments')
-            .select('id')
-            .eq('patient_id', selectedPatientId)
-            .eq('dietitian_id', selectedDoctor.id)
-            .maybeSingle()
-
-        if (parked) {
-            // Re-assign the parked record to the dietitian
-            const { error } = await supabase
-                .from('patient_assignments')
-                .update({ dietitian_id: selectedDietitian.member_id })
-                .eq('id', parked.id)
-
-            if (error) {
-                alert("Hasta atama başarısız: " + error.message)
-                return
-            }
-        } else {
-            // No parked record, insert new
-            const { error } = await supabase.from('patient_assignments').insert({
-                patient_id: selectedPatientId,
-                dietitian_id: selectedDietitian.member_id,
+        try {
+            const res = await fetch('/api/admin/assign-patient', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    patientId: selectedPatientId,
+                    dietitianId: selectedDietitian.member_id,
+                    doctorId: selectedDoctor.id,
+                })
             })
-            if (error) {
-                alert("Hasta atama başarısız: " + error.message)
+
+            const result = await res.json()
+            if (!res.ok) {
+                alert("Hasta atama başarısız: " + (result.error || "Bilinmeyen hata"))
                 return
             }
+        } catch (err) {
+            console.error("Error assigning patient:", err)
+            alert("Hasta atama başarısız.")
+            return
         }
 
         loadDietitianPatients(selectedDietitian.member_id)
@@ -292,17 +331,28 @@ export default function AdminTeamsPage() {
         if (!confirm("Bu hastayı bu diyetisyenden kaldırmak istediğinize emin misiniz?")) return
         if (!selectedDoctor) return
 
-        // "Park" the assignment under the doctor instead of deleting.
-        // This keeps the patient in the team pool for re-assignment.
-        const { error } = await supabase
-            .from('patient_assignments')
-            .update({ dietitian_id: selectedDoctor.id })
-            .eq('id', assignmentId)
+        try {
+            // Use server-side API route to bypass RLS
+            const res = await fetch('/api/admin/remove-patient-assignment', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    assignmentId,
+                    doctorId: selectedDoctor.id,
+                    mode: 'park'
+                })
+            })
 
-        if (error) {
-            console.error("Error parking patient under doctor:", error)
-            // Fallback: delete the record
-            await supabase.from('patient_assignments').delete().eq('id', assignmentId)
+            const result = await res.json()
+            if (!res.ok) {
+                console.error("Error removing patient assignment:", result.error)
+                alert("Hasta kaldırma başarısız: " + (result.error || "Bilinmeyen hata"))
+                return
+            }
+        } catch (err) {
+            console.error("Error removing patient assignment:", err)
+            alert("Hasta kaldırma başarısız.")
+            return
         }
 
         if (selectedDietitian) loadDietitianPatients(selectedDietitian.member_id)
@@ -342,6 +392,31 @@ export default function AdminTeamsPage() {
                     </p>
                 </div>
             </div>
+
+            {selectedDoctor && (
+                <Card className="shrink-0 bg-white shadow-sm border">
+                    <CardContent className="pt-5 pb-4">
+                        <div className="grid gap-3 md:grid-cols-[1fr_auto] md:items-end">
+                            <div className="space-y-2">
+                                <Label htmlFor="team-footer-text">Takım PDF Metni (Oncelik 1)</Label>
+                                <Input
+                                    id="team-footer-text"
+                                    value={teamFooterText}
+                                    onChange={(e) => setTeamFooterText(e.target.value)}
+                                    placeholder="Orn: Lipodem Merkezi - Klinik Adi"
+                                />
+                                <p className="text-xs text-gray-500">
+                                    PDF'te logo altinda metin onceligi: Takim &gt; Doktor &gt; Diyetisyen.
+                                </p>
+                            </div>
+                            <Button onClick={saveTeamBranding} disabled={teamFooterSaving} className="gap-2">
+                                <Save className="h-4 w-4" />
+                                {teamFooterSaving ? "Kaydediliyor..." : "Takim Metnini Kaydet"}
+                            </Button>
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
 
             <div className={`grid grid-cols-1 gap-4 flex-1 min-h-0 ${showDoctorsList ? 'md:grid-cols-12' : 'md:grid-cols-2'}`}>
                 {/* Column 1: Doctors List (Admin only) */}

@@ -20,11 +20,7 @@ export default function PatientMessagesPage() {
         startConversation,
         createGroupConversation,
         deleteMessage,
-        editMessage,
-        leaveGroup,
-        addMembersToGroup,
-        removeMemberFromGroup,
-        deleteGroup
+        editMessage
     } = useChat(user?.id)
 
     const [dietitianLoading, setDietitianLoading] = useState(false)
@@ -89,12 +85,9 @@ export default function PatientMessagesPage() {
                     onSendMessage={sendMessage}
                     loadingMessages={loadingMessages}
                     onStartGroup={createGroupConversation}
+                    allowGroupCreation={false}
                     onDeleteMessage={deleteMessage}
                     onEditMessage={editMessage}
-                    onLeaveGroup={leaveGroup}
-                    onAddMembers={addMembersToGroup}
-                    onRemoveMember={removeMemberFromGroup}
-                    onDeleteGroup={deleteGroup}
                 />
             )}
         </div>

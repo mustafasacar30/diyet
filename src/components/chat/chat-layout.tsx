@@ -25,6 +25,7 @@ interface ChatLayoutProps {
     onAddMembers?: (convId: string, userIds: string[]) => void
     onRemoveMember?: (convId: string, userId: string) => void
     onDeleteGroup?: (convId: string) => void
+    allowGroupCreation?: boolean
 }
 
 export function ChatLayout({
@@ -42,7 +43,8 @@ export function ChatLayout({
     onLeaveGroup,
     onAddMembers,
     onRemoveMember,
-    onDeleteGroup
+    onDeleteGroup,
+    allowGroupCreation = true
 }: ChatLayoutProps) {
 
     const [isGroupDetailsOpen, setIsGroupDetailsOpen] = useState(false)
@@ -87,6 +89,7 @@ export function ChatLayout({
                     onSelect={onSelectConversation}
                     currentUserId={currentUserId}
                     onStartGroup={onStartGroup}
+                    allowGroupCreation={allowGroupCreation}
                 />
             </div>
 

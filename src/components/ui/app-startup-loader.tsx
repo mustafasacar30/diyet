@@ -41,7 +41,6 @@ export default function AppStartupLoader({
     overlay = false,
     keepBottomNavVisible = false
 }: AppStartupLoaderProps) {
-    const [progress, setProgress] = useState(12)
     const [messageIndex, setMessageIndex] = useState(0)
     const [coverIndex, setCoverIndex] = useState(0)
     const [logoIndex, setLogoIndex] = useState(0)
@@ -63,18 +62,6 @@ export default function AppStartupLoader({
             ...base
         ]
     }, [firstName])
-
-    useEffect(() => {
-        const progressInterval = window.setInterval(() => {
-            setProgress((prev) => {
-                if (prev >= 94) return prev
-                const step = Math.floor(Math.random() * 7) + 2
-                return Math.min(94, prev + step)
-            })
-        }, 450)
-
-        return () => window.clearInterval(progressInterval)
-    }, [])
 
     useEffect(() => {
         const messageInterval = window.setInterval(() => {
@@ -145,13 +132,8 @@ export default function AppStartupLoader({
                     </p>
 
                     <div className="mt-6 h-2.5 w-full overflow-hidden rounded-full bg-white/25">
-                        <div
-                            className="h-full rounded-full bg-gradient-to-r from-emerald-200 via-emerald-300 to-cyan-200 opacity-85 transition-[width] duration-500 ease-out"
-                            style={{ width: `${progress}%` }}
-                        />
+                        <div className="h-full w-full animate-pulse rounded-full bg-gradient-to-r from-emerald-200 via-emerald-300 to-cyan-200 opacity-85" />
                     </div>
-
-                    <p className="mt-2 text-right text-xs font-medium text-emerald-100/90">%{progress}</p>
                 </div>
             </div>
         </div>

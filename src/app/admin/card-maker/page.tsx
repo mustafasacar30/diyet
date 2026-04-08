@@ -72,6 +72,11 @@ export default function CardMakerPage() {
     const [showHidden, setShowHidden] = useState(false)
     const [hiddenFoodIds, setHiddenFoodIds] = useState<Set<string>>(new Set())
     const iframeRef = useRef<HTMLIFrameElement>(null)
+    const foodsRef = useRef<FoodItem[]>([])
+
+    useEffect(() => {
+        foodsRef.current = foods
+    }, [foods])
 
     useEffect(() => {
         fetchFoods()
@@ -86,6 +91,16 @@ export default function CardMakerPage() {
 
             if (msg.type === 'CARD_MAKER_READY') {
                 setIframeReady(true)
+            }
+            if (msg.type === 'REQUEST_FOOD_INDEX') {
+                iframeRef.current?.contentWindow?.postMessage({
+                    type: 'SET_FOOD_INDEX',
+                    foods: foodsRef.current.map((food) => ({
+                        id: food.id,
+                        name: food.name || "",
+                        category: food.category || ""
+                    }))
+                }, '*')
             }
             // When a card is saved/exported from the iframe, refresh the sync status
             if (msg.type === 'CARD_SAVED' || msg.type === 'CARD_EXPORTED') {
@@ -173,6 +188,21 @@ export default function CardMakerPage() {
             }, '*')
         }
     }, [iframeReady, apiKeys, sysPrompts, discoverySearchSites])
+
+    useEffect(() => {
+        if (!iframeReady || !iframeRef.current?.contentWindow) return
+
+        const foodsIndex = foods.map((food) => ({
+            id: food.id,
+            name: food.name || "",
+            category: food.category || ""
+        }))
+
+        iframeRef.current.contentWindow.postMessage({
+            type: 'SET_FOOD_INDEX',
+            foods: foodsIndex
+        }, '*')
+    }, [iframeReady, foods])
 
     // Compute sync status + sort whenever foods or githubData changes
     const sortedFoods = useCallback(() => {

@@ -34,6 +34,8 @@ type PdfOptions = {
     startDate?: string
     endDate?: string
     days: PdfDay[]
+    logoUrl?: string | null
+    footerText?: string | null
     // Recipe data
     manualMatches?: ManualMatch[]
     bans?: MatchBan[]
@@ -67,6 +69,15 @@ function getPlainFoodName(food: PdfFood): string {
 }
 
 async function loadImageAsDataUrl(url: string, maxWidth = 800, cropPercent = 0, format = 'image/jpeg', maxHPercent = 100): Promise<string | null> {
+    const cacheKey = `${url}__${maxWidth}__${cropPercent}__${format}__${maxHPercent}`
+    const cached = (loadImageAsDataUrl as any)._cache?.get(cacheKey) as Promise<string | null> | undefined
+    if (cached) return cached
+
+    if (!(loadImageAsDataUrl as any)._cache) {
+        ;(loadImageAsDataUrl as any)._cache = new Map<string, Promise<string | null>>()
+    }
+
+    const pending = (async () => {
     try {
         const response = await fetch(url)
         const blob = await response.blob()
@@ -108,6 +119,10 @@ async function loadImageAsDataUrl(url: string, maxWidth = 800, cropPercent = 0, 
         console.warn('Image processing failed', e)
         return null
     }
+    })()
+
+    ;(loadImageAsDataUrl as any)._cache.set(cacheKey, pending)
+    return pending
 }
 
 function calculateDayHeight(day: PdfDay, doc: jsPDF, contentW: number): number {
@@ -128,7 +143,7 @@ function calculateDayHeight(day: PdfDay, doc: jsPDF, contentW: number): number {
 
 // ─── Main PDF Generator ───
 export async function generateWeeklyPlanPdf(options: PdfOptions): Promise<void> {
-    const { patientName, weekNumber, startDate, endDate, days, manualMatches, bans, cards } = options
+    const { patientName, weekNumber, startDate, endDate, days, logoUrl, footerText, manualMatches, bans, cards } = options
 
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
 
@@ -171,11 +186,13 @@ export async function generateWeeklyPlanPdf(options: PdfOptions): Promise<void> 
     // ══════════ HEADER ══════════
     // Repositioned: Logo on the right, text on the left
     let headerY = y
+    let logoTextBottomY = 0
     
     // Add Logo on the right with correct aspect ratio
     try {
         // Use 3% crop to remove the thin edge border without cutting the logo
-        const logoData = await loadImageAsDataUrl('/logo-lite.png', 800, 3, 'image/png')
+        const logoSource = logoUrl || '/logo-lite.png'
+        const logoData = await loadImageAsDataUrl(logoSource, 340, 3, 'image/png')
         if (logoData) {
             const img = new Image()
             await new Promise((resolve) => {
@@ -191,6 +208,20 @@ export async function generateWeeklyPlanPdf(options: PdfOptions): Promise<void> 
                 doc.setFillColor(255, 255, 255)
                 doc.rect(pageW - margin - logoW, headerY, logoW, logoH, 'F')
                 doc.addImage(logoData, 'PNG', pageW - margin - logoW, headerY, logoW, logoH)
+
+                const cleanFooterText = (footerText || '').trim()
+                if (cleanFooterText) {
+                    doc.setFont('Roboto', 'normal')
+                    doc.setFontSize(8.5)
+                    doc.setTextColor(...COLORS.TEXT_LIGHT)
+                    const textMaxW = Math.max(26, logoW + 4)
+                    const lines = doc.splitTextToSize(cleanFooterText, textMaxW).slice(0, 2)
+                    const textY = headerY + logoH + 4
+                    lines.forEach((line: string, idx: number) => {
+                        doc.text(line, pageW - margin - logoW / 2, textY + (idx * 3.8), { align: 'center' })
+                    })
+                    logoTextBottomY = textY + ((lines.length - 1) * 3.8)
+                }
             }
         }
     } catch (e) {
@@ -219,6 +250,10 @@ export async function generateWeeklyPlanPdf(options: PdfOptions): Promise<void> 
     }
     doc.text(subHeaderText, margin, y)
     y += 10
+
+    if (logoTextBottomY > 0) {
+        y = Math.max(y, logoTextBottomY + 4)
+    }
 
     // Separator line
     doc.setDrawColor(...COLORS.BORDER)
@@ -349,7 +384,7 @@ export async function generateWeeklyPlanPdf(options: PdfOptions): Promise<void> 
                 try {
                     const thumbCard = mealRecipes[0]
                     // Show only TOP 40% of the card where name and photo are
-                    const thumbData = await loadImageAsDataUrl(thumbCard.url, 500, 2, 'image/jpeg', 40)
+                    const thumbData = await loadImageAsDataUrl(thumbCard.url, 260, 2, 'image/jpeg', 40)
                     if (thumbData) {
                         const img = new Image()
                         await new Promise((resolve) => {
@@ -417,7 +452,7 @@ export async function generateWeeklyPlanPdf(options: PdfOptions): Promise<void> 
 
         for (let i = 0; i < matchedCards.length; i++) {
             const card = matchedCards[i]
-            const dataUrl = await loadImageAsDataUrl(card.url, 1200)
+            const dataUrl = await loadImageAsDataUrl(card.url, 900)
             if (!dataUrl) continue
 
             ensureSpace(80) 
