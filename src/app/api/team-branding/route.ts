@@ -46,11 +46,14 @@ export async function GET(request: NextRequest) {
 
         const { data } = await supabaseAdmin
             .from("team_pdf_branding")
-            .select("footer_text")
+            .select("footer_text, logo_url")
             .eq("supervisor_id", supervisorId)
             .maybeSingle()
 
-        return NextResponse.json({ footerText: data?.footer_text || "" })
+        return NextResponse.json({
+            footerText: data?.footer_text || "",
+            logoUrl: data?.logo_url || null,
+        })
     } catch (error: any) {
         return NextResponse.json({ error: error?.message || "Internal Server Error" }, { status: 500 })
     }
@@ -61,6 +64,7 @@ export async function POST(request: NextRequest) {
         const body = await request.json()
         const supervisorId = body?.supervisor_id as string | undefined
         const footerTextRaw = body?.footer_text as string | null | undefined
+        const logoUrlRaw = body?.logo_url as string | null | undefined
 
         if (!supervisorId) {
             return NextResponse.json({ error: "supervisor_id gerekli" }, { status: 400 })
@@ -95,6 +99,7 @@ export async function POST(request: NextRequest) {
         }
 
         const footerText = (footerTextRaw || "").trim()
+        const logoUrl = (logoUrlRaw || "").trim() || null
 
         const { error } = await supabaseAdmin
             .from("team_pdf_branding")
@@ -102,6 +107,7 @@ export async function POST(request: NextRequest) {
                 {
                     supervisor_id: supervisorId,
                     footer_text: footerText || null,
+                    logo_url: logoUrl,
                     updated_at: new Date().toISOString(),
                 },
                 { onConflict: "supervisor_id" }
@@ -111,7 +117,7 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: error.message }, { status: 500 })
         }
 
-        return NextResponse.json({ success: true, footerText })
+        return NextResponse.json({ success: true, footerText, logoUrl })
     } catch (error: any) {
         return NextResponse.json({ error: error?.message || "Internal Server Error" }, { status: 500 })
     }

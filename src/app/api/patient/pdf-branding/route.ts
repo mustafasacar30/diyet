@@ -145,16 +145,25 @@ export async function GET() {
 
         const { data: teamBrandingRows } = await supabaseAdmin
             .from("team_pdf_branding")
-            .select("supervisor_id, footer_text")
+            .select("supervisor_id, footer_text, logo_url")
             .in("supervisor_id", supervisorIds)
 
         const teamTextMap = new Map<string, string>()
+        const teamLogoMap = new Map<string, string>()
         for (const row of teamBrandingRows || []) {
             const text = (row as any)?.footer_text?.trim?.() || ""
             if (text) {
                 teamTextMap.set((row as any).supervisor_id, text)
             }
+            const logoUrl = ((row as any)?.logo_url || "").trim()
+            if (isCustomLogoUrl(logoUrl)) {
+                teamLogoMap.set((row as any).supervisor_id, logoUrl)
+            }
         }
+
+        const teamLogoUrl = supervisorIds
+            .map((id) => teamLogoMap.get(id) || null)
+            .find((url) => !!url) || null
 
         const teamText = supervisorIds
             .map((id) => teamTextMap.get(id) || "")
@@ -175,14 +184,15 @@ export async function GET() {
         const selectedFooterText = teamText || doctorTextFromSupervisor || doctorTextFromAssigned || dietitianText || null
 
         return NextResponse.json({
-            logoUrl: selectedLogoProfile?.logo_url || null,
+            logoUrl: teamLogoUrl || selectedLogoProfile?.logo_url || null,
             footerText: selectedFooterText,
-            source: selectedLogoProfile?.role || "none",
+            source: teamLogoUrl ? "team" : (selectedLogoProfile?.role || "none"),
             profileId: selectedLogoProfile?.id || null,
             trace: {
                 patientId,
                 assignedSpecialistIds,
                 supervisorIds,
+                teamLogoUrl,
                 selectedLogoProfileId: selectedLogoProfile?.id || null,
             },
         })

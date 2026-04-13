@@ -141,6 +141,30 @@ function calculateDayHeight(day: PdfDay, doc: jsPDF, contentW: number): number {
     return totalH
 }
 
+function getRecipeCardKey(card: RecipeCard): string {
+    return card.filename || card.url
+}
+
+function getThumbnailCandidatesByVariety(
+    mealRecipes: RecipeCard[],
+    usedInDay: Set<string>,
+    globalUsage: Map<string, number>
+): RecipeCard[] {
+    return [...mealRecipes].sort((a, b) => {
+        const keyA = getRecipeCardKey(a)
+        const keyB = getRecipeCardKey(b)
+        const dayUsedA = usedInDay.has(keyA) ? 1 : 0
+        const dayUsedB = usedInDay.has(keyB) ? 1 : 0
+        if (dayUsedA !== dayUsedB) return dayUsedA - dayUsedB
+
+        const usageA = globalUsage.get(keyA) || 0
+        const usageB = globalUsage.get(keyB) || 0
+        if (usageA !== usageB) return usageA - usageB
+
+        return 0
+    })
+}
+
 // ─── Main PDF Generator ───
 export async function generateWeeklyPlanPdf(options: PdfOptions): Promise<void> {
     const { patientName, weekNumber, startDate, endDate, days, logoUrl, footerText, manualMatches, bans, cards } = options
@@ -185,50 +209,65 @@ export async function generateWeeklyPlanPdf(options: PdfOptions): Promise<void> 
 
     // ══════════ HEADER ══════════
     // Repositioned: Logo on the right, text on the left
-    let headerY = y
-    let logoTextBottomY = 0
+    const headerTop = y
+    const logoH = 22
+    const leftBlockH = 18
+    let logoData: string | null = null
+    let logoW = 0
+    let footerLines: string[] = []
     
     // Add Logo on the right with correct aspect ratio
     try {
-        // Use 3% crop to remove the thin edge border without cutting the logo
         const logoSource = logoUrl || '/logo-lite.png'
-        const logoData = await loadImageAsDataUrl(logoSource, 340, 3, 'image/png')
+        logoData = await loadImageAsDataUrl(logoSource, 340, 3, 'image/png')
         if (logoData) {
             const img = new Image()
             await new Promise((resolve) => {
                 img.onload = resolve
                 img.onerror = resolve
-                img.src = logoData
+                img.src = logoData as string
             })
-            if (img.width > 0) {
-                const logoH = 22 // Large and clear
-                const logoW = (img.width / img.height) * logoH
-                
-                // Add white background for the logo
-                doc.setFillColor(255, 255, 255)
-                doc.rect(pageW - margin - logoW, headerY, logoW, logoH, 'F')
-                doc.addImage(logoData, 'PNG', pageW - margin - logoW, headerY, logoW, logoH)
-
+            if (img.width > 0 && img.height > 0) {
+                logoW = (img.width / img.height) * logoH
                 const cleanFooterText = (footerText || '').trim()
                 if (cleanFooterText) {
                     doc.setFont('Roboto', 'normal')
                     doc.setFontSize(8.5)
-                    doc.setTextColor(...COLORS.TEXT_LIGHT)
-                    const textMaxW = Math.max(26, logoW + 4)
-                    const lines = doc.splitTextToSize(cleanFooterText, textMaxW).slice(0, 2)
-                    const textY = headerY + logoH + 4
-                    lines.forEach((line: string, idx: number) => {
-                        doc.text(line, pageW - margin - logoW / 2, textY + (idx * 3.8), { align: 'center' })
-                    })
-                    logoTextBottomY = textY + ((lines.length - 1) * 3.8)
+                    footerLines = doc.splitTextToSize(cleanFooterText, Math.max(26, logoW + 4)).slice(0, 2)
                 }
             }
         }
     } catch (e) {
         console.warn('Logo could not be loaded for PDF', e)
+        logoData = null
+        logoW = 0
+        footerLines = []
+    }
+
+    const rightBlockH = logoData ? (logoH + (footerLines.length > 0 ? 4 + (footerLines.length * 3.8) : 0)) : 0
+    const headerContentH = Math.max(leftBlockH, rightBlockH)
+    const leftTop = headerTop + ((headerContentH - leftBlockH) / 2)
+    const rightTop = headerTop + ((headerContentH - rightBlockH) / 2)
+
+    if (logoData && logoW > 0) {
+        const logoX = pageW - margin - logoW
+        doc.setFillColor(255, 255, 255)
+        doc.rect(logoX, rightTop, logoW, logoH, 'F')
+        doc.addImage(logoData, 'PNG', logoX, rightTop, logoW, logoH)
+
+        if (footerLines.length > 0) {
+            doc.setFont('Roboto', 'normal')
+            doc.setFontSize(8.5)
+            doc.setTextColor(...COLORS.TEXT_LIGHT)
+            const textStartY = rightTop + logoH + 4
+            footerLines.forEach((line: string, idx: number) => {
+                doc.text(line, pageW - margin - logoW / 2, textStartY + (idx * 3.8), { align: 'center' })
+            })
+        }
     }
 
     // Patient Name & Title (Left aligned)
+    y = leftTop + 3.5
     doc.setFont('Roboto', 'bold')
     doc.setFontSize(16)
     doc.setTextColor(...COLORS.PRIMARY)
@@ -251,9 +290,7 @@ export async function generateWeeklyPlanPdf(options: PdfOptions): Promise<void> 
     doc.text(subHeaderText, margin, y)
     y += 10
 
-    if (logoTextBottomY > 0) {
-        y = Math.max(y, logoTextBottomY + 4)
-    }
+    y = headerTop + headerContentH + 4
 
     // Separator line
     doc.setDrawColor(...COLORS.BORDER)
@@ -299,9 +336,11 @@ export async function generateWeeklyPlanPdf(options: PdfOptions): Promise<void> 
 
     const pendingLinks: any[] = []
     const cardFirstOccurrence = new Map<number, { p: number, x: number, y: number }>()
+    const thumbnailUsageCount = new Map<string, number>()
 
     // ══════════ DAYS ══════════
     for (const day of days) {
+        const usedThumbnailKeysToday = new Set<string>()
         const dayH = calculateDayHeight(day, doc, contentW)
         ensureSpace(dayH)
 
@@ -382,10 +421,16 @@ export async function generateWeeklyPlanPdf(options: PdfOptions): Promise<void> 
             // ── Inline Thumbnail (on the right) ──
             if (showThumbnail) {
                 try {
-                    const thumbCard = mealRecipes[0]
-                    // Show only TOP 40% of the card where name and photo are
-                    const thumbData = await loadImageAsDataUrl(thumbCard.url, 260, 2, 'image/jpeg', 40)
-                    if (thumbData) {
+                    const thumbCandidates = getThumbnailCandidatesByVariety(
+                        mealRecipes,
+                        usedThumbnailKeysToday,
+                        thumbnailUsageCount
+                    )
+                    for (const thumbCard of thumbCandidates) {
+                        // Show only TOP 40% of the card where name and photo are
+                        const thumbData = await loadImageAsDataUrl(thumbCard.url, 260, 2, 'image/jpeg', 40)
+                        if (!thumbData) continue
+
                         const img = new Image()
                         await new Promise((resolve) => {
                             img.onload = resolve
@@ -397,7 +442,7 @@ export async function generateWeeklyPlanPdf(options: PdfOptions): Promise<void> 
                             const finalThumbH = (img.height / img.width) * finalThumbW
                             const drawY = mealStartY + 4
                             doc.addImage(thumbData, 'JPEG', pageW - margin - finalThumbW, drawY, finalThumbW, finalThumbH, undefined, 'FAST')
-                            
+
                             // Store link metadata for later
                             const cardIdx = matchedCards.findIndex(c => c.filename === thumbCard.filename)
                             if (cardIdx !== -1) {
@@ -407,7 +452,12 @@ export async function generateWeeklyPlanPdf(options: PdfOptions): Promise<void> 
                                 })
                             }
 
+                            const thumbKey = getRecipeCardKey(thumbCard)
+                            usedThumbnailKeysToday.add(thumbKey)
+                            thumbnailUsageCount.set(thumbKey, (thumbnailUsageCount.get(thumbKey) || 0) + 1)
+
                             if (drawY + finalThumbH > y) y = drawY + finalThumbH
+                            break
                         }
                     }
                 } catch (e) { console.warn('Meal thumbnail failed', e) }

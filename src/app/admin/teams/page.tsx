@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase"
 import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
-import { ArrowLeft, UserPlus, Trash2, Shield, UserCog, Users, ChevronRight, Plus, Save } from "lucide-react"
+import { ArrowLeft, UserPlus, Trash2, Shield, UserCog, Users, ChevronRight, Plus, Save, Upload, Image as ImageIcon, Loader2 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
@@ -45,6 +45,8 @@ type PatientInfo = {
     assignment_id?: string
 }
 
+const TEAM_LOGO_BUCKET = "team-logos"
+
 export default function AdminTeamsPage() {
     const { isAdmin, loading, profile } = useAuth()
     const router = useRouter()
@@ -68,7 +70,11 @@ export default function AdminTeamsPage() {
     const [availablePatients, setAvailablePatients] = useState<PatientInfo[]>([])
     const [selectedPatientId, setSelectedPatientId] = useState<string>("")
     const [teamFooterText, setTeamFooterText] = useState("")
+    const [teamLogoUrl, setTeamLogoUrl] = useState<string | null>(null)
     const [teamFooterSaving, setTeamFooterSaving] = useState(false)
+    const [teamLogoUploading, setTeamLogoUploading] = useState(false)
+    const [teamBrandingError, setTeamBrandingError] = useState<string | null>(null)
+    const [teamBrandingSuccess, setTeamBrandingSuccess] = useState<string | null>(null)
 
     useEffect(() => {
         // Allow admin and doctors
@@ -94,6 +100,9 @@ export default function AdminTeamsPage() {
         } else {
             setTeamMembers([])
             setTeamFooterText("")
+            setTeamLogoUrl(null)
+            setTeamBrandingError(null)
+            setTeamBrandingSuccess(null)
             setSelectedDietitian(null)
             setDietitianPatients([])
         }
@@ -141,12 +150,82 @@ export default function AdminTeamsPage() {
             if (!res.ok) {
                 console.error("Team branding load error:", result?.error)
                 setTeamFooterText("")
+                setTeamLogoUrl(null)
                 return
             }
             setTeamFooterText(result?.footerText || "")
+            setTeamLogoUrl(result?.logoUrl || null)
+            setTeamBrandingError(null)
         } catch (error) {
             console.error("Team branding load exception:", error)
             setTeamFooterText("")
+            setTeamLogoUrl(null)
+        }
+    }
+
+    async function handleUploadTeamLogo(file: File | null) {
+        if (!file || !selectedDoctor?.id) return
+
+        if (!file.type.startsWith("image/")) {
+            setTeamBrandingError("Lutfen gecerli bir gorsel dosyasi secin.")
+            return
+        }
+
+        const maxSizeMb = 5
+        if (file.size > maxSizeMb * 1024 * 1024) {
+            setTeamBrandingError(`Logo dosyasi en fazla ${maxSizeMb} MB olabilir.`)
+            return
+        }
+
+        setTeamLogoUploading(true)
+        setTeamBrandingError(null)
+        setTeamBrandingSuccess(null)
+
+        try {
+            const fileExt = file.name.split(".").pop()?.toLowerCase() || "png"
+            const fileName = `${selectedDoctor.id}/team-logo-${Date.now()}.${fileExt}`
+
+            const { error: uploadError } = await supabase.storage
+                .from(TEAM_LOGO_BUCKET)
+                .upload(fileName, file, {
+                    upsert: false,
+                    contentType: file.type,
+                })
+
+            if (uploadError) throw uploadError
+
+            const { data } = supabase.storage.from(TEAM_LOGO_BUCKET).getPublicUrl(fileName)
+            const uploadedLogoUrl = data.publicUrl
+            setTeamLogoUrl(uploadedLogoUrl)
+
+            // Auto-persist logo immediately so it doesn't disappear on refresh.
+            const res = await fetch('/api/team-branding', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    supervisor_id: selectedDoctor.id,
+                    footer_text: teamFooterText,
+                    logo_url: uploadedLogoUrl,
+                }),
+            })
+            const result = await res.json()
+            if (!res.ok) {
+                throw new Error(result?.error || "Takim logosu kaydedilemedi.")
+            }
+
+            setTeamFooterText(result?.footerText || "")
+            setTeamLogoUrl(result?.logoUrl || uploadedLogoUrl)
+            setTeamBrandingSuccess("Takim logosu yuklendi ve kaydedildi.")
+        } catch (error: any) {
+            console.error("Team logo upload error:", error)
+            const rawMessage = error?.message || "Takim logosu yuklenemedi."
+            if (rawMessage.toLowerCase().includes("logo_url")) {
+                setTeamBrandingError("Veritabani guncellemesi eksik. Team logo migration'i uygulanmamis olabilir (team_pdf_branding.logo_url).")
+            } else {
+                setTeamBrandingError(rawMessage)
+            }
+        } finally {
+            setTeamLogoUploading(false)
         }
     }
 
@@ -154,6 +233,8 @@ export default function AdminTeamsPage() {
         if (!selectedDoctor) return
 
         setTeamFooterSaving(true)
+        setTeamBrandingError(null)
+        setTeamBrandingSuccess(null)
         try {
             const res = await fetch('/api/team-branding', {
                 method: 'POST',
@@ -161,16 +242,19 @@ export default function AdminTeamsPage() {
                 body: JSON.stringify({
                     supervisor_id: selectedDoctor.id,
                     footer_text: teamFooterText,
+                    logo_url: teamLogoUrl,
                 })
             })
             const result = await res.json()
             if (!res.ok) {
-                alert("Takım PDF metni kaydedilemedi: " + (result?.error || "Bilinmeyen hata"))
+                setTeamBrandingError("Takim markasi kaydedilemedi: " + (result?.error || "Bilinmeyen hata"))
                 return
             }
             setTeamFooterText(result?.footerText || "")
+            setTeamLogoUrl(result?.logoUrl || null)
+            setTeamBrandingSuccess("Takim metni ve logosu kaydedildi.")
         } catch (error: any) {
-            alert("Takım PDF metni kaydedilemedi: " + (error?.message || "Bilinmeyen hata"))
+            setTeamBrandingError("Takim markasi kaydedilemedi: " + (error?.message || "Bilinmeyen hata"))
         } finally {
             setTeamFooterSaving(false)
         }
@@ -396,6 +480,19 @@ export default function AdminTeamsPage() {
             {selectedDoctor && (
                 <Card className="shrink-0 bg-white shadow-sm border">
                     <CardContent className="pt-5 pb-4">
+                        <div className="space-y-3">
+                            {teamBrandingError && (
+                                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                                    {teamBrandingError}
+                                </div>
+                            )}
+                            {teamBrandingSuccess && (
+                                <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                                    {teamBrandingSuccess}
+                                </div>
+                            )}
+                        </div>
+
                         <div className="grid gap-3 md:grid-cols-[1fr_auto] md:items-end">
                             <div className="space-y-2">
                                 <Label htmlFor="team-footer-text">Takım PDF Metni (Oncelik 1)</Label>
@@ -409,10 +506,61 @@ export default function AdminTeamsPage() {
                                     PDF'te logo altinda metin onceligi: Takim &gt; Doktor &gt; Diyetisyen.
                                 </p>
                             </div>
-                            <Button onClick={saveTeamBranding} disabled={teamFooterSaving} className="gap-2">
-                                <Save className="h-4 w-4" />
+                            <Button onClick={saveTeamBranding} disabled={teamFooterSaving || teamLogoUploading} className="gap-2">
+                                {teamFooterSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                                 {teamFooterSaving ? "Kaydediliyor..." : "Takim Metnini Kaydet"}
                             </Button>
+                        </div>
+
+                        <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4">
+                            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                                <div className="space-y-1">
+                                    <p className="text-sm font-medium text-slate-700">Takim PDF Logosu (Oncelik 1)</p>
+                                    <p className="text-xs text-slate-500">Logo onceligi: Takim &gt; Doktor &gt; Diyetisyen &gt; Sistem logosu.</p>
+                                </div>
+                                <Label
+                                    htmlFor="team-logo-upload"
+                                    className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                                >
+                                    {teamLogoUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                                    Logo Sec
+                                </Label>
+                            </div>
+                            <Input
+                                id="team-logo-upload"
+                                type="file"
+                                accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                                className="hidden"
+                                onChange={(e) => handleUploadTeamLogo(e.target.files?.[0] || null)}
+                            />
+                        </div>
+
+                        <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+                            {teamLogoUrl ? (
+                                <div className="space-y-3">
+                                    <div className="flex min-h-28 items-center justify-center rounded-xl bg-slate-50 p-4">
+                                        <img src={teamLogoUrl} alt="Takim logosu" className="max-h-24 max-w-full object-contain" />
+                                    </div>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        className="gap-2 text-red-600 hover:text-red-700"
+                                        onClick={() => {
+                                            setTeamLogoUrl(null)
+                                            setTeamBrandingSuccess("Takim logosu kaldirildi. Kaydet dediginizde islenecek.")
+                                            setTeamBrandingError(null)
+                                        }}
+                                    >
+                                        <Trash2 className="h-4 w-4" />
+                                        Logoyu Kaldir
+                                    </Button>
+                                </div>
+                            ) : (
+                                <div className="flex min-h-28 flex-col items-center justify-center gap-2 rounded-xl bg-slate-50 text-slate-500">
+                                    <ImageIcon className="h-7 w-7" />
+                                    <p className="text-sm">Henuz yuklenmis takim logosu yok.</p>
+                                </div>
+                            )}
                         </div>
                     </CardContent>
                 </Card>

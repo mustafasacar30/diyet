@@ -16,7 +16,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Check, AlertCircle, Loader2, Settings, Trash2, Plus, FileSpreadsheet, Search, Key, LogIn, FileText } from 'lucide-react'
+import { Check, AlertCircle, Loader2, Settings, Trash2, Plus, FileSpreadsheet, Search, Key, LogIn, FileText, Download, Ban, Copy } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useGapi } from '@/hooks/use-gapi'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -70,6 +70,15 @@ export interface ParsedFood {
     matchConfidence?: number // 0-1
     portionMultiplier?: number
     status: 'matched' | 'unknown' | 'created'
+}
+
+interface IgnoreHistoryItem {
+    ruleId?: string
+    pattern: string
+    dayIdx: number
+    mealIdx: number
+    foodIdx: number
+    food: ParsedFood
 }
 
 type RuleType = 'replace' | 'ignore' | 'header' | 'food'
@@ -220,6 +229,7 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
     const [selectedFile, setSelectedFile] = useState<any>(null)
     const [sheetTabs, setSheetTabs] = useState<string[]>([])
     const [selectedTab, setSelectedTab] = useState('')
+    const [selectedTabs, setSelectedTabs] = useState<string[]>([])
     const [configOpen, setConfigOpen] = useState(false)
     const [autoImportStatus, setAutoImportStatus] = useState<string>('')
     const [pendingAutoImport, setPendingAutoImport] = useState(false)
@@ -240,6 +250,8 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
     const [detectedWeekTabs, setDetectedWeekTabs] = useState<{ tabName: string, weekNumber: number }[]>([])
     const [localFoods, setLocalFoods] = useState<any[]>(allFoods || [])
     const [importMode, setImportMode] = useState<'append' | 'replace'>('replace')
+    const [loadedTabNames, setLoadedTabNames] = useState<string[]>([])
+    const [ignoreHistory, setIgnoreHistory] = useState<IgnoreHistoryItem[]>([])
 
     // --- UTILITIES ---
     function findBestMatch(text: string) {
@@ -281,6 +293,17 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
         return best ? { id: best.id, score: bestScore } : null
     }
 
+    function getFoodsForParsing() {
+        const hasMacroColumns = (arr: any[]) =>
+            Array.isArray(arr) && arr.some(f =>
+                ['calories', 'carbs', 'protein', 'fat'].some(k => typeof f?.[k] === 'number')
+            )
+
+        if (hasMacroColumns(localFoods)) return localFoods
+        if (hasMacroColumns(allFoods || [])) return allFoods || []
+        return localFoods?.length ? localFoods : (allFoods || [])
+    }
+
     // Sync prop to local state
     useEffect(() => {
         if (allFoods) setLocalFoods(allFoods)
@@ -319,6 +342,209 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
         return null
     }
 
+    function toggleTabSelection(tab: string) {
+        setSelectedTabs(prev => prev.includes(tab) ? prev.filter(t => t !== tab) : [...prev, tab])
+    }
+
+    function downloadFile(filename: string, content: string, mimeType: string) {
+        const blob = new Blob([content], { type: mimeType })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = filename
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+    }
+
+    function handleExportTxt() {
+        if (!text.trim()) return
+        const now = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')
+        downloadFile(`program-import-${now}.txt`, text, 'text/plain;charset=utf-8')
+    }
+
+    function handleExportJson() {
+        const payload = {
+            exportedAt: new Date().toISOString(),
+            source: activeTab === 'google' ? 'google_sheets' : 'text',
+            fileName: selectedFile?.name || null,
+            tabs: loadedTabNames,
+            parsedDays,
+            bulkImportData,
+            rawText: text,
+        }
+        const now = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')
+        downloadFile(`program-import-${now}.json`, JSON.stringify(payload, null, 2), 'application/json;charset=utf-8')
+    }
+
+    function csvEscape(value: any) {
+        const str = String(value ?? '')
+        if (/[",\n]/.test(str)) return `"${str.replace(/"/g, '""')}"`
+        return str
+    }
+
+    function buildCsvFromRawText(rawText: string) {
+        const rows = rawText
+            .split(/\r?\n/)
+            .filter(line => line.trim().length > 0)
+            .map(line => line.split('\t'))
+
+        if (rows.length === 0) return ''
+
+        const maxCols = Math.max(1, ...rows.map(r => r.length))
+        const header = Array.from({ length: maxCols }, (_, i) => `col_${i + 1}`)
+        const csvRows = [header, ...rows]
+        return csvRows
+            .map(row => {
+                const normalized = [...row]
+                while (normalized.length < maxCols) normalized.push('')
+                return normalized.map(csvEscape).join(',')
+            })
+            .join('\n')
+    }
+
+    function buildPlainTextFromParsedDays(days: ParsedDay[]) {
+        const lines: string[] = []
+        lines.push('Makro sirasi: Kalori | Karb | Prot | Yag')
+        lines.push('')
+
+        for (const day of days) {
+            lines.push(day.dayName)
+            for (const meal of day.meals) {
+                lines.push(`  ${meal.mealName}`)
+                for (const food of meal.foods) {
+                    const label = food.originalText || food.foodName
+                    lines.push(`    - ${label} | ${food.calories} ${food.carbs} ${food.protein} ${food.fat}`)
+                }
+            }
+            lines.push('')
+        }
+        return lines.join('\n').trim()
+    }
+
+    function buildCsvFromParsedDays(days: ParsedDay[]) {
+        const header = ['day', 'meal', 'food', 'calories', 'carbs', 'protein', 'fat', 'status', 'matched_food', 'original_text']
+        const rows: string[][] = [header]
+
+        for (const day of days) {
+            for (const meal of day.meals) {
+                for (const food of meal.foods) {
+                    rows.push([
+                        day.dayName,
+                        meal.mealName,
+                        food.foodName || food.originalText || '',
+                        String(food.calories ?? 0),
+                        String(food.carbs ?? 0),
+                        String(food.protein ?? 0),
+                        String(food.fat ?? 0),
+                        food.status,
+                        food.matchedFoodId ? (localFoods.find(f => f.id === food.matchedFoodId)?.name || '') : '',
+                        food.originalText || '',
+                    ])
+                }
+            }
+        }
+
+        return rows.map(row => row.map(csvEscape).join(',')).join('\n')
+    }
+
+    function buildPlainTextFromBulkImportData() {
+        const lines: string[] = []
+        lines.push('Makro sirasi: Kalori | Karb | Prot | Yag')
+        lines.push('')
+        for (const week of bulkImportData) {
+            lines.push(`### HAFTA ${week.weekNumber} | ${week.tabName} | ${week.startDate} - ${week.endDate} ###`)
+            for (const day of week.days) {
+                lines.push(day.dayName)
+                for (const meal of day.meals) {
+                    lines.push(`  ${meal.mealName}`)
+                    for (const food of meal.foods) {
+                        const label = food.originalText || food.foodName
+                        lines.push(`    - ${label} | ${food.calories} ${food.carbs} ${food.protein} ${food.fat}`)
+                    }
+                }
+            }
+            lines.push('')
+        }
+        return lines.join('\n').trim()
+    }
+
+    function buildCsvFromBulkImportData() {
+        const header = ['week_no', 'tab_name', 'start_date', 'end_date', 'day', 'meal', 'food', 'calories', 'carbs', 'protein', 'fat']
+        const rows: string[][] = [header]
+
+        for (const week of bulkImportData) {
+            for (const day of week.days) {
+                for (const meal of day.meals) {
+                    for (const food of meal.foods) {
+                        rows.push([
+                            String(week.weekNumber),
+                            week.tabName,
+                            week.startDate,
+                            week.endDate,
+                            day.dayName,
+                            meal.mealName,
+                            food.foodName || food.originalText || '',
+                            String(food.calories ?? 0),
+                            String(food.carbs ?? 0),
+                            String(food.protein ?? 0),
+                            String(food.fat ?? 0),
+                        ])
+                    }
+                }
+            }
+        }
+
+        return rows.map(row => row.map(csvEscape).join(',')).join('\n')
+    }
+
+    function getCopyAllContent() {
+        if (step === 'review' && parsedDays.length > 0) return buildPlainTextFromParsedDays(parsedDays)
+        if (step === 'bulk-review' && bulkImportData.length > 0) return buildPlainTextFromBulkImportData()
+        return text
+    }
+
+    function getCopyCsvContent() {
+        if (step === 'review' && parsedDays.length > 0) return buildCsvFromParsedDays(parsedDays)
+        if (step === 'bulk-review' && bulkImportData.length > 0) return buildCsvFromBulkImportData()
+        return buildCsvFromRawText(text)
+    }
+
+    async function copyToClipboard(content: string, label: string) {
+        if (!content.trim()) {
+            alert('Kopyalanacak icerik yok.')
+            return
+        }
+
+        try {
+            if (navigator.clipboard?.writeText) {
+                await navigator.clipboard.writeText(content)
+            } else {
+                const ta = document.createElement('textarea')
+                ta.value = content
+                ta.style.position = 'fixed'
+                ta.style.opacity = '0'
+                document.body.appendChild(ta)
+                ta.focus()
+                ta.select()
+                document.execCommand('copy')
+                document.body.removeChild(ta)
+            }
+            alert(`${label} panoya kopyalandi.`)
+        } catch (err: any) {
+            alert(`Kopyalama basarisiz: ${err?.message || 'Bilinmeyen hata'}`)
+        }
+    }
+
+    async function handleCopyAll() {
+        await copyToClipboard(getCopyAllContent(), 'Tum icerik')
+    }
+
+    async function handleCopyCsv() {
+        await copyToClipboard(getCopyCsvContent(), 'CSV icerik')
+    }
+
 
 
     // Effect to continue auto-import after login
@@ -352,7 +578,11 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
     }
 
     async function fetchFoods() {
-        const { data } = await supabase.from('foods').select('id, name').order('created_at', { ascending: false }).limit(10000)
+        const { data } = await supabase
+            .from('foods')
+            .select('id, name, calories, carbs, protein, fat')
+            .order('created_at', { ascending: false })
+            .limit(10000)
         if (data) setLocalFoods(data)
     }
 
@@ -360,6 +590,87 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
         if (!parsedDays.length) return
         await onImport(parsedDays, importMode)
         onClose()
+    }
+
+    async function markFoodAsNotFood(dayIdx: number, mealIdx: number, foodIdx: number) {
+        const target = parsedDays[dayIdx]?.meals?.[mealIdx]?.foods?.[foodIdx]
+        if (!target) return
+
+        const pattern = (target.originalText || target.foodName || '').trim()
+        if (!pattern) return
+
+        const normalizedPattern = pattern.slice(0, 240)
+        const { data: insertedRule, error } = await supabase
+            .from('import_rules')
+            .insert({
+            rule_type: 'ignore',
+            pattern: normalizedPattern,
+            replacement: null
+            })
+            .select('id')
+            .single()
+
+        if (error && !String(error.message || '').toLowerCase().includes('duplicate')) {
+            alert('Kural kaydedilemedi: ' + error.message)
+            return
+        }
+
+        setParsedDays(prev => prev.map((day, d) => {
+            if (d !== dayIdx) return day
+            return {
+                ...day,
+                meals: day.meals.map((meal, m) => {
+                    if (m !== mealIdx) return meal
+                    return { ...meal, foods: meal.foods.filter((_, f) => f !== foodIdx) }
+                })
+            }
+        }))
+        setIgnoreHistory(prev => [
+            ...prev,
+            {
+                ruleId: insertedRule?.id,
+                pattern: normalizedPattern,
+                dayIdx,
+                mealIdx,
+                foodIdx,
+                food: target,
+            },
+        ])
+        fetchRules()
+    }
+
+    async function undoLastIgnoredFood() {
+        const last = ignoreHistory[ignoreHistory.length - 1]
+        if (!last) return
+
+        if (last.ruleId) {
+            const { error } = await supabase.from('import_rules').delete().eq('id', last.ruleId)
+            if (error) {
+                alert('Kural geri alınamadı: ' + error.message)
+                return
+            }
+        } else {
+            alert('Satır önizlemeye geri alındı. Kalıcı ignore kuralı varsa "Ayrıştırma Kuralları" ekranından silebilirsiniz.')
+        }
+
+        setParsedDays(prev =>
+            prev.map((day, dIdx) => {
+                if (dIdx !== last.dayIdx) return day
+                return {
+                    ...day,
+                    meals: day.meals.map((meal, mIdx) => {
+                        if (mIdx !== last.mealIdx) return meal
+                        const foods = [...meal.foods]
+                        const insertAt = Math.min(last.foodIdx, foods.length)
+                        foods.splice(insertAt, 0, last.food)
+                        return { ...meal, foods }
+                    }),
+                }
+            })
+        )
+
+        setIgnoreHistory(prev => prev.slice(0, -1))
+        fetchRules()
     }
 
     function saveKeys() {
@@ -370,10 +681,25 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
         setConfigOpen(false)
     }
 
+    function buildSheetRange(tabName: string) {
+        const escapedTabName = tabName.replace(/'/g, "''")
+        return `'${escapedTabName}'!A:E`
+    }
+
     async function searchDrive() {
         if (!gapi || !searchQuery) return
+
         setIsProcessing(true)
         try {
+            setFoundFiles([])
+            setSelectedFile(null)
+            setSheetTabs([])
+            setSelectedTab('')
+            setSelectedTabs([])
+            setDetectedWeekTabs([])
+            setLoadedTabNames([])
+            setAutoImportStatus('')
+
             const q = `name contains '${searchQuery.replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`
             const response = await gapi.client.drive.files.list({
                 q: q,
@@ -392,6 +718,9 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
         setIsProcessing(true)
         setSheetTabs([])
         setSelectedTab('')
+        setSelectedTabs([])
+        setDetectedWeekTabs([])
+        setLoadedTabNames([])
         try {
             const response = await gapi.client.sheets.spreadsheets.get({
                 spreadsheetId: file.id,
@@ -399,9 +728,12 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
             })
             const tabs = response.result.sheets?.map((s: any) => s.properties.title) || []
             setSheetTabs(tabs)
+            setDetectedWeekTabs(detectWeekTabs(tabs))
             if (tabs.length > 0) {
                 const firstTab = tabs[0]
                 setSelectedTab(firstTab)
+                setSelectedTabs([firstTab])
+                setLoadedTabNames([firstTab])
                 // Auto-fetch preview content for the first tab
                 await fetchTabContent(file.id, firstTab)
             }
@@ -415,7 +747,7 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
         if (!selectedFile || !selectedTab) return
         setIsProcessing(true)
         try {
-            const range = `${selectedTab}!A:E`
+            const range = buildSheetRange(selectedTab)
             const response = await gapi.client.sheets.spreadsheets.values.get({
                 spreadsheetId: selectedFile.id,
                 range: range
@@ -502,6 +834,14 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
             return
         }
 
+        setFoundFiles([])
+        setSelectedFile(null)
+        setSheetTabs([])
+        setSelectedTab('')
+        setSelectedTabs([])
+        setDetectedWeekTabs([])
+        setLoadedTabNames([])
+
         // 4. Search Drive
         setAutoImportStatus(`"${patientName}" Drive'da aranıyor...`)
         try {
@@ -558,6 +898,7 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
             }
 
             setSelectedTab(matchedTab || '')
+            setSelectedTabs(matchedTab ? [matchedTab] : [])
 
             // If multiple week tabs found, show selection UI instead of auto-importing
             if (weekTabs.length > 1) {
@@ -603,7 +944,7 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
         setIsProcessing(true)
 
         try {
-            const range = `${tabName}!A:E`
+            const range = buildSheetRange(tabName)
             const dataResponse = await gapi.client.sheets.spreadsheets.values.get({
                 spreadsheetId: fileId,
                 range: range
@@ -630,9 +971,10 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
 
             const combinedText = lines.join('\n')
             setText(combinedText)
+            setLoadedTabNames([tabName])
             
             // Parse and align
-            const rawParsed = parseTextToDays(combinedText, allFoods)
+            const rawParsed = parseTextToDays(combinedText, getFoodsForParsing())
             const alignedParsed = getMondayAlignedDays(rawParsed)
             setParsedDays(alignedParsed)
 
@@ -648,25 +990,116 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
     async function handleManualTabChange(newTab: string) {
         if (!selectedFile || !gapi) return
         setSelectedTab(newTab)
+        setSelectedTabs([newTab])
         await fetchTabContent(selectedFile.id, newTab)
     }
 
+    async function fetchMultipleTabsContent(fileId: string, tabNames: string[], goToPreview: boolean) {
+        if (!gapi || tabNames.length === 0) return
+        setIsProcessing(true)
+        setAutoImportStatus(`Secili tablar cekiliyor... (0/${tabNames.length})`)
+
+        try {
+            const allBlocks: string[] = []
+            const loadedTabs: string[] = []
+            let failedTabs = 0
+
+            for (let i = 0; i < tabNames.length; i++) {
+                const tabName = tabNames[i]
+                setAutoImportStatus(`"${tabName}" cekiliyor... (${i + 1}/${tabNames.length})`)
+                try {
+                    const range = buildSheetRange(tabName)
+                    const dataResponse = await gapi.client.sheets.spreadsheets.values.get({
+                        spreadsheetId: fileId,
+                        range
+                    })
+
+                    const rows = dataResponse.result.values
+                    if (!rows || rows.length === 0) continue
+
+                    const lines: string[] = []
+                    for (const row of rows) {
+                        if (row && row.length > 0) {
+                            const hasContent = row.some((c: any) => c !== null && c !== undefined && String(c).trim() !== '')
+                            if (hasContent) {
+                                const paddedRow = [...row]
+                                while (paddedRow.length < 5) paddedRow.push('')
+                                lines.push(paddedRow.map((c: any) => String(c ?? '').trim()).join('\t'))
+                            }
+                        }
+                    }
+
+                    if (lines.length > 0) {
+                        allBlocks.push(`### TAB: ${tabName} ###`)
+                        allBlocks.push(...lines)
+                        allBlocks.push('')
+                        loadedTabs.push(tabName)
+                    }
+                } catch (err) {
+                    failedTabs += 1
+                    console.warn(`Tab "${tabName}" okunamadi, atlandi.`, err)
+                }
+            }
+
+            const combinedText = allBlocks.join('\n').trim()
+            setText(combinedText)
+            setLoadedTabNames(loadedTabs.length > 0 ? loadedTabs : tabNames)
+            setActiveTab('text')
+
+            if (goToPreview) {
+                parseText(combinedText)
+            }
+
+            if (failedTabs > 0) {
+                setAutoImportStatus(`${failedTabs} tab okunamadi, digerleri yuklendi.`)
+            } else {
+                setAutoImportStatus('')
+            }
+        } catch (err: any) {
+            setAutoImportStatus('Veri cekme hatasi: ' + (err.result?.error?.message || err.message))
+        } finally {
+            setIsProcessing(false)
+        }
+    }
+
+    const inferWeekNumberFromTabName = (tabName: string, fallbackIndex: number) => {
+        const m = tabName.match(/(\d+)\.?\s*hafta/i) || tabName.match(/hafta\s*(\d+)/i)
+        if (m?.[1]) return parseInt(m[1], 10)
+        return fallbackIndex + 1
+    }
+
+    const buildSelectedTabTargets = () => {
+        const targets = selectedTabs.map((tabName, idx) => ({
+            tabName,
+            weekNumber: inferWeekNumberFromTabName(tabName, idx),
+        }))
+        return targets.sort((a, b) => a.weekNumber - b.weekNumber)
+    }
+
     // --- BULK IMPORT ALL WEEKS ---
-    async function handleBulkImportAllWeeks() {
-        if (!selectedFile || !gapi || detectedWeekTabs.length === 0) {
+    async function handleBulkImportAllWeeks(targetWeekTabs = detectedWeekTabs) {
+        if (!selectedFile || !gapi || targetWeekTabs.length === 0) {
             setAutoImportStatus('Dosya veya hafta tabları eksik.')
+            return
+        }
+
+        const availableTabNames = new Set(sheetTabs)
+        const effectiveTargets = targetWeekTabs.filter(t => availableTabNames.has(t.tabName))
+        if (effectiveTargets.length === 0) {
+            setAutoImportStatus('Secilen dosyada uygun tab bulunamadi.')
             return
         }
 
         setIsProcessing(true)
         const allWeekData: { weekNumber: number, tabName: string, startDate: string, endDate: string, days: ParsedDay[] }[] = []
+        const allBlocks: string[] = []
 
-        for (let i = 0; i < detectedWeekTabs.length; i++) {
-            const weekTab = detectedWeekTabs[i]
-            setAutoImportStatus(`${weekTab.tabName} çekiliyor... (${i + 1}/${detectedWeekTabs.length})`)
+        for (let i = 0; i < effectiveTargets.length; i++) {
+            const weekTab = effectiveTargets[i]
+            setAutoImportStatus(`${weekTab.tabName} çekiliyor... (${i + 1}/${effectiveTargets.length})`)
 
             try {
-                const range = `${weekTab.tabName}!A:E`
+                const range = buildSheetRange(weekTab.tabName)
                 const dataResponse = await gapi.client.sheets.spreadsheets.values.get({
                     spreadsheetId: selectedFile.id,
                     range: range
@@ -698,9 +1131,14 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
                 }
 
                 const combinedText = lines.join('\n')
+                if (combinedText.trim()) {
+                    allBlocks.push(`### TAB: ${weekTab.tabName} ###`)
+                    allBlocks.push(combinedText)
+                    allBlocks.push('')
+                }
 
                 // Parse this week's data - use internal parsing logic
-                const rawParsed = parseTextToDays(combinedText, allFoods)
+                const rawParsed = parseTextToDays(combinedText, getFoodsForParsing())
                 const alignedParsed = getMondayAlignedDays(rawParsed)
                 
                 // Initial dates (will be adjusted in review step)
@@ -721,6 +1159,11 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
             }
         }
 
+        if (allBlocks.length > 0) {
+            setText(allBlocks.join('\n').trim())
+            setLoadedTabNames(effectiveTargets.map(w => w.tabName))
+        }
+
         if (allWeekData.length > 0) {
             setBulkImportData(allWeekData)
             // Set base date to today's Monday or existing week 1 start if possible
@@ -736,6 +1179,15 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
         }
 
         setIsProcessing(false)
+    }
+
+    async function handleBulkImportSelectedWeeks() {
+        const selectedTabTargets = buildSelectedTabTargets()
+        if (selectedTabTargets.length === 0) {
+            setAutoImportStatus('Önce tablardan seçim yapın.')
+            return
+        }
+        await handleBulkImportAllWeeks(selectedTabTargets)
     }
 
     const updateBulkDates = (newBaseDate: string) => {
@@ -811,39 +1263,96 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
         }
     }
 
+    function splitByTabMarkers(inputText: string): { tabName: string; text: string }[] {
+        const lines = inputText.split('\n')
+        const blocks: { tabName: string; lines: string[] }[] = []
+        let current: { tabName: string; lines: string[] } | null = null
+        const markerRegex = /^###\s*TAB:\s*(.+?)\s*###$/i
+
+        for (const rawLine of lines) {
+            const line = rawLine.trim()
+            const match = line.match(markerRegex)
+            if (match) {
+                if (current && current.lines.length > 0) blocks.push(current)
+                current = { tabName: match[1], lines: [] }
+                continue
+            }
+            if (!current) current = { tabName: 'Tek Tab', lines: [] }
+            current.lines.push(rawLine)
+        }
+        if (current && current.lines.length > 0) blocks.push(current)
+
+        return blocks
+            .map(b => ({ tabName: b.tabName, text: b.lines.join('\n').trim() }))
+            .filter(b => b.text.length > 0)
+    }
+
     // Helper to parse text into preview
     function parseText(inputText: string) {
-        const rawDays = parseTextToDays(inputText, localFoods)
-        const alignedDays = getMondayAlignedDays(rawDays)
-        setParsedDays(alignedDays)
+        const tabBlocks = splitByTabMarkers(inputText)
+
+        if (tabBlocks.length <= 1) {
+            const rawDays = parseTextToDays(inputText, getFoodsForParsing())
+            const alignedDays = getMondayAlignedDays(rawDays)
+            setParsedDays(alignedDays)
+            setStep('review')
+            return
+        }
+
+        const combinedDays: ParsedDay[] = []
+        for (const block of tabBlocks) {
+            const rawDays = parseTextToDays(block.text, getFoodsForParsing())
+            const alignedDays = getMondayAlignedDays(rawDays)
+            if (alignedDays.length > 0) {
+                alignedDays[0] = {
+                    ...alignedDays[0],
+                    dayName: `[${block.tabName}] ${alignedDays[0].dayName}`
+                }
+            }
+            combinedDays.push(...alignedDays)
+        }
+        setParsedDays(combinedDays)
         setStep('review')
     }
 
     // --- DETECT ALL WEEK TABS ---
     function detectWeekTabs(tabs: string[]): { tabName: string, weekNumber: number }[] {
-        const weekTabs: { tabName: string, weekNumber: number }[] = []
-        // Stricter pattern: Only match "X. hafta" or "Hafta X". Exclude "pdf" etc.
-        const weekPattern = /^(\d+)\.?\s*hafta$|^hafta\s*(\d+)$/i
+        const weekMap = new Map<number, { tabName: string, weekNumber: number }>()
 
         for (const tab of tabs) {
-            const trimmedTab = tab.trim()
-            const match = trimmedTab.match(weekPattern)
-            if (match) {
-                weekTabs.push({
-                    tabName: tab,
-                    weekNumber: parseInt(match[1] || match[2], 10)
-                })
+            const trimmed = tab.trim()
+            const numberMatch = trimmed.match(/(\d+)\.?\s*hafta/i) || trimmed.match(/hafta\s*(\d+)/i)
+            if (!numberMatch?.[1]) continue
+
+            const weekNumber = parseInt(numberMatch[1], 10)
+            if (!Number.isFinite(weekNumber)) continue
+
+            const current = weekMap.get(weekNumber)
+            const isPdf = /pdf/i.test(trimmed)
+            const currentIsPdf = current ? /pdf/i.test(current.tabName) : false
+
+            if (!current || (isPdf && !currentIsPdf)) {
+                weekMap.set(weekNumber, { tabName: tab, weekNumber })
             }
         }
 
-        // Sort by week number
-        weekTabs.sort((a, b) => a.weekNumber - b.weekNumber)
-        return weekTabs
+        return Array.from(weekMap.values()).sort((a, b) => a.weekNumber - b.weekNumber)
     }
 
     // New helper for bulk import parsing
-    function parseTextToDays(inputText: string, allFoods: any[]): ParsedDay[] {
+    function parseTextToDays(inputText: string, foodsDb: any[]): ParsedDay[] {
         const result: ParsedDay[] = []
+        const extractTrailingMacros = (line: string): { calories: number; carbs: number; protein: number; fat: number } | null => {
+            const m = line.match(/(\d+(?:[.,]\d+)?)\s+(\d+(?:[.,]\d+)?)\s+(\d+(?:[.,]\d+)?)\s+(\d+(?:[.,]\d+)?)\s*$/)
+            if (!m) return null
+            const n = (v: string) => parseFloat(String(v).replace(',', '.')) || 0
+            return {
+                calories: n(m[1]),
+                carbs: n(m[2]),
+                protein: n(m[3]),
+                fat: n(m[4]),
+            }
+        }
 
         // DEBUG LOGGING
         console.log('--- PARSER START ---')
@@ -852,6 +1361,30 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
         // Reordered to prevent "CUMA" matching inside "CUMARTESİ"
         const dayNames = ['PAZARTESİ', 'SALI', 'ÇARŞAMBA', 'PERŞEMBE', 'CUMARTESİ', 'CUMA', 'PAZAR']
         const mealHeaders = ['KAHVALTI', 'ÖĞLE', 'ÖĞLEN', 'AKŞAM', 'ARA ÖĞÜN', 'KUŞLUK', 'GEÇ GECE']
+
+        const dayPatterns: { canonical: string; variants: string[] }[] = [
+            { canonical: 'PAZARTESİ', variants: ['PAZARTESI', 'PAZARTESİ'] },
+            { canonical: 'SALI', variants: ['SALI'] },
+            { canonical: 'ÇARŞAMBA', variants: ['CARSAMBA', 'ÇARŞAMBA'] },
+            { canonical: 'PERŞEMBE', variants: ['PERSEMBE', 'PERŞEMBE'] },
+            { canonical: 'CUMARTESİ', variants: ['CUMARTESI', 'CUMARTESİ'] },
+            { canonical: 'CUMA', variants: ['CUMA'] },
+            { canonical: 'PAZAR', variants: ['PAZAR'] },
+        ]
+        const mealPatterns: { canonical: string; variants: string[] }[] = [
+            { canonical: 'KAHVALTI', variants: ['KAHVALTI'] },
+            { canonical: 'ÖĞLEN', variants: ['OGLE', 'ÖĞLE', 'ÖĞLEN'] },
+            { canonical: 'AKŞAM', variants: ['AKSAM', 'AKŞAM'] },
+            { canonical: 'ARA ÖĞÜN', variants: ['ARA OGUN', 'ARA ÖĞÜN'] },
+            { canonical: 'KUŞLUK', variants: ['KUSLUK', 'KUŞLUK'] },
+            { canonical: 'GEÇ GECE', variants: ['GEC GECE', 'GEÇ GECE'] },
+        ]
+        const normalizeForMatch = (s: string) => s
+            .toLocaleUpperCase('tr-TR')
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/İ/g, 'I')
+            .replace(/İ/g, 'I')
 
         let currentDay: ParsedDay | null = null
         let currentMeal: ParsedMeal | null = null
@@ -883,6 +1416,9 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
                 cleanLine.match(/^\d+\s*\(x\)/i) || // "1032 (x)"
                 cleanLine.match(/kcal$/i) || // Ends with kcal
                 cleanLine.match(/^toplam/i) || // Starts with Toplam
+                cleanLine.match(/^#{2,}\s*tab:/i) || // Combined tab separators
+                cleanLine.match(/^\[tab:/i) || // Combined tab separators
+                cleanLine.match(/^tab:\s*/i) || // Combined tab separators
                 cleanLine.match(/^\(x\)$/i) || // Just (x)
                 cleanLine.match(/^[\d\s\t.,]+$/) || // Only digits/spaces/tabs (daily totals like "983\t13\t55\t79")
                 // cleanLine.match(/^\t/) || // REMOVED: Starts with tab check prevented indented lines
@@ -896,9 +1432,14 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
             }
 
             const upperLine = cleanLine.toLocaleUpperCase('tr-TR')
+            const normalizedLine = normalizeForMatch(cleanLine)
 
             // Check day (Relaxed Match)
-            const matchedDay = dayNames.find(d => upperLine.includes(d))
+            const matchedDay =
+                dayPatterns.find(d =>
+                    d.variants.some(v => normalizedLine.includes(normalizeForMatch(v)))
+                )?.canonical ||
+                dayNames.find(d => upperLine.includes(d))
             if (matchedDay) {
                 console.log(`-> Day MATCHED: ${matchedDay} in "${upperLine}"`)
                 if (currentDay) result.push(currentDay)
@@ -908,10 +1449,18 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
             }
 
             // Check meal header (Relaxed Match for Tab/Spaces)
-            const matchedMeal = mealHeaders.find(m => {
-                const pattern = new RegExp(`^${m}([:\\s\\t]|$)`, 'i');
-                return pattern.test(upperLine);
-            });
+            const matchedMeal =
+                mealPatterns.find(m =>
+                    m.variants.some(v => {
+                        const nv = normalizeForMatch(v)
+                        const pattern = new RegExp(`^${nv}([:\\s\\t]|$)`, 'i')
+                        return pattern.test(normalizedLine)
+                    })
+                )?.canonical ||
+                mealHeaders.find(m => {
+                    const pattern = new RegExp(`^${m}([:\\s\\t]|$)`, 'i')
+                    return pattern.test(upperLine)
+                })
             if (matchedMeal && currentDay) {
                 let finalMealName = matchedMeal
                 if (finalMealName === 'ÖĞLE') finalMealName = 'ÖĞLEN'
@@ -957,13 +1506,18 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
                 // Google Sheets sırası: Kalori > Karbonhidrat > Protein > Yağ
                 if (parts.length >= nameIndex + 2) {
                     // Sütunları tara - Name [nameIndex], Cal [nameIndex+1], Carbs [nameIndex+2], Protein [nameIndex+3], Fat [nameIndex+4]
-                    const cal = cleanNum(parts[nameIndex + 1])
-                    const carb = parts.length >= nameIndex + 3 ? cleanNum(parts[nameIndex + 2]) : 0
-                    const prot = parts.length >= nameIndex + 4 ? cleanNum(parts[nameIndex + 3]) : 0
-                    const fat = parts.length >= nameIndex + 5 ? cleanNum(parts[nameIndex + 4]) : 0
+                    const calRaw = String(parts[nameIndex + 1] ?? '').trim()
+                    const carbRaw = parts.length >= nameIndex + 3 ? String(parts[nameIndex + 2] ?? '').trim() : ''
+                    const protRaw = parts.length >= nameIndex + 4 ? String(parts[nameIndex + 3] ?? '').trim() : ''
+                    const fatRaw = parts.length >= nameIndex + 5 ? String(parts[nameIndex + 4] ?? '').trim() : ''
+                    const hasAnyMacroCell = calRaw.length > 0 || carbRaw.length > 0 || protRaw.length > 0 || fatRaw.length > 0
+                    const cal = cleanNum(calRaw)
+                    const carb = cleanNum(carbRaw)
+                    const prot = cleanNum(protRaw)
+                    const fat = cleanNum(fatRaw)
 
                     // En az kalori değeri varsa veya herhangi bir makro varsa
-                    if (cal > 0 || prot > 0 || carb > 0 || fat > 0) {
+                    if (hasAnyMacroCell || cal > 0 || prot > 0 || carb > 0 || fat > 0) {
                         lineCalories = cal
                         lineProtein = prot
                         lineCarbs = carb
@@ -972,42 +1526,44 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
                     }
                 }
 
-                // If no tab separation, try regex extraction for "406 1 33 30" pattern at end of line
+                // If no tab separation, try trailing macro extraction from line end
                 if (!hasLineValues) {
-                    // Pattern: matches 4 numbers at the end of string
-                    const macroMatch = cleanLine.match(/(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s*$/)
-                    if (macroMatch) {
-                        // Google Sheets sırası: Kalori > Karbonhidrat > Protein > Yağ
-                        lineCalories = parseInt(macroMatch[1])
-                        lineCarbs = parseInt(macroMatch[2])
-                        lineProtein = parseInt(macroMatch[3])
-                        lineFat = parseInt(macroMatch[4])
+                    const trailing = extractTrailingMacros(cleanLine)
+                    if (trailing) {
+                        lineCalories = trailing.calories
+                        lineCarbs = trailing.carbs
+                        lineProtein = trailing.protein
+                        lineFat = trailing.fat
                         hasLineValues = true
-                        // Remove macros from name
-                        // foodName = foodName.replace(macroMatch[0], '').trim() 
-                        // No, foodName is parts[0], which should be fine if split worked.
-                        // But if split didn't work (spaces), foodName is whole line.
-                        // So we should clean foodName.
-                        if (foodName === cleanLine) {
-                            // clean the food name
-                            const namePart = cleanLine.substring(0, macroMatch.index).trim()
-                            if (namePart.length > 1) { // valid name
-                                // We can't easily re-assign const foodName, so let's use the local scope
-                                // Actually const foodName is blocked scope.
-                                // Let's rely on logic below.
-                            }
-                        }
                     }
                 }
 
                 // Try to match with DB
                 const matchResult = findBestMatch(foodName)
+                const matchedFood = matchResult ? foodsDb.find(f => f.id === matchResult.id) : null
 
                 // Prioritize line values
-                const finalCalories = hasLineValues ? lineCalories : (matchResult ? (allFoods.find(f => f.id === matchResult.id)?.calories || 0) : 0)
-                const finalProtein = hasLineValues ? lineProtein : (matchResult ? (allFoods.find(f => f.id === matchResult.id)?.protein || 0) : 0)
-                const finalCarbs = hasLineValues ? lineCarbs : (matchResult ? (allFoods.find(f => f.id === matchResult.id)?.carbs || 0) : 0)
-                const finalFat = hasLineValues ? lineFat : (matchResult ? (allFoods.find(f => f.id === matchResult.id)?.fat || 0) : 0)
+                const calRaw = parts.length >= nameIndex + 2 ? String(parts[nameIndex + 1] ?? '').trim() : ''
+                const carbRaw = parts.length >= nameIndex + 3 ? String(parts[nameIndex + 2] ?? '').trim() : ''
+                const protRaw = parts.length >= nameIndex + 4 ? String(parts[nameIndex + 3] ?? '').trim() : ''
+                const fatRaw = parts.length >= nameIndex + 5 ? String(parts[nameIndex + 4] ?? '').trim() : ''
+                const hasCalCell = calRaw.length > 0
+                const hasCarbCell = carbRaw.length > 0
+                const hasProtCell = protRaw.length > 0
+                const hasFatCell = fatRaw.length > 0
+
+                const finalCalories = hasLineValues
+                    ? (hasCalCell ? lineCalories : (matchedFood?.calories || 0))
+                    : (matchedFood?.calories || 0)
+                const finalCarbs = hasLineValues
+                    ? (hasCarbCell ? lineCarbs : (matchedFood?.carbs || 0))
+                    : (matchedFood?.carbs || 0)
+                const finalProtein = hasLineValues
+                    ? (hasProtCell ? lineProtein : (matchedFood?.protein || 0))
+                    : (matchedFood?.protein || 0)
+                const finalFat = hasLineValues
+                    ? (hasFatCell ? lineFat : (matchedFood?.fat || 0))
+                    : (matchedFood?.fat || 0)
 
                 currentMeal.foods.push({
                     originalText: processedLine,
@@ -1076,7 +1632,53 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
                             <div className="h-full flex flex-col gap-2">
                                 <div className="flex justify-between items-center px-1">
                                     <Label>Yapıştırılacak Metin (Tablo)</Label>
-                                    <ImportRulesDialog rules={rules} onRulesChange={fetchRules} />
+	                                    <div className="flex items-center gap-2">
+	                                        <Button
+	                                            type="button"
+	                                            variant="outline"
+	                                            size="sm"
+	                                            className="h-8 text-xs gap-1"
+	                                            onClick={handleCopyAll}
+	                                            disabled={!text.trim()}
+	                                        >
+	                                            <Copy size={12} />
+	                                            Tumunu Kopyala
+	                                        </Button>
+	                                        <Button
+	                                            type="button"
+	                                            variant="outline"
+	                                            size="sm"
+	                                            className="h-8 text-xs gap-1"
+	                                            onClick={handleCopyCsv}
+	                                            disabled={!text.trim()}
+	                                        >
+	                                            <Copy size={12} />
+	                                            CSV Kopyala
+	                                        </Button>
+	                                        <Button
+	                                            type="button"
+	                                            variant="outline"
+	                                            size="sm"
+	                                            className="h-8 text-xs gap-1"
+	                                            onClick={handleExportTxt}
+	                                            disabled={!text.trim()}
+	                                        >
+	                                            <Download size={12} />
+	                                            TXT Export
+	                                        </Button>
+	                                        <Button
+	                                            type="button"
+	                                            variant="outline"
+	                                            size="sm"
+	                                            className="h-8 text-xs gap-1"
+	                                            onClick={handleExportJson}
+	                                            disabled={!text.trim() && parsedDays.length === 0}
+	                                        >
+	                                            <Download size={12} />
+	                                            JSON Export
+	                                        </Button>
+	                                        <ImportRulesDialog rules={rules} onRulesChange={fetchRules} />
+	                                    </div>
                                 </div>
                                 <Textarea
                                     className="flex-1 font-mono text-sm whitespace-pre"
@@ -1091,7 +1693,7 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
                                 <div className="bg-green-50 border border-green-100 p-4 rounded-lg space-y-3">
                                     <div className="flex items-center justify-between">
                                         <div className="flex items-center gap-2 text-green-800 font-semibold">
-                                            <FileSpreadsheet size={18} /> Google Sheets - {weekNumber}. Hafta
+                                            <FileSpreadsheet size={18} /> Google Sheets Import
                                         </div>
                                         <Button variant="ghost" size="sm" onClick={() => setConfigOpen(!configOpen)} className="text-green-700 h-8">
                                             <Key size={14} className="mr-1" /> Ayarlar
@@ -1136,29 +1738,54 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
                                             <div className="text-xs text-purple-600">
                                                 Bulunan: {detectedWeekTabs.map(t => t.tabName).join(', ')}
                                             </div>
-                                            <div className="flex gap-2">
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    className="border-purple-300 text-purple-700 hover:bg-purple-100"
+                                                    onClick={() => {
+                                                        const weekTabs = detectedWeekTabs.map(t => t.tabName)
+                                                        if (selectedFile && weekTabs.length > 0) {
+                                                            fetchMultipleTabsContent(selectedFile.id, weekTabs, false)
+                                                        }
+                                                    }}
+                                                >
+                                                    Tüm Haftaları Çek ({detectedWeekTabs.length})
+                                                </Button>
+                                                <Button
+                                                    size="sm"
+                                                    className="bg-purple-600 hover:bg-purple-700 text-white"
+                                                    onClick={() => {
+                                                        if (selectedFile && selectedTabs.length > 0) {
+                                                            fetchMultipleTabsContent(selectedFile.id, selectedTabs, false)
+                                                        } else {
+                                                            setAutoImportStatus('Önce tablardan seçim yapın.')
+                                                        }
+                                                    }}
+                                                >
+                                                    Seçili Tabları Çek ({selectedTabs.length})
+                                                </Button>
                                                 <Button
                                                     size="sm"
                                                     variant="outline"
                                                     className="flex-1 border-purple-300 text-purple-700 hover:bg-purple-100"
                                                     onClick={() => {
-                                                        setBulkMode('single')
-                                                        if (selectedTab && selectedFile) {
-                                                            fetchTabContent(selectedFile.id, selectedTab)
-                                                        }
-                                                    }}
-                                                >
-                                                    Sadece {weekNumber}. Hafta
-                                                </Button>
-                                                <Button
-                                                    size="sm"
-                                                    className="flex-1 bg-purple-600 hover:bg-purple-700 text-white"
-                                                    onClick={() => {
                                                         setBulkMode('all')
                                                         handleBulkImportAllWeeks()
                                                     }}
                                                 >
-                                                    Tüm Haftaları Çek ({detectedWeekTabs.length})
+                                                    Tüm Haftaları Tarihli İçe Aktar
+                                                </Button>
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    className="border-purple-300 text-purple-700 hover:bg-purple-100"
+                                                    onClick={() => {
+                                                        setBulkMode('all')
+                                                        handleBulkImportSelectedWeeks()
+                                                    }}
+                                                >
+                                                    Seçili Tabları Tarihli İçe Aktar
                                                 </Button>
                                             </div>
                                         </div>
@@ -1217,7 +1844,13 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
                                     {/* MAIN ACTION BUTTON */}
                                     <div className="pt-2">
                                         <Button
-                                            onClick={oneClickImport}
+                                            onClick={async () => {
+                                                if (selectedFile && selectedTabs.length > 0) {
+                                                    await fetchMultipleTabsContent(selectedFile.id, selectedTabs, false)
+                                                    return
+                                                }
+                                                await oneClickImport()
+                                            }}
                                             disabled={isProcessing}
                                             className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white shadow-lg py-6 text-lg font-semibold"
                                         >
@@ -1226,10 +1859,14 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
                                             ) : (
                                                 <FileSpreadsheet className="mr-2" size={20} />
                                             )}
-                                            {isAuthenticated ? `${weekNumber}. Hafta Verisini Getir` : 'Bağlan ve Getir'}
+                                            {isAuthenticated
+                                                ? (selectedFile && selectedTabs.length > 0
+                                                    ? `Seçili Tabları Çek (${selectedTabs.length})`
+                                                    : 'Google Drive Dosyasını Otomatik Bul')
+                                                : 'Bağlan ve Getir'}
                                         </Button>
                                         <p className="text-xs text-gray-500 text-center mt-2">
-                                            {patientName ? `"${patientName}" aranacak` : 'Hasta adı ile arama yapılacak'}
+                                            {patientName ? `"${patientName}" ile otomatik dosya araması yapılır` : 'Hasta adı ile otomatik dosya araması yapılır'}
                                         </p>
                                     </div>
 
@@ -1279,23 +1916,42 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
                                         {/* Tab Selection */}
                                         {selectedFile && sheetTabs.length > 0 && (
                                             <div className="space-y-2 animate-in fade-in">
+                                                <div className="flex items-center justify-between text-xs text-gray-500 gap-2">
+                                                    <div>Seçili tab: {selectedTabs.length}</div>
+                                                    <div className="flex items-center gap-2">
+                                                        <button
+                                                            type="button"
+                                                            className="underline hover:text-gray-700"
+                                                            onClick={() => setSelectedTabs([...sheetTabs])}
+                                                        >
+                                                            Tümünü Seç
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            className="underline hover:text-gray-700"
+                                                            onClick={() => setSelectedTabs([])}
+                                                        >
+                                                            Seçimi Temizle
+                                                        </button>
+                                                    </div>
+                                                </div>
                                                 <Label>Sayfa (Tab) Seçin:</Label>
                                                 <div className="grid grid-cols-3 gap-2">
                                                     {sheetTabs.map(tab => (
                                                         <div
                                                             key={tab}
-                                                            onClick={() => setSelectedTab(tab)}
-                                                            className={`px-3 py-2 border rounded text-center text-sm cursor-pointer transition-all ${selectedTab === tab ? 'bg-green-600 text-white border-green-600 shadow' : 'hover:bg-gray-50 hover:border-gray-300'}`}
+                                                            onClick={() => {
+                                                                setSelectedTab(tab)
+                                                                toggleTabSelection(tab)
+                                                            }}
+                                                            className={`px-3 py-2 border rounded text-center text-sm cursor-pointer transition-all ${selectedTabs.includes(tab) ? 'bg-green-600 text-white border-green-600 shadow' : 'hover:bg-gray-50 hover:border-gray-300'}`}
                                                         >
                                                             {tab}
                                                         </div>
                                                     ))}
                                                 </div>
-                                                <div className="pt-4 flex justify-end">
-                                                    <Button onClick={importFromSheet} disabled={!selectedTab || isProcessing} className="bg-green-600 hover:bg-green-700 w-full sm:w-auto">
-                                                        {isProcessing ? <Loader2 className="animate-spin mr-2" /> : null}
-                                                        Verileri Çek ve Düzenle
-                                                    </Button>
+                                                <div className="pt-2 text-xs text-gray-500">
+                                                    Üstteki 4 ana butonla tüm/seçili tabları çekebilir veya tarihli içe aktarma akışını başlatabilirsiniz.
                                                 </div>
                                             </div>
                                         )}
@@ -1466,6 +2122,12 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
                                                     {meal.mealName}
                                                 </div>
                                                 <div className="p-2 space-y-1">
+                                                    <div className="flex items-center justify-end gap-2 text-[10px] font-semibold text-gray-500 px-1">
+                                                        <span className="w-10 text-right">Kal</span>
+                                                        <span className="w-8 text-right">Karb</span>
+                                                        <span className="w-8 text-right">Prot</span>
+                                                        <span className="w-8 text-right">Yağ</span>
+                                                    </div>
                                                     {meal.foods.map((food, fIdx) => (
                                                         <div key={fIdx} className="flex items-center gap-3 text-sm p-1 hover:bg-gray-50 rounded group">
                                                             <div
@@ -1511,6 +2173,14 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
                                                                     </div>
                                                                 )}
                                                             </div>
+                                                            <button
+                                                                type="button"
+                                                                className="w-6 h-6 flex items-center justify-center rounded hover:bg-red-50 text-red-500"
+                                                                title="Bu bir yemek değil: satırı çıkarır. Gerekirse alttaki 'Yanlışı Geri Al' ile geri alabilirsiniz."
+                                                                onClick={() => markFoodAsNotFood(dIdx, mIdx, fIdx)}
+                                                            >
+                                                                <Ban size={14} />
+                                                            </button>
                                                             <div className="flex-1 min-w-0">
                                                                 <div className="font-medium truncate" title={food.originalText}>{food.originalText}</div>
                                                                 {food.status === 'matched' && food.matchedFoodId && (
@@ -1568,14 +2238,41 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
                     )}
 
                     <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                        {step === 'review' && ignoreHistory.length > 0 && (
+                            <Button variant="outline" onClick={undoLastIgnoredFood}>
+                                Yanlışı Geri Al ({ignoreHistory.length})
+                            </Button>
+                        )}
+	                        {(step === 'review' || step === 'bulk-review') && (
+	                            <>
+	                                <Button variant="outline" onClick={handleCopyAll} disabled={!getCopyAllContent().trim()}>
+	                                    <Copy size={14} className="mr-1" />
+	                                    Tumunu Kopyala
+	                                </Button>
+	                                <Button variant="outline" onClick={handleCopyCsv} disabled={!getCopyCsvContent().trim()}>
+	                                    <Copy size={14} className="mr-1" />
+	                                    CSV Kopyala
+	                                </Button>
+	                                <Button variant="outline" onClick={handleExportTxt} disabled={!text.trim()}>
+	                                    <Download size={14} className="mr-1" />
+	                                    TXT Export
+	                                </Button>
+                                <Button variant="outline" onClick={handleExportJson} disabled={!text.trim() && parsedDays.length === 0 && bulkImportData.length === 0}>
+                                    <Download size={14} className="mr-1" />
+                                    JSON Export
+                                </Button>
+                            </>
+                        )}
                         {(step === 'review' || step === 'bulk-review') && (
                             <Button variant="outline" onClick={() => setStep('input')}>Geri Dön</Button>
                         )}
                         {step === 'input' ? (
+                            activeTab === 'text' ? (
                             <Button onClick={() => parseText(text)} disabled={!text.trim() || isProcessing} className="w-full sm:w-auto">
                                 {isProcessing ? <Loader2 className="animate-spin mr-2" /> : null}
                                 Ayrıştır ve Önizle
                             </Button>
+                            ) : null
                         ) : step === 'bulk-review' ? (
                             <Button onClick={confirmBulkImport} disabled={isProcessing || bulkImportData.length === 0} className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto shadow-sm">
                                 {isProcessing ? <Loader2 className="animate-spin mr-2" /> : <Save size={16} className="mr-2" />}
