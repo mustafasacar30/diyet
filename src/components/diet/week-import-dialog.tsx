@@ -47,6 +47,20 @@ interface WeekImportDialogProps {
     onBulkImport?: (weekData: { weekNumber: number, tabName: string, startDate: string, endDate: string, days: ParsedDay[] }[]) => Promise<void> // NEW: Bulk import
 }
 
+type MenuPoolEntry = {
+    week_id: string | null
+    patient_id: string | null
+    program_template_id: string | null
+    week_number: number | null
+    source_type: string
+    source_file_id: string | null
+    source_file_name: string | null
+    source_tab_name: string | null
+    source_patient_name: string | null
+    raw_text: string
+    parsed_days: ParsedDay[]
+}
+
 export interface ParsedDay {
     dayName: string
     date?: string
@@ -252,6 +266,7 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
     const [importMode, setImportMode] = useState<'append' | 'replace'>('replace')
     const [loadedTabNames, setLoadedTabNames] = useState<string[]>([])
     const [ignoreHistory, setIgnoreHistory] = useState<IgnoreHistoryItem[]>([])
+    const [isSyncingPool, setIsSyncingPool] = useState(false)
 
     // --- UTILITIES ---
     function findBestMatch(text: string) {
@@ -499,6 +514,183 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
         return rows.map(row => row.map(csvEscape).join(',')).join('\n')
     }
 
+    function buildRawTextFromDays(days: ParsedDay[]) {
+        const lines: string[] = []
+        for (const day of days || []) {
+            lines.push(day.dayName || "GUN")
+            for (const meal of day.meals || []) {
+                lines.push(`  ${meal.mealName || "OGUN"}`)
+                for (const food of meal.foods || []) {
+                    const label = (food.originalText || food.foodName || "").trim()
+                    if (!label) continue
+                    lines.push(`    - ${label} | ${food.calories ?? 0} ${food.carbs ?? 0} ${food.protein ?? 0} ${food.fat ?? 0}`)
+                }
+            }
+            lines.push("")
+        }
+        return lines.join("\n").trim()
+    }
+
+    function splitTabPrefixFromDayName(dayName: string) {
+        const raw = String(dayName || "").trim()
+        if (!raw) return { tabName: null as string | null, cleanDayName: "" }
+
+        const bracketMatch = raw.match(/^\[(.+?)\]\s*(.+)$/)
+        if (bracketMatch?.[1] && bracketMatch?.[2]) {
+            return {
+                tabName: bracketMatch[1].trim() || null,
+                cleanDayName: bracketMatch[2].trim(),
+            }
+        }
+        return { tabName: null as string | null, cleanDayName: raw }
+    }
+
+    function normalizeParsedDaysForPool(days: ParsedDay[]) {
+        return (days || []).map(day => {
+            const split = splitTabPrefixFromDayName(day.dayName || "")
+            return {
+                ...day,
+                dayName: split.cleanDayName || day.dayName || "GUN",
+            }
+        })
+    }
+
+    function buildMenuPoolEntriesFromCurrentStep(): MenuPoolEntry[] {
+        const sourcePatient = (searchQuery || patientName || "").trim() || null
+        const sourceType = activeTab === "google" ? "google_sheets" : "text"
+        const sourceFileId = selectedFile?.id ? String(selectedFile.id) : null
+        const sourceFileName = selectedFile?.name ? String(selectedFile.name) : null
+        const tabTextMap = new Map(
+            splitByTabMarkers(text).map(block => [String(block.tabName || "").trim(), block.text || ""])
+        )
+
+        if (step === "bulk-review") {
+            return bulkImportData
+                .map((week, idx) => {
+                    const tabName = String(week.tabName || "").trim() || null
+                    const fallbackRaw = buildRawTextFromDays(week.days as ParsedDay[])
+                    const rawText = (tabName ? tabTextMap.get(tabName) || "" : "").trim() || fallbackRaw
+                    if (!rawText) return null
+                    return {
+                        week_id: null,
+                        patient_id: null,
+                        program_template_id: null,
+                        week_number: Number.isFinite(Number(week.weekNumber))
+                            ? Number(week.weekNumber)
+                            : inferWeekNumberFromTabName(tabName || "", idx),
+                        source_type: sourceType,
+                        source_file_id: sourceFileId,
+                        source_file_name: sourceFileName,
+                        source_tab_name: tabName,
+                        source_patient_name: sourcePatient,
+                        raw_text: rawText,
+                        parsed_days: (week.days as ParsedDay[]) || [],
+                    } as MenuPoolEntry
+                })
+                .filter((entry): entry is MenuPoolEntry => entry !== null)
+        }
+
+        if (step === "review") {
+            const tabBlocks = splitByTabMarkers(text)
+            const hasMultipleTabs = tabBlocks.length > 1
+
+            if (hasMultipleTabs) {
+                return tabBlocks
+                    .map((block, idx) => {
+                        const tabName = String(block.tabName || "").trim() || null
+                        const rawParsed = parseTextToDays(block.text, getFoodsForParsing())
+                        const alignedParsed = getMondayAlignedDays(rawParsed)
+                        const normalizedDays = normalizeParsedDaysForPool(alignedParsed)
+                        const rawText = (block.text || "").trim() || buildRawTextFromDays(normalizedDays)
+                        if (!rawText || normalizedDays.length === 0) return null
+
+                        return {
+                            week_id: weekId || null,
+                            patient_id: null,
+                            program_template_id: null,
+                            week_number: tabName
+                                ? inferWeekNumberFromTabName(tabName, idx)
+                                : weekNumber || null,
+                            source_type: sourceType,
+                            source_file_id: sourceFileId,
+                            source_file_name: sourceFileName,
+                            source_tab_name: tabName,
+                            source_patient_name: sourcePatient,
+                            raw_text: rawText,
+                            parsed_days: normalizedDays,
+                        } as MenuPoolEntry
+                    })
+                    .filter((entry): entry is MenuPoolEntry => entry !== null)
+            }
+
+            const tabName = (selectedTab || loadedTabNames?.[0] || "").trim() || null
+            const normalizedDays = normalizeParsedDaysForPool(parsedDays || [])
+            const rawText = text.trim() || buildRawTextFromDays(normalizedDays)
+            if (!rawText) return []
+            return [
+                {
+                    week_id: weekId || null,
+                    patient_id: null,
+                    program_template_id: null,
+                    week_number: tabName
+                        ? inferWeekNumberFromTabName(tabName, Math.max(0, (weekNumber || 1) - 1))
+                        : weekNumber || null,
+                    source_type: sourceType,
+                    source_file_id: sourceFileId,
+                    source_file_name: sourceFileName,
+                    source_tab_name: tabName,
+                    source_patient_name: sourcePatient,
+                    raw_text: rawText,
+                    parsed_days: normalizedDays,
+                },
+            ]
+        }
+
+        return []
+    }
+
+    async function handleSendToPool() {
+        const entries = buildMenuPoolEntriesFromCurrentStep()
+        if (entries.length === 0) {
+            alert("Havuza aktarilacak icerik bulunamadi.")
+            return
+        }
+
+        setIsSyncingPool(true)
+        try {
+            const response = await fetch("/api/admin/menu-import-pool/ingest", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ entries }),
+            })
+            const responseText = await response.text()
+            let json: any = null
+            try {
+                json = responseText ? JSON.parse(responseText) : null
+            } catch {
+                json = null
+            }
+            if (!response.ok) {
+                const detailParts = [
+                    json?.error,
+                    json?.code ? `Kod: ${json.code}` : null,
+                    json?.hint ? `Ipuccu: ${json.hint}` : null,
+                    json?.details ? `Detay: ${JSON.stringify(json.details)}` : null,
+                    responseText && !json ? `Govde: ${responseText.slice(0, 600)}` : null,
+                ].filter(Boolean)
+                throw new Error(detailParts.join(" | ") || "Havuza aktarim basarisiz oldu.")
+            }
+
+            const inserted = Number(json?.summary?.new_meal_packages ?? json?.summary?.inserted ?? 0)
+            const repeated = Number(json?.summary?.repeat_meal_packages ?? json?.summary?.deduped ?? 0)
+            alert(`Havuza aktarim tamamlandi. Yeni ogun paketi: ${inserted}, tekrar ogun paketi: ${repeated}.`)
+        } catch (err: any) {
+            alert(`Havuza aktarim hatasi: ${err?.message || "Bilinmeyen hata"}`)
+        } finally {
+            setIsSyncingPool(false)
+        }
+    }
+
     function getCopyAllContent() {
         if (step === 'review' && parsedDays.length > 0) return buildPlainTextFromParsedDays(parsedDays)
         if (step === 'bulk-review' && bulkImportData.length > 0) return buildPlainTextFromBulkImportData()
@@ -683,7 +875,8 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
 
     function buildSheetRange(tabName: string) {
         const escapedTabName = tabName.replace(/'/g, "''")
-        return `'${escapedTabName}'!A:E`
+        // Keep a wide range so macro columns from Drive are not dropped for unknown foods.
+        return `'${escapedTabName}'!A:AZ`
     }
 
     async function searchDrive() {
@@ -1303,12 +1496,6 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
         for (const block of tabBlocks) {
             const rawDays = parseTextToDays(block.text, getFoodsForParsing())
             const alignedDays = getMondayAlignedDays(rawDays)
-            if (alignedDays.length > 0) {
-                alignedDays[0] = {
-                    ...alignedDays[0],
-                    dayName: `[${block.tabName}] ${alignedDays[0].dayName}`
-                }
-            }
             combinedDays.push(...alignedDays)
         }
         setParsedDays(combinedDays)
@@ -1342,22 +1529,91 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
     // New helper for bulk import parsing
     function parseTextToDays(inputText: string, foodsDb: any[]): ParsedDay[] {
         const result: ParsedDay[] = []
+        const normalizeForMatch = (s: string) => s
+            .toLocaleUpperCase('tr-TR')
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/İ/g, 'I')
+            .replace(/İ/g, 'I')
+        const parseNum = (v: string): number | null => {
+            if (!v) return null
+            const cleaned = String(v).replace(',', '.').replace(/[^0-9.-]/g, '')
+            if (!cleaned) return null
+            const parsed = parseFloat(cleaned)
+            return Number.isFinite(parsed) ? parsed : null
+        }
         const extractTrailingMacros = (line: string): { calories: number; carbs: number; protein: number; fat: number } | null => {
-            const m = line.match(/(\d+(?:[.,]\d+)?)\s+(\d+(?:[.,]\d+)?)\s+(\d+(?:[.,]\d+)?)\s+(\d+(?:[.,]\d+)?)\s*$/)
-            if (!m) return null
-            const n = (v: string) => parseFloat(String(v).replace(',', '.')) || 0
-            return {
-                calories: n(m[1]),
-                carbs: n(m[2]),
-                protein: n(m[3]),
-                fat: n(m[4]),
+            const strict = line.match(/(\d+(?:[.,]\d+)?)\s+(\d+(?:[.,]\d+)?)\s+(\d+(?:[.,]\d+)?)\s+(\d+(?:[.,]\d+)?)\s*$/)
+            if (strict) {
+                return {
+                    calories: parseNum(strict[1]) ?? 0,
+                    carbs: parseNum(strict[2]) ?? 0,
+                    protein: parseNum(strict[3]) ?? 0,
+                    fat: parseNum(strict[4]) ?? 0,
+                }
             }
+            const looseTokens = [...line.matchAll(/-?\d+(?:[.,]\d+)?/g)]
+                .map(m => parseNum(m[0]))
+                .filter((n): n is number => n !== null)
+            if (looseTokens.length < 4) return null
+            const lastFour = looseTokens.slice(-4)
+            return {
+                calories: lastFour[0] ?? 0,
+                carbs: lastFour[1] ?? 0,
+                protein: lastFour[2] ?? 0,
+                fat: lastFour[3] ?? 0,
+            }
+        }
+        const extractRowMacros = (line: string): { calories: number; carbs: number; protein: number; fat: number } | null => {
+            const clean = line.trim()
+            if (!clean) return null
+            let parts = clean.split('\t').map(p => String(p ?? '').trim())
+            if (parts.length === 1) {
+                parts = clean.split(/ {2,}/).map(p => String(p ?? '').trim())
+            }
+            let nameIndex = 0
+            while (nameIndex < parts.length && !parts[nameIndex]) nameIndex += 1
+            if (nameIndex >= parts.length) return extractTrailingMacros(clean)
+            const macroCells = parts.slice(nameIndex + 1).map(parseNum)
+            const nonNull = macroCells.filter((v): v is number => v !== null)
+            if (nonNull.length >= 4) {
+                return {
+                    calories: nonNull[0] ?? 0,
+                    carbs: nonNull[1] ?? 0,
+                    protein: nonNull[2] ?? 0,
+                    fat: nonNull[3] ?? 0,
+                }
+            }
+            if (macroCells.some(v => v !== null)) {
+                return {
+                    calories: macroCells[0] ?? 0,
+                    carbs: macroCells[1] ?? 0,
+                    protein: macroCells[2] ?? 0,
+                    fat: macroCells[3] ?? 0,
+                }
+            }
+            return extractTrailingMacros(clean)
         }
 
         // DEBUG LOGGING
         console.log('--- PARSER START ---')
 
         const lines = inputText.split('\n').map(l => l.trim()).filter(l => l.length > 0)
+        const macroLookup = new Map<string, { calories: number; carbs: number; protein: number; fat: number }>()
+        for (const line of lines) {
+            const cleanLine = line.replace(/^['"â€¢\-\*âœ¦â¤>]\s*/, '').trim()
+            if (!cleanLine) continue
+            let parts = cleanLine.split('\t').map(p => String(p ?? '').trim())
+            if (parts.length === 1) {
+                parts = cleanLine.split(/ {2,}/).map(p => String(p ?? '').trim())
+            }
+            let nameIndex = 0
+            while (nameIndex < parts.length && !parts[nameIndex]) nameIndex += 1
+            const candidateName = parts[nameIndex] || cleanLine
+            const macro = extractRowMacros(cleanLine)
+            if (!candidateName || !macro) continue
+            macroLookup.set(normalizeForMatch(candidateName), macro)
+        }
         // Reordered to prevent "CUMA" matching inside "CUMARTESİ"
         const dayNames = ['PAZARTESİ', 'SALI', 'ÇARŞAMBA', 'PERŞEMBE', 'CUMARTESİ', 'CUMA', 'PAZAR']
         const mealHeaders = ['KAHVALTI', 'ÖĞLE', 'ÖĞLEN', 'AKŞAM', 'ARA ÖĞÜN', 'KUŞLUK', 'GEÇ GECE']
@@ -1379,12 +1635,6 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
             { canonical: 'KUŞLUK', variants: ['KUSLUK', 'KUŞLUK'] },
             { canonical: 'GEÇ GECE', variants: ['GEC GECE', 'GEÇ GECE'] },
         ]
-        const normalizeForMatch = (s: string) => s
-            .toLocaleUpperCase('tr-TR')
-            .normalize('NFD')
-            .replace(/[\u0300-\u036f]/g, '')
-            .replace(/İ/g, 'I')
-            .replace(/İ/g, 'I')
 
         let currentDay: ParsedDay | null = null
         let currentMeal: ParsedMeal | null = null
@@ -1469,25 +1719,27 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
                 continue
             }
 
-            // Food line
+                // Food line (parser)
             if (currentMeal && currentDay) {
                 // Tab ile ayır (Google Sheets'ten gelen veri)
                 let parts = cleanLine.split('\t')
+                let normalizedParts = parts.map(part => String(part ?? '').trim())
                 // Eğer tab yoksa, 2+ boşlukla dene
                 if (parts.length === 1) {
                     parts = cleanLine.split(/ {2,}/)
+                    normalizedParts = parts.map(part => String(part ?? '').trim())
                 }
 
                 // Handle indentation: Find first non-empty column
                 let nameIndex = 0
-                while (nameIndex < parts.length && !parts[nameIndex]?.trim()) {
+                while (nameIndex < normalizedParts.length && !normalizedParts[nameIndex]) {
                     nameIndex++
                 }
 
                 // If all columns are empty, skip
-                if (nameIndex >= parts.length) continue
+                if (nameIndex >= normalizedParts.length) continue
 
-                let foodName = parts[nameIndex]?.trim() || cleanLine
+                let foodName = normalizedParts[nameIndex] || cleanLine
 
                 // Skip if foodName is too short or just numbers (daily total)
                 if (!foodName || foodName.length < 2 || foodName.match(/^[\d.,\s]+$/)) continue
@@ -1495,34 +1747,36 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
                 // Check for inline nutrition values
                 let lineCalories = 0, lineProtein = 0, lineCarbs = 0, lineFat = 0
                 let hasLineValues = false
-                const cleanNum = (val: string) => {
-                    if (!val) return 0
+                let macroParseMode: 'none' | 'indexed' | 'sequential' | 'trailing' | 'lookup' = 'none'
+                let macroCells: Array<number | null> = []
+                const cleanNum = (val: string): number | null => {
+                    if (!val) return null
                     // Virgül ve nokta ile sayıları temizle
-                    const cleaned = val.replace(',', '.').replace(/[^0-9.]/g, '')
-                    return parseFloat(cleaned) || 0
+                    const cleaned = val.replace(',', '.').replace(/[^0-9.-]/g, '')
+                    if (!cleaned) return null
+                    const parsed = parseFloat(cleaned)
+                    return Number.isFinite(parsed) ? parsed : null
                 }
 
                 // parts[0] = name, sonraki sütunlar makrolar (Name Index'e göre kaydır)
                 // Google Sheets sırası: Kalori > Karbonhidrat > Protein > Yağ
-                if (parts.length >= nameIndex + 2) {
+                if (normalizedParts.length >= nameIndex + 2) {
                     // Sütunları tara - Name [nameIndex], Cal [nameIndex+1], Carbs [nameIndex+2], Protein [nameIndex+3], Fat [nameIndex+4]
-                    const calRaw = String(parts[nameIndex + 1] ?? '').trim()
-                    const carbRaw = parts.length >= nameIndex + 3 ? String(parts[nameIndex + 2] ?? '').trim() : ''
-                    const protRaw = parts.length >= nameIndex + 4 ? String(parts[nameIndex + 3] ?? '').trim() : ''
-                    const fatRaw = parts.length >= nameIndex + 5 ? String(parts[nameIndex + 4] ?? '').trim() : ''
-                    const hasAnyMacroCell = calRaw.length > 0 || carbRaw.length > 0 || protRaw.length > 0 || fatRaw.length > 0
-                    const cal = cleanNum(calRaw)
-                    const carb = cleanNum(carbRaw)
-                    const prot = cleanNum(protRaw)
-                    const fat = cleanNum(fatRaw)
+                    macroCells = normalizedParts.slice(nameIndex + 1).map(cleanNum)
+                    const nonNullCells = macroCells.filter((v): v is number => v !== null)
 
                     // En az kalori değeri varsa veya herhangi bir makro varsa
-                    if (hasAnyMacroCell || cal > 0 || prot > 0 || carb > 0 || fat > 0) {
-                        lineCalories = cal
-                        lineProtein = prot
-                        lineCarbs = carb
-                        lineFat = fat
+                    if (nonNullCells.length >= 4) {
+                        ;[lineCalories, lineCarbs, lineProtein, lineFat] = nonNullCells.slice(0, 4)
                         hasLineValues = true
+                        macroParseMode = 'sequential'
+                    } else if (macroCells.some(v => v !== null)) {
+                        lineCalories = macroCells[0] ?? 0
+                        lineCarbs = macroCells[1] ?? 0
+                        lineProtein = macroCells[2] ?? 0
+                        lineFat = macroCells[3] ?? 0
+                        hasLineValues = true
+                        macroParseMode = 'indexed'
                     }
                 }
 
@@ -1535,6 +1789,18 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
                         lineProtein = trailing.protein
                         lineFat = trailing.fat
                         hasLineValues = true
+                        macroParseMode = 'trailing'
+                    }
+                }
+                if (!hasLineValues) {
+                    const lookupMacro = macroLookup.get(normalizeForMatch(foodName))
+                    if (lookupMacro) {
+                        lineCalories = lookupMacro.calories
+                        lineCarbs = lookupMacro.carbs
+                        lineProtein = lookupMacro.protein
+                        lineFat = lookupMacro.fat
+                        hasLineValues = true
+                        macroParseMode = 'lookup'
                     }
                 }
 
@@ -1543,26 +1809,23 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
                 const matchedFood = matchResult ? foodsDb.find(f => f.id === matchResult.id) : null
 
                 // Prioritize line values
-                const calRaw = parts.length >= nameIndex + 2 ? String(parts[nameIndex + 1] ?? '').trim() : ''
-                const carbRaw = parts.length >= nameIndex + 3 ? String(parts[nameIndex + 2] ?? '').trim() : ''
-                const protRaw = parts.length >= nameIndex + 4 ? String(parts[nameIndex + 3] ?? '').trim() : ''
-                const fatRaw = parts.length >= nameIndex + 5 ? String(parts[nameIndex + 4] ?? '').trim() : ''
-                const hasCalCell = calRaw.length > 0
-                const hasCarbCell = carbRaw.length > 0
-                const hasProtCell = protRaw.length > 0
-                const hasFatCell = fatRaw.length > 0
+                const hasCalCell = macroCells[0] !== null && macroCells[0] !== undefined
+                const hasCarbCell = macroCells[1] !== null && macroCells[1] !== undefined
+                const hasProtCell = macroCells[2] !== null && macroCells[2] !== undefined
+                const hasFatCell = macroCells[3] !== null && macroCells[3] !== undefined
+                const hasStructuredMacroCells = macroParseMode === 'indexed'
 
                 const finalCalories = hasLineValues
-                    ? (hasCalCell ? lineCalories : (matchedFood?.calories || 0))
+                    ? (hasStructuredMacroCells ? (hasCalCell ? lineCalories : (matchedFood?.calories || 0)) : lineCalories)
                     : (matchedFood?.calories || 0)
                 const finalCarbs = hasLineValues
-                    ? (hasCarbCell ? lineCarbs : (matchedFood?.carbs || 0))
+                    ? (hasStructuredMacroCells ? (hasCarbCell ? lineCarbs : (matchedFood?.carbs || 0)) : lineCarbs)
                     : (matchedFood?.carbs || 0)
                 const finalProtein = hasLineValues
-                    ? (hasProtCell ? lineProtein : (matchedFood?.protein || 0))
+                    ? (hasStructuredMacroCells ? (hasProtCell ? lineProtein : (matchedFood?.protein || 0)) : lineProtein)
                     : (matchedFood?.protein || 0)
                 const finalFat = hasLineValues
-                    ? (hasFatCell ? lineFat : (matchedFood?.fat || 0))
+                    ? (hasStructuredMacroCells ? (hasFatCell ? lineFat : (matchedFood?.fat || 0)) : lineFat)
                     : (matchedFood?.fat || 0)
 
                 currentMeal.foods.push({
@@ -1593,6 +1856,12 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
             dAcc + d.meals.reduce((mAcc: number, m: any) => mAcc + m.foods.length, 0), 0
         ), 0
     )
+
+    const canShowPoolAction = step === 'review' || step === 'bulk-review'
+    const hasPoolPayload =
+        (step === 'review' && parsedDays.length > 0) ||
+        (step === 'bulk-review' && bulkImportData.length > 0)
+    const isPoolActionDisabled = isSyncingPool || isProcessing || !hasPoolPayload
 
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
@@ -2237,31 +2506,42 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
                         <div className="flex-1"></div>
                     )}
 
-                    <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                    <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
                         {step === 'review' && ignoreHistory.length > 0 && (
                             <Button variant="outline" onClick={undoLastIgnoredFood}>
                                 Yanlışı Geri Al ({ignoreHistory.length})
                             </Button>
                         )}
-	                        {(step === 'review' || step === 'bulk-review') && (
-	                            <>
-	                                <Button variant="outline" onClick={handleCopyAll} disabled={!getCopyAllContent().trim()}>
-	                                    <Copy size={14} className="mr-1" />
-	                                    Tumunu Kopyala
-	                                </Button>
-	                                <Button variant="outline" onClick={handleCopyCsv} disabled={!getCopyCsvContent().trim()}>
-	                                    <Copy size={14} className="mr-1" />
-	                                    CSV Kopyala
-	                                </Button>
-	                                <Button variant="outline" onClick={handleExportTxt} disabled={!text.trim()}>
-	                                    <Download size={14} className="mr-1" />
-	                                    TXT Export
-	                                </Button>
+                        {(step === 'review' || step === 'bulk-review') && (
+                            <>
+                                <Button variant="outline" onClick={handleCopyAll} disabled={!getCopyAllContent().trim()}>
+                                    <Copy size={14} className="mr-1" />
+                                    Tumunu Kopyala
+                                </Button>
+                                <Button variant="outline" onClick={handleCopyCsv} disabled={!getCopyCsvContent().trim()}>
+                                    <Copy size={14} className="mr-1" />
+                                    CSV Kopyala
+                                </Button>
+                                <Button variant="outline" onClick={handleExportTxt} disabled={!text.trim()}>
+                                    <Download size={14} className="mr-1" />
+                                    TXT Export
+                                </Button>
                                 <Button variant="outline" onClick={handleExportJson} disabled={!text.trim() && parsedDays.length === 0 && bulkImportData.length === 0}>
                                     <Download size={14} className="mr-1" />
                                     JSON Export
                                 </Button>
                             </>
+                        )}
+                        {canShowPoolAction && (
+                            <Button
+                                variant="outline"
+                                className="border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                                onClick={handleSendToPool}
+                                disabled={isPoolActionDisabled}
+                            >
+                                {isSyncingPool ? <Loader2 size={14} className="mr-1 animate-spin" /> : null}
+                                Havuza Aktar
+                            </Button>
                         )}
                         {(step === 'review' || step === 'bulk-review') && (
                             <Button variant="outline" onClick={() => setStep('input')}>Geri Dön</Button>

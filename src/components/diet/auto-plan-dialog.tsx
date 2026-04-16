@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import React, { useMemo, useState, useEffect, useRef } from "react"
-import { Pencil, Check, Wand2, Lock, Unlock, Scale, ChevronUp, ChevronDown, RotateCcw } from "lucide-react"
+import { Pencil, Check, Wand2, Lock, Unlock, Scale, ChevronUp, ChevronDown, RotateCcw, Sparkles } from "lucide-react"
 import { FoodEditDialog } from "@/components/diet/food-sidebar"
 import { SettingsDialog } from "@/components/planner/settings-dialog"
 import { PatientRulesDialog } from "@/components/planner/patient-rules-dialog"
@@ -21,6 +21,7 @@ import { applyTeamFoodOverrides, upsertTeamFoodOverride } from "@/lib/team-food-
 import { saveFoodMicronutrientsByScope } from "@/lib/team-food-micronutrient-overrides"
 import { FOOD_ROLES, LEGACY_ROLE_LABELS } from "@/lib/constants/food-roles"
 import { Planner } from "@/lib/planner/engine3"
+import { BalanceConfirmModal, BalanceChange } from "@/components/diet/balance-confirm-modal"
 
 function MacroBar({ label, actual, target, unit = 'g', minTolerance = 80, maxTolerance = 120 }: { label: string, actual: number, target: number, unit?: string, minTolerance?: number, maxTolerance?: number }) {
     const percentage = target > 0 ? Math.min((actual / target) * 100, 150) : 0
@@ -268,6 +269,22 @@ export function AutoPlanDialog({ open, onOpenChange, plan, onConfirm, loading, m
     // Cumulative macro adjustments: { protein: 2, carb: -1, fat: 0 } means protein +20%, carb -10%
     const [macroAdjustments, setMacroAdjustments] = useState<Record<string, number>>({ protein: 0, carb: 0, fat: 0 })
     const [isBalancing, setIsBalancing] = useState(false)
+    const [isFlavorTuning, setIsFlavorTuning] = useState(false)
+    const [flavorModal, setFlavorModal] = useState<{
+        isOpen: boolean
+        title: string
+        changes: BalanceChange[]
+        initialTotals: { calories: number; protein: number; fat: number; carbs: number }
+        targetMacros: { calories: number; protein: number; fat: number; carbs: number }
+        resolve: ((approvedChanges: BalanceChange[] | null) => void) | null
+    }>({
+        isOpen: false,
+        title: '',
+        changes: [],
+        initialTotals: { calories: 0, protein: 0, fat: 0, carbs: 0 },
+        targetMacros: { calories: 0, protein: 0, fat: 0, carbs: 0 },
+        resolve: null
+    })
     const [dialogSize, setDialogSize] = useState(getInitialDialogSize)
     const [dialogPosition, setDialogPosition] = useState({ x: DIALOG_MARGIN, y: DIALOG_MARGIN })
     const [isDragging, setIsDragging] = useState(false)
@@ -508,16 +525,56 @@ export function AutoPlanDialog({ open, onOpenChange, plan, onConfirm, loading, m
         calories: { min: 90, max: 110 }
     }
 
+    // CACHE PLANNER INSTANCE
+    const plannerRef = useRef<Planner | null>(null)
+    const initPromiseRef = useRef<Promise<Planner> | null>(null)
+
+    useEffect(() => {
+        plannerRef.current = null
+        initPromiseRef.current = null
+    }, [patientId, userId])
+
+    async function getPlanner() {
+        if (!patientId || !userId) throw new Error("Missing patientId or userId")
+        if (plannerRef.current) return plannerRef.current
+        if (initPromiseRef.current) return initPromiseRef.current
+
+        const newPlanner = new Planner(patientId, userId)
+        initPromiseRef.current = newPlanner.init().then(() => {
+            plannerRef.current = newPlanner
+            return newPlanner
+        })
+        return initPromiseRef.current
+    }
+
+    const showFlavorModal = (
+        title: string,
+        changes: BalanceChange[],
+        initialTotals: { calories: number; protein: number; fat: number; carbs: number },
+        targetMacros: { calories: number; protein: number; fat: number; carbs: number }
+    ): Promise<BalanceChange[] | null> => {
+        return new Promise((resolve) => {
+            setFlavorModal({
+                isOpen: true,
+                title,
+                changes,
+                initialTotals,
+                targetMacros,
+                resolve
+            })
+        })
+    }
+
     // SMART BALANCE using Planner engine
     async function handleSmartBalance(mode: 'weekly' | 'daily' = 'weekly', targetDay?: number) {
         if (!localPlan?.meals?.length || !patientId || !userId) {
             alert('Dengeleme için hasta ve kullanıcı bilgisi gerekli.')
             return
         }
+        if (isFlavorTuning) return
         setIsBalancing(true)
         try {
-            const planner = new Planner(patientId, userId)
-            await planner.init()
+            const planner = await getPlanner()
             const { plan: balanced, changes } = await planner.balancePlan(localPlan, mode, targetDay)
             if (changes.length === 0) {
                 alert('Değişiklik gerekmiyor veya yapılabilecek değişiklik yok.\nTüm makrolar tolerans aralığında veya porsiyonlar sınırda.')
@@ -530,6 +587,218 @@ export function AutoPlanDialog({ open, onOpenChange, plan, onConfirm, loading, m
             alert('Dengeleme sırasında hata oluştu.')
         } finally {
             setIsBalancing(false)
+        }
+    }
+
+    // FLAVOR TUNE (Gurme / Lezzet Ayari) using Planner engine
+    async function handleFlavorTune(mode: 'weekly' | 'daily' = 'weekly', targetDay?: number) {
+        if (!localPlan?.meals?.length || !patientId || !userId) {
+            alert('Lezzet ayari icin hasta ve kullanici bilgisi gerekli.')
+            return
+        }
+        if (isBalancing) return
+        setIsFlavorTuning(true)
+        try {
+            const planner = await getPlanner()
+            const { plan: tunedPlan, changes } = await planner.applyFlavorTune(localPlan, mode, targetDay)
+            if (changes.length === 0) {
+                alert('Lezzet ayari icin uygun degisiklik bulunamadi.')
+            } else {
+                const inScope = (m: any) => (mode === 'daily' && targetDay ? m.day === targetDay : true)
+                const sourceMeals = (localPlan.meals || []).filter(inScope)
+                const nextMeals = (tunedPlan.meals || []).filter(inScope)
+
+                const calcTotals = (meals: any[]) => meals.reduce((acc, meal) => {
+                    const mult = Number(meal.portion_multiplier) || 1
+                    acc.calories += (Number(meal.food?.calories) || 0) * mult
+                    acc.protein += (Number(meal.food?.protein) || 0) * mult
+                    acc.carbs += (Number(meal.food?.carbs) || 0) * mult
+                    acc.fat += (Number(meal.food?.fat) || 0) * mult
+                    return acc
+                }, { calories: 0, protein: 0, carbs: 0, fat: 0 })
+
+                const slotKey = (meal: any) => `${meal.day}_${meal.slot}`
+                const byOriginal = new Map<string, any[]>()
+                const byNext = new Map<string, any[]>()
+                sourceMeals.forEach((m: any) => {
+                    const key = slotKey(m)
+                    if (!byOriginal.has(key)) byOriginal.set(key, [])
+                    byOriginal.get(key)!.push(m)
+                })
+                nextMeals.forEach((m: any) => {
+                    const key = slotKey(m)
+                    if (!byNext.has(key)) byNext.set(key, [])
+                    byNext.get(key)!.push(m)
+                })
+
+                const allKeys = new Set<string>([...Array.from(byOriginal.keys()), ...Array.from(byNext.keys())])
+                const modalChanges: BalanceChange[] = []
+                let i = 0
+                for (const key of allKeys) {
+                    const originals = [...(byOriginal.get(key) || [])]
+                    const tuned = [...(byNext.get(key) || [])]
+                    const originalByFood = new Map<string, any[]>()
+                    originals.forEach((m: any) => {
+                        const foodId = String(m.food?.id || '')
+                        if (!originalByFood.has(foodId)) originalByFood.set(foodId, [])
+                        originalByFood.get(foodId)!.push(m)
+                    })
+
+                    const usedOriginal = new Set<any>()
+                    const usedTuned = new Set<any>()
+
+                    for (const tunedMeal of tuned) {
+                        const queue = originalByFood.get(String(tunedMeal.food?.id || ''))
+                        const exact = queue?.shift()
+                        if (!exact) continue
+                        usedOriginal.add(exact)
+                        usedTuned.add(tunedMeal)
+                        const oldMult = Number(exact.portion_multiplier) || 1
+                        const newMult = Number(tunedMeal.portion_multiplier) || 1
+                        if (Math.abs(newMult - oldMult) <= 0.01) continue
+                        const dMult = newMult - oldMult
+                        modalChanges.push({
+                            id: `flavor_portion_${i++}`,
+                            type: 'portion',
+                            foodId: exact.food?.id,
+                            foodName: tunedMeal.food?.name || exact.food?.name || 'Bilinmeyen',
+                            detail: `Porsiyon: x${oldMult} → x${newMult}`,
+                            day: exact.day,
+                            dayName: exact.dayName,
+                            slotName: exact.slot,
+                            newMultiplier: newMult,
+                            diffCals: (Number(exact.food?.calories) || 0) * dMult,
+                            diffProt: (Number(exact.food?.protein) || 0) * dMult,
+                            diffFat: (Number(exact.food?.fat) || 0) * dMult,
+                            diffCarbs: (Number(exact.food?.carbs) || 0) * dMult
+                        })
+                    }
+
+                    const leftOriginal = originals.filter((m: any) => !usedOriginal.has(m))
+                    const leftTuned = tuned.filter((m: any) => !usedTuned.has(m))
+                    const originalPool = [...leftOriginal]
+                    for (const tunedMeal of leftTuned) {
+                        const idx = originalPool.findIndex((m: any) => m.food?.role && tunedMeal.food?.role && m.food.role === tunedMeal.food.role)
+                        const original = originalPool[idx >= 0 ? idx : 0]
+                        if (!original) {
+                            const mult = Number(tunedMeal.portion_multiplier) || 1
+                            modalChanges.push({
+                                id: `flavor_add_${i++}`,
+                                type: 'add',
+                                foodName: tunedMeal.food?.name || 'Yeni Öğe',
+                                detail: `${tunedMeal.slot} öğününe eklenecek`,
+                                day: tunedMeal.day,
+                                dayName: tunedMeal.dayName,
+                                slotName: tunedMeal.slot,
+                                newFood: tunedMeal.food,
+                                newMultiplier: mult,
+                                diffCals: (Number(tunedMeal.food?.calories) || 0) * mult,
+                                diffProt: (Number(tunedMeal.food?.protein) || 0) * mult,
+                                diffFat: (Number(tunedMeal.food?.fat) || 0) * mult,
+                                diffCarbs: (Number(tunedMeal.food?.carbs) || 0) * mult
+                            })
+                            continue
+                        }
+                        originalPool.splice(idx >= 0 ? idx : 0, 1)
+                        const oldMult = Number(original.portion_multiplier) || 1
+                        const newMult = Number(tunedMeal.portion_multiplier) || 1
+                        modalChanges.push({
+                            id: `flavor_swap_${i++}`,
+                            type: 'swap',
+                            foodId: original.food?.id,
+                            foodName: `${original.food?.name || 'Bilinmeyen'} → ${tunedMeal.food?.name || 'Bilinmeyen'}`,
+                            detail: `${original.slot} öğününde lezzet değişimi`,
+                            day: original.day,
+                            dayName: original.dayName,
+                            slotName: original.slot,
+                            newFood: tunedMeal.food,
+                            newMultiplier: newMult,
+                            diffCals: ((Number(tunedMeal.food?.calories) || 0) * newMult) - ((Number(original.food?.calories) || 0) * oldMult),
+                            diffProt: ((Number(tunedMeal.food?.protein) || 0) * newMult) - ((Number(original.food?.protein) || 0) * oldMult),
+                            diffFat: ((Number(tunedMeal.food?.fat) || 0) * newMult) - ((Number(original.food?.fat) || 0) * oldMult),
+                            diffCarbs: ((Number(tunedMeal.food?.carbs) || 0) * newMult) - ((Number(original.food?.carbs) || 0) * oldMult)
+                        })
+                    }
+                    originalPool.forEach((original: any) => {
+                        const oldMult = Number(original.portion_multiplier) || 1
+                        modalChanges.push({
+                            id: `flavor_remove_${i++}`,
+                            type: 'remove',
+                            foodId: original.food?.id,
+                            foodName: original.food?.name || 'Bilinmeyen',
+                            detail: `${original.slot} öğününden çıkarılacak`,
+                            day: original.day,
+                            dayName: original.dayName,
+                            slotName: original.slot,
+                            diffCals: -((Number(original.food?.calories) || 0) * oldMult),
+                            diffProt: -((Number(original.food?.protein) || 0) * oldMult),
+                            diffFat: -((Number(original.food?.fat) || 0) * oldMult),
+                            diffCarbs: -((Number(original.food?.carbs) || 0) * oldMult)
+                        })
+                    })
+                }
+
+                if (modalChanges.length === 0) {
+                    alert('Lezzet ayari icin uygulanabilir degisiklik bulunamadi.')
+                    return
+                }
+
+                const dayCount = mode === 'weekly' ? 7 : 1
+                const approved = await showFlavorModal(
+                    mode === 'weekly' ? 'Haftalık Lezzet Ayarı' : `Gün ${targetDay || ''} Lezzet Ayarı`,
+                    modalChanges,
+                    calcTotals(sourceMeals),
+                    {
+                        calories: target.calories * dayCount,
+                        protein: target.protein * dayCount,
+                        carbs: target.carbs * dayCount,
+                        fat: target.fat * dayCount
+                    }
+                )
+
+                if (!approved || approved.length === 0) return
+
+                const meals = [...(localPlan.meals || [])]
+                const findMealIndex = (day: number, slot: string, foodId?: string) =>
+                    meals.findIndex((m: any) => m.day === day && m.slot === slot && (!foodId || m.food?.id === foodId))
+
+                for (const change of approved) {
+                    const day = change.day || 1
+                    const slot = change.slotName || ''
+                    if (change.type === 'portion' && change.newMultiplier !== undefined) {
+                        const idx = findMealIndex(day, slot, change.foodId)
+                        if (idx >= 0) meals[idx] = { ...meals[idx], portion_multiplier: change.newMultiplier }
+                    } else if (change.type === 'swap' && change.newFood) {
+                        const idx = findMealIndex(day, slot, change.foodId)
+                        if (idx >= 0) {
+                            meals[idx] = {
+                                ...meals[idx],
+                                food: change.newFood,
+                                portion_multiplier: change.newMultiplier || 1
+                            }
+                        }
+                    } else if (change.type === 'add' && change.newFood) {
+                        meals.push({
+                            day,
+                            dayName: change.dayName || `Gün ${day}`,
+                            slot,
+                            food: change.newFood,
+                            portion_multiplier: change.newMultiplier || 1
+                        })
+                    } else if (change.type === 'remove') {
+                        const idx = findMealIndex(day, slot, change.foodId)
+                        if (idx >= 0) meals.splice(idx, 1)
+                    }
+                }
+
+                setLocalPlan((prev: any) => ({ ...prev, meals }))
+                alert(`${approved.length} lezzet değişikliği uygulandı.`)
+            }
+        } catch (err) {
+            console.error('[FlavorTune] Error:', err)
+            alert('Lezzet ayari sirasinda hata olustu.')
+        } finally {
+            setIsFlavorTuning(false)
         }
     }
 
@@ -635,9 +904,20 @@ export function AutoPlanDialog({ open, onOpenChange, plan, onConfirm, loading, m
                                 </div>
 
                                 {/* Weekly Balance Button */}
-                                <Button variant="outline" size="sm" onClick={() => handleSmartBalance('weekly')} disabled={isBalancing} className="h-8 gap-1 text-xs" title="Haftalık Akıllı Dengele">
+                                <Button variant="outline" size="sm" onClick={() => handleSmartBalance('weekly')} disabled={isBalancing || isFlavorTuning} className="h-8 gap-1 text-xs" title="Haftalık Akıllı Dengele">
                                     <Scale size={14} className={isBalancing ? 'animate-spin text-slate-400' : 'text-emerald-600'} />
                                     {isBalancing ? 'Dengeleniyor...' : 'Dengele'}
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleFlavorTune('weekly')}
+                                    disabled={isBalancing || isFlavorTuning}
+                                    className="h-8 gap-1 text-xs"
+                                    title="Haftalik Lezzet Ayari"
+                                >
+                                    <Sparkles size={14} className={isFlavorTuning ? 'animate-spin text-slate-400' : 'text-violet-600'} />
+                                    {isFlavorTuning ? 'Lezzetleniyor...' : 'Lezzet Ayari'}
                                 </Button>
 
                                 {/* Regenerate Button */}
@@ -694,11 +974,19 @@ export function AutoPlanDialog({ open, onOpenChange, plan, onConfirm, loading, m
                                                 <span className="text-slate-400">P:{dayActual.protein}g K:{dayActual.carbs}g Y:{dayActual.fat}g</span>
                                                 <button
                                                     onClick={() => handleSmartBalance('daily', dayNum)}
-                                                    disabled={isBalancing}
+                                                    disabled={isBalancing || isFlavorTuning}
                                                     className="p-0.5 rounded hover:bg-emerald-100 text-emerald-600 transition-colors disabled:opacity-50"
                                                     title={`Gün ${dayNum} Dengele`}
                                                 >
                                                     <Scale size={12} />
+                                                </button>
+                                                <button
+                                                    onClick={() => handleFlavorTune('daily', dayNum)}
+                                                    disabled={isBalancing || isFlavorTuning}
+                                                    className="p-0.5 rounded hover:bg-violet-100 text-violet-600 transition-colors disabled:opacity-50"
+                                                    title={`Gun ${dayNum} Lezzet Ayari`}
+                                                >
+                                                    <Sparkles size={12} className={isFlavorTuning ? 'animate-spin' : ''} />
                                                 </button>
                                             </div>
                                         </div>
@@ -1085,6 +1373,22 @@ export function AutoPlanDialog({ open, onOpenChange, plan, onConfirm, loading, m
                     }}
                 />
             )}
+            <BalanceConfirmModal
+                isOpen={flavorModal.isOpen}
+                title={flavorModal.title}
+                changes={flavorModal.changes}
+                initialTotals={flavorModal.initialTotals}
+                targetMacros={flavorModal.targetMacros}
+                defaultSelectAll={true}
+                onClose={() => {
+                    flavorModal.resolve?.(null)
+                    setFlavorModal(prev => ({ ...prev, isOpen: false }))
+                }}
+                onConfirm={(approvedChanges) => {
+                    flavorModal.resolve?.(approvedChanges)
+                    setFlavorModal(prev => ({ ...prev, isOpen: false }))
+                }}
+            />
         </>
     )
 }

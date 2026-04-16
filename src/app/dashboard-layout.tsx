@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Users, FileText, LayoutDashboard, UtensilsCrossed, ClipboardList, Eye, Shield, UserCog, Stethoscope, MessageCircle, Activity, Sparkles, ChefHat, Image as ImageIcon, Menu, LogOut, ChevronLeft, ChevronRight, ScrollText, ArrowLeft, ArrowRightLeft, Settings } from 'lucide-react'
+import { Users, FileText, LayoutDashboard, UtensilsCrossed, ClipboardList, Eye, Shield, UserCog, Stethoscope, MessageCircle, Activity, Sparkles, ChefHat, Image as ImageIcon, Menu, LogOut, ChevronLeft, ChevronRight, ScrollText, ArrowLeft, ArrowRightLeft, Settings, BarChart3, FileSpreadsheet } from 'lucide-react'
 import { useAuth } from '@/contexts/auth-context'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -157,6 +157,8 @@ export default function DashboardLayout({
 
         aiTabs.push({ href: '/admin/food-discovery', label: 'AI Keşif', icon: ChefHat })
         aiTabs.push({ href: '/admin/card-maker', label: 'Kart Maker', icon: ImageIcon })
+        aiTabs.push({ href: '/admin/pattern-insights', label: 'Oruntu Analizi', icon: BarChart3 })
+        aiTabs.push({ href: '/admin/menu-import-pool', label: 'Menu Havuzu', icon: FileSpreadsheet })
 
         if (profile?.role === 'doctor' || profile?.role === 'dietitian') {
             adminTabs.push({ href: '/admin/settings/profile', label: 'Profil Ayarlar\u0131', icon: Settings })

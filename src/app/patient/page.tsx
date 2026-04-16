@@ -123,41 +123,27 @@ export default function PatientDashboardPage() {
             // Smart patient lookup (same as plan/page.tsx)
             // Priority 1: user_id match (legacy patients like HACER with existing plans)
             // Priority 2: id match (new patients created via portal)
-            let patientRecord = null
+            const patientQueryStr = `
+                id, status, weight, height, birth_date, gender, activity_level, patient_goals, visibility_settings,
+                program_templates (
+                    id, name, default_activity_level,
+                    program_template_weeks (week_start, week_end, diet_type_id)
+                )
+            `
 
-            // First try user_id match
-            const { data: legacyMatch } = await supabase
-                .from('patients')
-                .select(`
-                    id, status, weight, height, birth_date, gender, activity_level, patient_goals, visibility_settings,
-                    program_templates (
-                        id, name, default_activity_level,
-                        program_template_weeks (week_start, week_end, diet_type_id)
-                    )
-                `)
-                .eq('user_id', targetId)
-                .neq('id', targetId) // Exclude if id also matches
-                .limit(1)
-                .maybeSingle()
+            const [
+                { data: legacyMatch },
+                { data: directMatch }
+            ] = await Promise.all([
+                supabase.from('patients').select(patientQueryStr).eq('user_id', targetId).neq('id', targetId).limit(1).maybeSingle(),
+                supabase.from('patients').select(patientQueryStr).eq('id', targetId).maybeSingle()
+            ])
 
+            let patientRecord = legacyMatch || directMatch
+            
             if (legacyMatch) {
-                patientRecord = legacyMatch
-                console.log("📋 Dashboard: Found legacy patient via user_id:", patientRecord.id)
-            } else {
-                // Fallback: try id match
-                const { data: directMatch } = await supabase
-                    .from('patients')
-                    .select(`
-                        id, status, weight, height, birth_date, gender, activity_level, patient_goals, visibility_settings,
-                        program_templates (
-                            id, name, default_activity_level,
-                            program_template_weeks (week_start, week_end, diet_type_id)
-                        )
-                    `)
-                    .eq('id', targetId)
-                    .maybeSingle()
-
-                patientRecord = directMatch
+                console.log("📋 Dashboard: Found legacy patient via user_id:", patientRecord?.id)
+            } else if (directMatch) {
                 console.log("📋 Dashboard: Found patient via id:", patientRecord?.id)
             }
 
@@ -345,27 +331,16 @@ export default function PatientDashboardPage() {
 
             // Finally: Resolve the diet type and check for Patient-Specific Overrides
             if (targetDietTypeId) {
-                const { data: baseType } = await supabase
-                    .from('diet_types')
-                    .select('*')
-                    .eq('id', targetDietTypeId)
-                    .single()
+                const [
+                    { data: baseType },
+                    { data: overrideType }
+                ] = await Promise.all([
+                    supabase.from('diet_types').select('*').eq('id', targetDietTypeId).single(),
+                    supabase.from('diet_types').select('*').eq('patient_id', patient.id).eq('parent_diet_type_id', targetDietTypeId).maybeSingle()
+                ])
 
                 if (baseType) {
-                    resolvedDietType = baseType
-
-                    // Check for override
-                    const { data: overrideType } = await supabase
-                        .from('diet_types')
-                        .select('*')
-                        .eq('patient_id', patient.id)
-                        .eq('parent_diet_type_id', baseType.id)
-                        .maybeSingle()
-
-                    if (overrideType) {
-                        resolvedDietType = overrideType
-                    }
-
+                    resolvedDietType = overrideType || baseType
                     setDietType(resolvedDietType)
                 }
             }

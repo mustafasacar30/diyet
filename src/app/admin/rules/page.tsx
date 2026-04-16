@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import { supabase } from "@/lib/supabase"
 import { Button } from "@/components/ui/button"
 import { Plus, Settings, ChevronUp, ChevronDown } from "lucide-react"
@@ -15,6 +16,8 @@ import { resolveTeamScopeContextFromAuth } from "@/lib/team-scope"
 import { useAuth } from "@/contexts/auth-context"
 
 export default function RulesPage() {
+    const router = useRouter()
+    const searchParams = useSearchParams()
     const [rules, setRules] = useState<PlanningRule[]>([])
     const [inheritedGlobalRules, setInheritedGlobalRules] = useState<PlanningRule[]>([])
     const [suggestions, setSuggestions] = useState<PlanningRule[]>([])
@@ -24,6 +27,7 @@ export default function RulesPage() {
     const [settingsOpen, setSettingsOpen] = useState(false)
     const [editingRule, setEditingRule] = useState<PlanningRule | null>(null)
     const [isAcceptingSuggestion, setIsAcceptingSuggestion] = useState<string | null>(null)
+    const [draftLoadedFromPattern, setDraftLoadedFromPattern] = useState(false)
     const { scopeMode } = useAuth()
     const [scopeActionLoading, setScopeActionLoading] = useState(false)
     const [teamRuleCount, setTeamRuleCount] = useState(0)
@@ -57,6 +61,39 @@ export default function RulesPage() {
     useEffect(() => {
         fetchRules()
     }, [scopeMode])
+
+    useEffect(() => {
+        if (draftLoadedFromPattern) return
+        if (searchParams.get('fromPattern') !== '1') return
+
+        try {
+            const rawDraft = localStorage.getItem('pattern_rule_draft')
+            if (!rawDraft) {
+                setDraftLoadedFromPattern(true)
+                router.replace('/admin/rules')
+                return
+            }
+
+            const parsed = JSON.parse(rawDraft) as Partial<PlanningRule>
+            const draftRule: PlanningRule = {
+                ...(parsed as PlanningRule),
+                id: '' as any,
+                source_rule_id: null,
+                pending_global_approval: false,
+            }
+
+            setEditingRule(draftRule)
+            setDialogOpen(true)
+            setIsAcceptingSuggestion(null)
+            localStorage.removeItem('pattern_rule_draft')
+            setDraftLoadedFromPattern(true)
+            router.replace('/admin/rules')
+        } catch (error) {
+            console.error('Pattern draft load error:', error)
+            setDraftLoadedFromPattern(true)
+            router.replace('/admin/rules')
+        }
+    }, [draftLoadedFromPattern, router, searchParams])
 
     async function fetchRules() {
         setLoading(true)

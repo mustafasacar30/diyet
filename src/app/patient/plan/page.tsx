@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import { useAuth } from "@/contexts/auth-context"
 import { useEffect, useState, useRef, useMemo } from "react"
@@ -240,7 +240,7 @@ function ConcentricRings({ data, size = 96, label }: {
     )
 }
 
-function MacroDashboard({ totals, targets, isVisible, onClose, days }: MacroDashboardProps) {
+function MacroDashboard({ totals, targets, isVisible, onClose, days, patientInfo }: MacroDashboardProps) {
     const tCals = targets?.calories || 0, tCarb = targets?.carb || targets?.carbs || 0, tProt = targets?.protein || 0, tFat = targets?.fat || 0
     const dCals = Math.round(totals.calories || 0), dCarb = Math.round(totals.carbs || 0), dProt = Math.round(totals.protein || 0), dFat = Math.round(totals.fat || 0)
     const [isDailyBalanceHintActive, setIsDailyBalanceHintActive] = useState(false)
@@ -254,6 +254,7 @@ function MacroDashboard({ totals, targets, isVisible, onClose, days }: MacroDash
 
     const hasDailyLargeDeviation =
         Math.abs(getDeviationPercent(dCals, tCals)) > deviationThresholdPct
+    const showFlavorTune = patientInfo?.visibility_settings?.show_flavor_tune !== false
 
     useEffect(() => {
         if (!isVisible || !targets || !hasDailyLargeDeviation) {
@@ -407,7 +408,7 @@ function MacroDashboard({ totals, targets, isVisible, onClose, days }: MacroDash
 
                     {/* Bottom Row: Full Width Daily/Weekly Vibrant Progress Bars with Dengele Buttons */}
                     <div className="w-full flex flex-col sm:flex-row items-stretch gap-2 mt-0.5">
-                        {/* Weekly Progress Bar & Button */}
+                        {/* Weekly Progress Bar & Buttons */}
                         <div className="flex-1 flex flex-row items-center gap-2">
                             <div className="relative flex-1 h-5 sm:h-4.5 rounded-md overflow-hidden bg-gray-100 shrink-0 border-r-4 border-gray-400/30">
                                 {/* Battery Cap Effect */}
@@ -494,9 +495,22 @@ function MacroDashboard({ totals, targets, isVisible, onClose, days }: MacroDash
                                 <Scale size={12} />
                                 <span className={cn("sm:inline", isWeeklyBalanceHintActive ? "inline" : "hidden")}>DENGELE</span>
                             </button>
+                            {showFlavorTune && (
+                                <button
+                                    onClick={() => {
+                                        const event = new CustomEvent('trigger-weekly-flavor');
+                                        window.dispatchEvent(event);
+                                    }}
+                                    className="relative h-5 sm:h-4.5 px-2.5 rounded-md text-[10px] sm:text-xs font-bold transition-all flex justify-center items-center gap-1.5 shadow-[0_4px_20px_-2px_rgba(217,70,239,0.35)] hover:shadow-[0_6px_30px_-2px_rgba(217,70,239,0.55)] bg-gradient-to-br from-fuchsia-500 via-violet-500 to-purple-500 hover:from-fuchsia-600 hover:via-violet-600 hover:to-purple-600 text-white shrink-0 hover:scale-[1.02] active:scale-95"
+                                    title="Haftalık Lezzet Ayarı"
+                                >
+                                    <Sparkles size={12} />
+                                    <span className="hidden sm:inline">LEZZET</span>
+                                </button>
+                            )}
                         </div>
 
-                        {/* Daily Progress Bar & Button */}
+                        {/* Daily Progress Bar & Buttons */}
                         <div className="flex-1 flex flex-row items-center gap-2">
                             <div className="relative flex-1 h-5 sm:h-4.5 rounded-md overflow-hidden bg-gray-100 shrink-0 border-r-4 border-gray-400/30">
                                 {/* Battery Cap Effect */}
@@ -583,6 +597,19 @@ function MacroDashboard({ totals, targets, isVisible, onClose, days }: MacroDash
                                 <Scale size={12} />
                                 <span className={cn("sm:inline", isDailyBalanceHintActive ? "inline" : "hidden")}>DENGELE</span>
                             </button>
+                            {showFlavorTune && (
+                                <button
+                                    onClick={() => {
+                                        const event = new CustomEvent('trigger-daily-flavor');
+                                        window.dispatchEvent(event);
+                                    }}
+                                    className="relative h-5 sm:h-4.5 px-2.5 rounded-md text-[10px] sm:text-xs font-bold transition-all flex justify-center items-center gap-1.5 shadow-[0_4px_20px_-2px_rgba(217,70,239,0.35)] hover:shadow-[0_6px_30px_-2px_rgba(217,70,239,0.55)] bg-gradient-to-br from-fuchsia-500 via-violet-500 to-purple-500 hover:from-fuchsia-600 hover:via-violet-600 hover:to-purple-600 text-white shrink-0 hover:scale-[1.02] active:scale-95"
+                                    title="Günlük Lezzet Ayarı"
+                                >
+                                    <Sparkles size={12} />
+                                    <span className="hidden sm:inline">LEZZET</span>
+                                </button>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -995,6 +1022,14 @@ export default function PatientPlanPage() {
     const [isGeneratingPlan, setIsGeneratingPlan] = useState(false)
     const [isApplyingPlan, setIsApplyingPlan] = useState(false)
     const [isPdfGenerating, setIsPdfGenerating] = useState(false)
+    const [isTuneLoading, setIsTuneLoading] = useState(false)
+    const [tuneLoadMode, setTuneLoadMode] = useState<'balance' | 'flavor'>('balance')
+    const [tuneLoadScope, setTuneLoadScope] = useState<'daily' | 'weekly'>('weekly')
+    const [tuneLoadStep, setTuneLoadStep] = useState<'analyzing' | 'applying'>('analyzing')
+    const [tuneMessageIndex, setTuneMessageIndex] = useState(0)
+    const [tuneProgress, setTuneProgress] = useState(8)
+    const [tuneEtaSec, setTuneEtaSec] = useState<number | null>(null)
+    const [tuneStepStartedAt, setTuneStepStartedAt] = useState(0)
     const [refreshTrigger, setRefreshTrigger] = useState(0)
     const [planningPhase, setPlanningPhase] = useState<'idle' | 'confirm' | 'planning' | 'success'>('idle')
     const [planningProgress, setPlanningProgress] = useState(0)
@@ -1040,6 +1075,78 @@ export default function PatientPlanPage() {
         "Son kontroller yapılıyor..."
     ]), [])
     const [planningMessageIndex, setPlanningMessageIndex] = useState(0)
+    const tuneMessages = useMemo(() => {
+        if (tuneLoadStep === 'applying') {
+            return [
+                'Seçtiğiniz değişiklikler uygulanıyor...',
+                'Öğün satırları güncelleniyor...',
+                'Makro değerleri yeniden hesaplanıyor...',
+                'Liste yenileniyor...'
+            ]
+        }
+        if (tuneLoadMode === 'flavor') {
+            return [
+                'Lezzet uyumu analiz ediliyor...',
+                'Öğün içi kombinasyonlar taranıyor...',
+                'Kilitli öğeler kontrol ediliyor...',
+                'En uygun değişiklikler hazırlanıyor...'
+            ]
+        }
+        return [
+            'Makro sapmaları analiz ediliyor...',
+            'Dengeleme seçenekleri hesaplanıyor...',
+            'Öğün limitleri kontrol ediliyor...',
+            'Öneriler hazırlanıyor...'
+        ]
+    }, [tuneLoadMode, tuneLoadStep])
+
+    useEffect(() => {
+        if (!isTuneLoading) {
+            setTuneMessageIndex(0)
+            return
+        }
+        const timer = setInterval(() => {
+            setTuneMessageIndex(prev => (prev + 1) % tuneMessages.length)
+        }, 1300)
+        return () => clearInterval(timer)
+    }, [isTuneLoading, tuneMessages])
+
+    useEffect(() => {
+        if (!isTuneLoading) {
+            setTuneProgress(8)
+            setTuneEtaSec(null)
+            return
+        }
+
+        const expectedMs = tuneLoadStep === 'analyzing'
+            ? (
+                tuneLoadMode === 'flavor'
+                    ? (tuneLoadScope === 'weekly' ? 9000 : 6000)
+                    : (tuneLoadScope === 'weekly' ? 7000 : 4500)
+            )
+            : (
+                tuneLoadMode === 'flavor'
+                    ? 5000
+                    : 3500
+            )
+
+        const segStart = tuneLoadStep === 'analyzing' ? 8 : 72
+        const segEnd = tuneLoadStep === 'analyzing' ? 72 : 96
+
+        const tick = () => {
+            const startedAt = tuneStepStartedAt || Date.now()
+            const elapsed = Math.max(0, Date.now() - startedAt)
+            const ratio = Math.min(1, elapsed / expectedMs)
+            const nextProgress = segStart + ((segEnd - segStart) * ratio)
+            setTuneProgress(nextProgress)
+            const eta = Math.max(0, Math.ceil((expectedMs - elapsed) / 1000))
+            setTuneEtaSec(eta)
+        }
+
+        tick()
+        const intervalId = setInterval(tick, 250)
+        return () => clearInterval(intervalId)
+    }, [isTuneLoading, tuneLoadMode, tuneLoadScope, tuneLoadStep, tuneStepStartedAt])
 
     // Global Themed App Modal State (replaces alerts/confirms)
     type AppModalState = {
@@ -1064,6 +1171,7 @@ export default function PatientPlanPage() {
         changes: BalanceChange[];
         initialTotals: { calories: number; protein: number; fat: number; carbs: number; };
         targetMacros: { calories: number; protein: number; fat: number; carbs: number; };
+        defaultSelectAll: boolean;
         resolve: ((approvedChanges: BalanceChange[] | null) => void) | null;
     }>({
         isOpen: false,
@@ -1071,6 +1179,7 @@ export default function PatientPlanPage() {
         changes: [],
         initialTotals: { calories: 0, protein: 0, fat: 0, carbs: 0 },
         targetMacros: { calories: 0, protein: 0, fat: 0, carbs: 0 },
+        defaultSelectAll: false,
         resolve: null
     })
 
@@ -1078,11 +1187,53 @@ export default function PatientPlanPage() {
         title: string,
         changes: BalanceChange[],
         initialTotals: { calories: number; protein: number; fat: number; carbs: number; },
-        targetMacros: { calories: number; protein: number; fat: number; carbs: number; }
+        targetMacros: { calories: number; protein: number; fat: number; carbs: number; },
+        options?: { defaultSelectAll?: boolean }
     ): Promise<BalanceChange[] | null> => {
         return new Promise((resolve) => {
-            setBalanceModal({ isOpen: true, title, changes, initialTotals, targetMacros, resolve })
+            setBalanceModal({
+                isOpen: true,
+                title,
+                changes,
+                initialTotals,
+                targetMacros,
+                defaultSelectAll: Boolean(options?.defaultSelectAll),
+                resolve
+            })
         })
+    }
+
+    const plannerRef = useRef<Planner | null>(null)
+    const plannerInitPromiseRef = useRef<Promise<Planner> | null>(null)
+    const plannerKeyRef = useRef<string>('')
+
+    useEffect(() => {
+        plannerRef.current = null
+        plannerInitPromiseRef.current = null
+        plannerKeyRef.current = ''
+    }, [patientInfo?.id, user?.id, activePlan?.patient_id])
+
+    async function getPlannerInstance(patientId: string, userId: string) {
+        const cacheKey = `${patientId}:${userId}`
+        if (plannerRef.current && plannerKeyRef.current === cacheKey) {
+            return plannerRef.current
+        }
+        if (plannerInitPromiseRef.current && plannerKeyRef.current === cacheKey) {
+            return plannerInitPromiseRef.current
+        }
+
+        const planner = new Planner(patientId, userId)
+        plannerKeyRef.current = cacheKey
+        plannerInitPromiseRef.current = planner.init().then(() => {
+            plannerRef.current = planner
+            return planner
+        }).catch((err) => {
+            plannerRef.current = null
+            plannerInitPromiseRef.current = null
+            plannerKeyRef.current = ''
+            throw err
+        })
+        return plannerInitPromiseRef.current
     }
 
     // Foods database for adding new meals
@@ -1221,7 +1372,7 @@ export default function PatientPlanPage() {
             if (!isBackgroundRefresh) setLoading(true)
 
             const targetId = profile?.id || user?.id
-            console.log("🔍 Looking for patient with ID:", targetId)
+            console.log("ğŸ” Looking for patient with ID:", targetId)
 
             if (!targetId) return
 
@@ -1250,7 +1401,7 @@ export default function PatientPlanPage() {
 
             if (legacyMatch) {
                 scopedPatientRecord = legacyMatch
-                console.log("📋 Found legacy patient via user_id:", scopedPatientRecord)
+                console.log("ğŸ“‹ Found legacy patient via user_id:", scopedPatientRecord)
             } else {
                 // Fallback: try id match (new patients)
                 const { data: directMatch, error: directError } = await supabase
@@ -1269,10 +1420,10 @@ export default function PatientPlanPage() {
 
                 scopedPatientRecord = directMatch
                 patientError = directError
-                console.log("📋 Found patient via id:", scopedPatientRecord)
+                console.log("ğŸ“‹ Found patient via id:", scopedPatientRecord)
             }
 
-            console.log("📋 Final patient record:", scopedPatientRecord, patientError)
+            console.log("ğŸ“‹ Final patient record:", scopedPatientRecord, patientError)
 
             if (!scopedPatientRecord) {
                 console.error("Patient record not found:", patientError)
@@ -1588,8 +1739,8 @@ export default function PatientPlanPage() {
             if (duplicates.length === 1) {
                 uniqueWeeks.push(duplicates[0])
             } else {
-                console.warn(`⚠️ Duplicate Weeks Found for Week ${weekNum}:`, duplicates)
-                console.log("🔍 Duplicate Dump:", duplicates.map(d => ({
+                console.warn(`âš ï¸ Duplicate Weeks Found for Week ${weekNum}:`, duplicates)
+                console.log("ğŸ” Duplicate Dump:", duplicates.map(d => ({
                     id: d.id,
                     created: d.created_at,
                     hasType: !!d.assigned_diet_type_id,
@@ -1747,7 +1898,7 @@ export default function PatientPlanPage() {
                         }
                     }
                     if (progType) {
-                        console.log("⚙️ Program Priority Match: Found via Template Rule", progType.name)
+                        console.log("âš™ï¸ Program Priority Match: Found via Template Rule", progType.name)
                         selectedType = progType
                     }
                 }
@@ -1762,14 +1913,14 @@ export default function PatientPlanPage() {
                 if (selectedType && !selectedType.patient_id) {
                     const override = pDietTypes.find((d: any) => d.parent_diet_type_id === selectedType.id)
                     if (override) {
-                        console.log("⚙️ Auto-Override Applied: Replaced Global", selectedType.name, "with", override.name)
+                        console.log("âš™ï¸ Auto-Override Applied: Replaced Global", selectedType.name, "with", override.name)
                         selectedType = override
                     }
                 }
                 if (!selectedType && current.assigned_diet_type_id) {
                     const directPrivate = pDietTypes.find((d: any) => d.id === current.assigned_diet_type_id)
                     if (directPrivate) {
-                        console.log("⚙️ Direct Private Match: Found via ID", directPrivate.name)
+                        console.log("âš™ï¸ Direct Private Match: Found via ID", directPrivate.name)
                         selectedType = directPrivate
                     }
                 }
@@ -1784,14 +1935,14 @@ export default function PatientPlanPage() {
                 // Use the first one as the patient's "default" diet type
                 selectedType = pDietTypes[0]
                 if (selectedType) {
-                    console.log("🍽️ Patient-Specific Diet Type Found:", selectedType.name)
+                    console.log("ğŸ½ï¸ Patient-Specific Diet Type Found:", selectedType.name)
                 }
             }
 
             // 4. [FINAL FALLBACK] If still no type, use DEFAULT factors (Admin Logic Mirror)
             // Admin Panel uses: C:3.0, P:1.0, F:0.8 if no type is found.
             if (!selectedType) {
-                console.log("⚙️ Default Fallback: No type found, using Standard Factors (Admin Mirror)")
+                console.log("âš™ï¸ Default Fallback: No type found, using Standard Factors (Admin Mirror)")
                 selectedType = {
                     id: 'default-fallback',
                     name: 'Genel (Varsayılan)',
@@ -1920,12 +2071,12 @@ export default function PatientPlanPage() {
             .order('day_number', { ascending: true })
             .order('sort_order', { referencedTable: 'diet_meals', ascending: true })
 
-        console.log("📅 Days data:", days, daysError)
+        console.log("ğŸ“… Days data:", days, daysError)
 
         // DEBUG: Check first meal of first day to see if foods are joined
         if (days && days.length > 0 && days[0].diet_meals && days[0].diet_meals.length > 0) {
             const firstMeal = days[0].diet_meals[0]
-            console.log("🐛 First Meal Debug:", {
+            console.log("ğŸ› First Meal Debug:", {
                 id: firstMeal.id,
                 food_id: firstMeal.food_id,
                 foods: firstMeal.foods, // Check if this is null or populated
@@ -1945,7 +2096,7 @@ export default function PatientPlanPage() {
 
         // AUTO-REPAIR: If week exists but has no days (e.g. from a past interrupted creation), create them now
         if (currentDays && currentDays.length === 0) {
-            console.log("🛠️ Bozuk hafta tespit edildi (Günler yok). Otomatik onarılıyor...");
+            console.log("ğŸ› ï¸ Bozuk hafta tespit edildi (Günler yok). Otomatik onarılıyor...");
             const weekRecord = allWeeks.find((w: any) => w.id === weekId);
             if (weekRecord?.start_date) {
                 const daysToInsert = [];
@@ -1963,7 +2114,7 @@ export default function PatientPlanPage() {
                         alert(`Günler oluşturulamadı: ${insertError.message}`);
                     } else if (newDays) {
                         // Re-fetch cleanly to get all relations (diet_meals arrays etc.)
-                        console.log("🛠️ Onarım tamamlandı, günler yeniden yükleniyor...");
+                        console.log("ğŸ› ï¸ Onarım tamamlandı, günler yeniden yükleniyor...");
                         await fetchWeekDays(weekId, customPatientInfo, customDietType, customMealTypes);
                         return; // Stop execution here, the recursive call handles the rest
                     }
@@ -1992,7 +2143,7 @@ export default function PatientPlanPage() {
 
             let foodMap = new Map<string, any>()
             if (missingFoodIds.size > 0) {
-                console.log("⚠️ Missing foods detected, fetching manually:", missingFoodIds.size)
+                console.log("âš ï¸ Missing foods detected, fetching manually:", missingFoodIds.size)
                 const { data: manualFoods } = await supabase
                     .from('foods')
                     .select('id, name, calories, protein, carbs, fat, portion_unit, standard_amount, role, category, keto, lowcarb, vegan, vejeteryan, compatibility_tags, meal_types, min_quantity, max_quantity, step, portion_fixed, max_weekly_freq, priority_score, tags, season_start, season_end')
@@ -2238,16 +2389,26 @@ export default function PatientPlanPage() {
         const handleCustomBalanceTrigger = () => {
             handleDailyBalance()
         }
+        const handleCustomDailyFlavorTrigger = () => {
+            handleAutoBalance('flavor', selectedDayIndex + 1)
+        }
         const handleCustomWeeklyBalanceTrigger = () => {
             handleAutoBalance()
         }
+        const handleCustomWeeklyFlavorTrigger = () => {
+            handleAutoBalance('flavor')
+        }
         window.addEventListener('trigger-daily-balance', handleCustomBalanceTrigger)
+        window.addEventListener('trigger-daily-flavor', handleCustomDailyFlavorTrigger)
         window.addEventListener('trigger-weekly-balance', handleCustomWeeklyBalanceTrigger)
+        window.addEventListener('trigger-weekly-flavor', handleCustomWeeklyFlavorTrigger)
         return () => {
             window.removeEventListener('trigger-daily-balance', handleCustomBalanceTrigger)
+            window.removeEventListener('trigger-daily-flavor', handleCustomDailyFlavorTrigger)
             window.removeEventListener('trigger-weekly-balance', handleCustomWeeklyBalanceTrigger)
+            window.removeEventListener('trigger-weekly-flavor', handleCustomWeeklyFlavorTrigger)
         }
-    }, [patientInfo, currentDay, originalCustomFoods, activeWeek]) // Removed dailyTargets from dep array since it's computed in render
+    }, [patientInfo, currentDay, originalCustomFoods, activeWeek, selectedDayIndex]) // Removed dailyTargets from dep array since it's computed in render
     // Handler for Swap Click
     const handleSwapClick = (mealId: string, food: DietFood, slotFoods: DietFood[]) => {
         // mealId here is the SLOT ID (e.g. "dayId-Ogle")
@@ -2709,7 +2870,7 @@ export default function PatientPlanPage() {
 
     const dailyTargets = (() => {
         if (patientInfo?.macro_target_mode === 'plan' && currentDay) {
-            console.log("📊 PORTAL: Using PLAN mode targets for day:", currentDay.day_name)
+            console.log("ğŸ“Š PORTAL: Using PLAN mode targets for day:", currentDay.day_name)
             // FIX: Use target_* values (based on ORIGINAL foods) for targets, not current foods
             // This ensures swapped foods don't change the target
             const planTotals = currentDay.diet_meals.reduce((acc, m) => {
@@ -2913,7 +3074,7 @@ export default function PatientPlanPage() {
 
     async function handleAutoGenerate() {
         if (!user || !patientInfo) {
-            console.warn("❌ [handleAutoGenerate] ERKEN CIKIS (Eksik user/hasta verisi).");
+            console.warn("âŒ [handleAutoGenerate] ERKEN CIKIS (Eksik user/hasta verisi).");
             return;
         }
 
@@ -2930,7 +3091,7 @@ export default function PatientPlanPage() {
         }
 
         if (!activeWeek?.id || !activePlan?.patient_id) {
-            console.log("⚠️ Aktif hafta yok, oluşturuluyor...");
+            console.log("âš ï¸ Aktif hafta yok, oluşturuluyor...");
             await handleCreatePlanAndWeek();
         }
 
@@ -2946,8 +3107,7 @@ export default function PatientPlanPage() {
         setPlanningProgress(0)
         setIsGeneratingPlan(true)
         try {
-            const planner = new Planner(activePlan.patient_id, user.id)
-            await planner.init()
+            const planner = await getPlannerInstance(activePlan.patient_id, user.id)
             setPlanningProgress(10)
 
             const startDate = activeWeek.start_date ? new Date(activeWeek.start_date) : new Date()
@@ -3074,7 +3234,7 @@ export default function PatientPlanPage() {
                 ?.filter((r: any) => r.restriction_type === 'banned_tag')
                 .map((r: any) => r.restriction_value) || []
 
-            // ── CROSS-WEEK ROTATION: Collect food usage from other weeks ──
+            // â”€â”€ CROSS-WEEK ROTATION: Collect food usage from other weeks â”€â”€
             const historicalFoodCounts = new Map<string, number>()
             if (activeWeek?.id && activePlan?.id) {
                 const { data: otherWeeks } = await supabase
@@ -3501,7 +3661,7 @@ export default function PatientPlanPage() {
     }
 
     // ================== SMART WEEKLY MACRO BALANCER (ENGINE-BASED) ==================
-    async function handleAutoBalance() {
+    async function handleAutoBalance(mode: 'balance' | 'flavor' = 'balance', targetDay?: number) {
         if (!weekDays || weekDays.length === 0 || !dailyTargets) {
             await showAppModal('Hata', 'Haftalık veriler veya hedef makrolar yüklenemedi.', 'warning')
             return
@@ -3521,8 +3681,14 @@ export default function PatientPlanPage() {
             return
         }
 
+        setTuneLoadMode(mode)
+        setTuneLoadScope(targetDay ? 'daily' : 'weekly')
+        setTuneLoadStep('analyzing')
+        setTuneStepStartedAt(Date.now())
+        setIsTuneLoading(true)
+
         try {
-            // ── 1. BUILD PLAN OBJECT FROM weekDays ──────────────────────
+            // â”€â”€ 1. BUILD PLAN OBJECT FROM weekDays â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             const planMeals: any[] = []
             const DAY_NAMES = ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar']
 
@@ -3575,10 +3741,11 @@ export default function PatientPlanPage() {
                 settings: null, // Engine will load its own settings
             }
 
-            // ── 2. CALL ENGINE balancePlan() ────────────────────────────
-            const planner = new Planner(patientInfo.id, user.id)
-            await planner.init()
-            const { plan: balanced, changes } = await planner.balancePlan(plan, 'weekly')
+            // â”€â”€ 2. CALL ENGINE balancePlan() / applyFlavorTune() â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            const planner = await getPlannerInstance(patientInfo.id, user.id)
+            const { plan: balanced, changes } = mode === 'flavor'
+                ? await planner.applyFlavorTune(plan, targetDay ? 'daily' : 'weekly', targetDay)
+                : await planner.balancePlan(plan, 'weekly')
 
             if (changes.length === 0) {
                 // Calculate and show current state
@@ -3603,7 +3770,326 @@ export default function PatientPlanPage() {
                 return
             }
 
-            // ── 3. CATEGORIZE CHANGES FOR DISPLAY ───────────────────────
+            // â”€â”€ 3. CATEGORIZE CHANGES FOR DISPLAY â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            if (mode === 'flavor') {
+                const balancedMeals = balanced.meals || []
+                const scopedOriginalMeals = targetDay
+                    ? planMeals.filter((m: any) => m.day === targetDay)
+                    : planMeals
+                const scopedBalancedMeals = targetDay
+                    ? balancedMeals.filter((m: any) => m.day === targetDay)
+                    : balancedMeals
+
+                const dayNameByNumber = new Map<number, string>()
+                weekDays.forEach((d: any, idx: number) => dayNameByNumber.set(idx + 1, d.day_name || `Gün ${idx + 1}`))
+
+                const getMacros = (meal: any) => {
+                    const mult = Number(meal?.portion_multiplier || 1)
+                    const food = meal?.food || {}
+                    return {
+                        calories: (Number(food.calories) || 0) * mult,
+                        protein: (Number(food.protein) || 0) * mult,
+                        carbs: (Number(food.carbs) || 0) * mult,
+                        fat: (Number(food.fat) || 0) * mult,
+                    }
+                }
+
+                const initialTotals = scopedOriginalMeals.reduce((acc: any, m: any) => {
+                    const mac = getMacros(m)
+                    acc.calories += mac.calories
+                    acc.protein += mac.protein
+                    acc.carbs += mac.carbs
+                    acc.fat += mac.fat
+                    return acc
+                }, { calories: 0, protein: 0, fat: 0, carbs: 0 })
+
+                const dayCount = targetDay
+                    ? 1
+                    : Math.max(1, new Set(scopedOriginalMeals.map((m: any) => m.day)).size || weekDays.length || 7)
+                const isWeeklyFlavor = !targetDay
+                const displayDivisor = isWeeklyFlavor ? dayCount : 1
+
+                const bySlot = (meals: any[]) => {
+                    const map = new Map<string, any[]>()
+                    meals.forEach((m: any) => {
+                        const key = `${m.day}__${m.slot}`
+                        const arr = map.get(key) || []
+                        arr.push(m)
+                        map.set(key, arr)
+                    })
+                    return map
+                }
+
+                const originalBySlot = bySlot(scopedOriginalMeals)
+                const balancedBySlot = bySlot(scopedBalancedMeals)
+                const allSlotKeys = new Set<string>([...originalBySlot.keys(), ...balancedBySlot.keys()])
+
+                const flavorChanges: BalanceChange[] = []
+                let changeSeq = 0
+
+                allSlotKeys.forEach((slotKey) => {
+                    const originalSlot = [...(originalBySlot.get(slotKey) || [])]
+                    const balancedSlot = [...(balancedBySlot.get(slotKey) || [])]
+
+                    const usedOriginal = new Set<number>()
+                    const usedBalanced = new Set<number>()
+
+                    // Exact food match => potential portion change
+                    balancedSlot.forEach((bMeal: any, bIdx: number) => {
+                        const oIdx = originalSlot.findIndex((oMeal: any, idx: number) => !usedOriginal.has(idx) && oMeal.food?.id === bMeal.food?.id)
+                        if (oIdx === -1) return
+
+                        usedOriginal.add(oIdx)
+                        usedBalanced.add(bIdx)
+
+                        const oMeal = originalSlot[oIdx]
+                        const oldMult = Number(oMeal.portion_multiplier || 1)
+                        const newMult = Number(bMeal.portion_multiplier || 1)
+                        if (Math.abs(newMult - oldMult) <= 0.01 || !oMeal._dbId) return
+
+                        const oldMac = getMacros(oMeal)
+                        const newMac = getMacros(bMeal)
+                        flavorChanges.push({
+                            id: `flavor-${++changeSeq}`,
+                            type: 'portion',
+                            foodId: String(oMeal._dbId),
+                            foodName: bMeal.food?.name || oMeal.food?.name || 'Yemek',
+                            detail: `Porsiyon: ${oldMult.toFixed(2)}x -> ${newMult.toFixed(2)}x`,
+                            slotName: bMeal.slot,
+                            day: bMeal.day,
+                            dayName: bMeal.dayName || dayNameByNumber.get(Number(bMeal.day)),
+                            originalMultiplier: oldMult,
+                            newMultiplier: newMult,
+                            diffCals: newMac.calories - oldMac.calories,
+                            diffProt: newMac.protein - oldMac.protein,
+                            diffCarbs: newMac.carbs - oldMac.carbs,
+                            diffFat: newMac.fat - oldMac.fat,
+                        })
+                    })
+
+                    // Remaining original + remaining balanced => swaps
+                    const remainingOriginalIdx = originalSlot
+                        .map((_, idx) => idx)
+                        .filter((idx) => !usedOriginal.has(idx))
+                    const remainingBalancedIdx = balancedSlot
+                        .map((_, idx) => idx)
+                        .filter((idx) => !usedBalanced.has(idx))
+
+                    const swapCount = Math.min(remainingOriginalIdx.length, remainingBalancedIdx.length)
+                    for (let i = 0; i < swapCount; i++) {
+                        const oMeal = originalSlot[remainingOriginalIdx[i]]
+                        const bMeal = balancedSlot[remainingBalancedIdx[i]]
+                        if (!oMeal?._dbId || !bMeal?.food?.id) continue
+
+                        const oldMac = getMacros(oMeal)
+                        const newMac = getMacros(bMeal)
+
+                        flavorChanges.push({
+                            id: `flavor-${++changeSeq}`,
+                            type: 'swap',
+                            foodId: String(oMeal._dbId),
+                            foodName: oMeal.food?.name || 'Yemek',
+                            detail: `${oMeal.food?.name || 'Yemek'} -> ${bMeal.food?.name || 'Yeni yemek'}`,
+                            slotName: bMeal.slot,
+                            day: bMeal.day,
+                            dayName: bMeal.dayName || dayNameByNumber.get(Number(bMeal.day)),
+                            newFood: { ...bMeal.food, _originalFoodId: oMeal.food?.id },
+                            diffCals: newMac.calories - oldMac.calories,
+                            diffProt: newMac.protein - oldMac.protein,
+                            diffCarbs: newMac.carbs - oldMac.carbs,
+                            diffFat: newMac.fat - oldMac.fat,
+                        })
+
+                        usedOriginal.add(remainingOriginalIdx[i])
+                        usedBalanced.add(remainingBalancedIdx[i])
+                    }
+
+                    // Remaining balanced => adds
+                    balancedSlot.forEach((bMeal: any, bIdx: number) => {
+                        if (usedBalanced.has(bIdx) || !bMeal?.food?.id) return
+                        const mac = getMacros(bMeal)
+                        flavorChanges.push({
+                            id: `flavor-${++changeSeq}`,
+                            type: 'add',
+                            foodName: bMeal.food?.name || 'Yeni yemek',
+                            detail: `${bMeal.slot} öğününe eklenecek`,
+                            slotName: bMeal.slot,
+                            day: bMeal.day,
+                            dayName: bMeal.dayName || dayNameByNumber.get(Number(bMeal.day)),
+                            newFood: bMeal.food,
+                            diffCals: mac.calories,
+                            diffProt: mac.protein,
+                            diffCarbs: mac.carbs,
+                            diffFat: mac.fat,
+                        })
+                    })
+
+                    // Remaining original => removes
+                    originalSlot.forEach((oMeal: any, oIdx: number) => {
+                        if (usedOriginal.has(oIdx) || !oMeal?._dbId) return
+                        const oldMac = getMacros(oMeal)
+                        flavorChanges.push({
+                            id: `flavor-${++changeSeq}`,
+                            type: 'remove',
+                            foodId: String(oMeal._dbId),
+                            foodName: oMeal.food?.name || 'Yemek',
+                            detail: `${oMeal.slot} öğününden kaldırılacak`,
+                            slotName: oMeal.slot,
+                            day: oMeal.day,
+                            dayName: oMeal.dayName || dayNameByNumber.get(Number(oMeal.day)),
+                            diffCals: -oldMac.calories,
+                            diffProt: -oldMac.protein,
+                            diffCarbs: -oldMac.carbs,
+                            diffFat: -oldMac.fat,
+                        })
+                    })
+                })
+
+                if (flavorChanges.length === 0) {
+                    await showAppModal('Analiz Sonucu', 'Lezzet ayarı için uygulanabilir değişiklik bulunamadı.', 'warning')
+                    return
+                }
+
+                const flavorTitle = targetDay
+                    ? `${dayNameByNumber.get(targetDay) || 'Gün'} Lezzet Ayarı`
+                    : 'Haftalık Lezzet Ayarı'
+
+                const modalInitialTotals = displayDivisor > 1
+                    ? {
+                        calories: initialTotals.calories / displayDivisor,
+                        protein: initialTotals.protein / displayDivisor,
+                        carbs: initialTotals.carbs / displayDivisor,
+                        fat: initialTotals.fat / displayDivisor,
+                    }
+                    : initialTotals
+
+                const modalTargetTotals = {
+                    calories: targetCals,
+                    protein: targetProt,
+                    carbs: targetCarbs,
+                    fat: targetFat,
+                }
+
+                const modalFlavorChanges = displayDivisor > 1
+                    ? flavorChanges.map((c) => ({
+                        ...c,
+                        diffCals: c.diffCals / displayDivisor,
+                        diffProt: c.diffProt / displayDivisor,
+                        diffCarbs: c.diffCarbs / displayDivisor,
+                        diffFat: c.diffFat / displayDivisor,
+                    }))
+                    : flavorChanges
+
+                setIsTuneLoading(false)
+                const approvedFlavorChanges = await showBalanceModal(
+                    flavorTitle,
+                    modalFlavorChanges,
+                    modalInitialTotals,
+                    modalTargetTotals,
+                    { defaultSelectAll: true }
+                )
+
+                if (!approvedFlavorChanges || approvedFlavorChanges.length === 0) return
+
+                setTuneLoadStep('applying')
+                setTuneStepStartedAt(Date.now())
+                setIsTuneLoading(true)
+
+                let applied = 0
+                const failedOps: string[] = []
+
+                const runWithRetry = async (
+                    op: () => any,
+                    label: string
+                ): Promise<boolean> => {
+                    let lastError: any = null
+                    for (let attempt = 1; attempt <= 2; attempt++) {
+                        const { error } = await op()
+                        if (!error) return true
+                        lastError = error
+                        if (attempt === 1) {
+                            await new Promise((resolve) => setTimeout(resolve, 250))
+                        }
+                    }
+                    failedOps.push(`${label}: ${lastError?.message || 'Bilinmeyen hata'}`)
+                    return false
+                }
+
+                const applyTasks: Array<Promise<boolean>> = approvedFlavorChanges.map((c) => {
+                    if (c.type === 'portion' && c.newMultiplier !== undefined && c.foodId) {
+                        return runWithRetry(
+                            () => supabase
+                                .from('diet_meals')
+                                .update({ portion_multiplier: c.newMultiplier, swapped_by: 'ai_flavor' })
+                                .eq('id', c.foodId),
+                            `Porsiyon (${c.foodName})`
+                        )
+                    }
+                    if (c.type === 'swap' && c.foodId && c.newFood?.id) {
+                        return runWithRetry(
+                            () => supabase
+                                .from('diet_meals')
+                                .update({
+                                    food_id: c.newFood.id,
+                                    original_food_id: c.newFood._originalFoodId || null,
+                                    portion_multiplier: 1,
+                                    swapped_by: 'ai_flavor',
+                                    calories: c.newFood.calories || null,
+                                    protein: c.newFood.protein || null,
+                                    fat: c.newFood.fat || c.newFood.fats || null,
+                                    carbs: c.newFood.carbs || null,
+                                })
+                                .eq('id', c.foodId),
+                            `Değişim (${c.foodName})`
+                        )
+                    }
+                    if (c.type === 'add' && c.newFood?.id && c.day && c.slotName) {
+                        const targetDayId = weekDays[(Number(c.day) || 1) - 1]?.id
+                        if (!targetDayId) return Promise.resolve(false)
+                        return runWithRetry(
+                            () => supabase
+                                .from('diet_meals')
+                                .insert({
+                                    diet_day_id: targetDayId,
+                                    food_id: c.newFood.id,
+                                    meal_time: c.slotName,
+                                    portion_multiplier: 1,
+                                    calories: c.newFood.calories,
+                                    protein: c.newFood.protein,
+                                    fat: c.newFood.fat || c.newFood.fats || 0,
+                                    carbs: c.newFood.carbs,
+                                    is_consumed: true,
+                                    is_custom: false,
+                                    swapped_by: 'ai_flavor',
+                                }),
+                            `Ekleme (${c.foodName})`
+                        )
+                    }
+                    if (c.type === 'remove' && c.foodId) {
+                        return runWithRetry(
+                            () => supabase.from('diet_meals').delete().eq('id', c.foodId),
+                            `Silme (${c.foodName})`
+                        )
+                    }
+                    return Promise.resolve(false)
+                })
+
+                const applyResults = await Promise.all(applyTasks)
+                applied = applyResults.filter(Boolean).length
+
+                await fetchWeekDays(activeWeek.id)
+                if (failedOps.length > 0) {
+                    const preview = failedOps.slice(0, 3).map((x) => `• ${x}`).join('\n')
+                    await showAppModal(
+                        'Kısmi Uygulandı',
+                        `✅ ${applied}/${approvedFlavorChanges.length} değişiklik uygulandı.\n\nUygulanamayanlar:\n${preview}${failedOps.length > 3 ? `\n• ... +${failedOps.length - 3} adet daha` : ''}`,
+                        'warning'
+                    )
+                } else {
+                    await showAppModal('Başarılı', `✅ ${applied}/${approvedFlavorChanges.length} değişiklik uygulandı!`, 'success')
+                }
+                return
+            }
             const portionChanges = changes.filter(c => c.includes('↓') || c.includes('↑'))
             const swapChanges = changes.filter(c => c.includes('🔄'))
             const addChanges = changes.filter(c => c.includes('➕'))
@@ -3627,10 +4113,14 @@ export default function PatientPlanPage() {
                 detailLines += removeChanges.map(c => `  ${c}`).join('\n')
             }
 
+            setIsTuneLoading(false)
             const confirmed = await showAppModal('Onaylıyor musunuz?', `Önerilen düzeltmeler (${changes.length} değişiklik):${detailLines}`, 'confirm')
             if (!confirmed) return
 
-            // ── 4. APPLY CHANGES TO DATABASE ────────────────────────────
+            setTuneLoadStep('applying')
+            setTuneStepStartedAt(Date.now())
+            setIsTuneLoading(true)
+            // â”€â”€ 4. APPLY CHANGES TO DATABASE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             let applied = 0
             const balancedMeals = balanced.meals || []
 
@@ -3640,6 +4130,7 @@ export default function PatientPlanPage() {
                 const key = `${m.day}_${m.slot}_${m.food.id}`
                 originalDbMap.set(key, m)
             })
+            const operations: PromiseLike<boolean>[] = []
 
             // Apply portion changes: Compare balanced vs original
             for (const bMeal of balancedMeals) {
@@ -3649,11 +4140,13 @@ export default function PatientPlanPage() {
                     const oldMult = original.portion_multiplier || 1
                     const newMult = bMeal.portion_multiplier || 1
                     if (Math.abs(newMult - oldMult) > 0.01) {
-                        const { error } = await supabase
-                            .from('diet_meals')
-                            .update({ portion_multiplier: newMult })
-                            .eq('id', original._dbId)
-                        if (!error) applied++
+                        operations.push(
+                            supabase
+                                .from('diet_meals')
+                                .update({ portion_multiplier: newMult })
+                                .eq('id', original._dbId)
+                                .then(({ error }) => !error)
+                        )
                     }
                 }
             }
@@ -3671,20 +4164,22 @@ export default function PatientPlanPage() {
                         !balancedMeals.some((bm: any) => bm.food?.id === m.food.id && bm.day === m.day && bm.slot === m.slot)
                     )
                     if (swappedOut?._dbId && bMeal.food?.id) {
-                        const { error } = await supabase
-                            .from('diet_meals')
-                            .update({
-                                food_id: bMeal.food.id,
-                                original_food_id: swappedOut.food.id,
-                                portion_multiplier: bMeal.portion_multiplier || 1,
-                                swapped_by: 'ai_balanced',
-                                calories: bMeal.food.calories || null,
-                                protein: bMeal.food.protein || null,
-                                fat: bMeal.food.fat || null,
-                                carbs: bMeal.food.carbs || null,
-                            })
-                            .eq('id', swappedOut._dbId)
-                        if (!error) applied++
+                        operations.push(
+                            supabase
+                                .from('diet_meals')
+                                .update({
+                                    food_id: bMeal.food.id,
+                                    original_food_id: swappedOut.food.id,
+                                    portion_multiplier: bMeal.portion_multiplier || 1,
+                                    swapped_by: 'ai_balanced',
+                                    calories: bMeal.food.calories || null,
+                                    protein: bMeal.food.protein || null,
+                                    fat: bMeal.food.fat || null,
+                                    carbs: bMeal.food.carbs || null,
+                                })
+                                .eq('id', swappedOut._dbId)
+                                .then(({ error }) => !error)
+                        )
                     }
                 }
             }
@@ -3696,20 +4191,21 @@ export default function PatientPlanPage() {
                     const dayIdx = (bMeal.day || 1) - 1
                     const targetDayId = weekDays[dayIdx]?.id
                     if (targetDayId) {
-                        const { error } = await supabase.from('diet_meals').insert({
-                            diet_day_id: targetDayId,
-                            food_id: bMeal.food.id,
-                            meal_time: bMeal.slot,
-                            portion_multiplier: bMeal.portion_multiplier || 1,
-                            calories: bMeal.food.calories,
-                            protein: bMeal.food.protein,
-                            fat: bMeal.food.fat || 0,
-                            carbs: bMeal.food.carbs,
-                            is_consumed: true,
-                            is_custom: false,
-                            swapped_by: 'ai_balanced'
-                        })
-                        if (!error) applied++
+                        operations.push(
+                            supabase.from('diet_meals').insert({
+                                diet_day_id: targetDayId,
+                                food_id: bMeal.food.id,
+                                meal_time: bMeal.slot,
+                                portion_multiplier: bMeal.portion_multiplier || 1,
+                                calories: bMeal.food.calories,
+                                protein: bMeal.food.protein,
+                                fat: bMeal.food.fat || 0,
+                                carbs: bMeal.food.carbs,
+                                is_consumed: true,
+                                is_custom: false,
+                                swapped_by: 'ai_balanced'
+                            }).then(({ error }) => !error)
+                        )
                     }
                 }
             }
@@ -3720,9 +4216,15 @@ export default function PatientPlanPage() {
                     bm.day === original.day && bm.slot === original.slot && bm.food?.id === original.food.id
                 )
                 if (!stillExists && original._dbId) {
-                    const { error } = await supabase.from('diet_meals').delete().eq('id', original._dbId)
-                    if (!error) applied++
+                    operations.push(
+                        supabase.from('diet_meals').delete().eq('id', original._dbId).then(({ error }) => !error)
+                    )
                 }
+            }
+
+            if (operations.length > 0) {
+                const results = await Promise.allSettled(operations)
+                applied = results.filter(r => r.status === 'fulfilled' && r.value).length
             }
 
             await fetchWeekDays(activeWeek.id)
@@ -3730,6 +4232,8 @@ export default function PatientPlanPage() {
         } catch (err: any) {
             console.error('Auto-balance error:', err)
             await showAppModal('Hata', 'Dengeleme sırasında hata: ' + err.message, 'alert')
+        } finally {
+            setIsTuneLoading(false)
         }
     }
 
@@ -3739,6 +4243,11 @@ export default function PatientPlanPage() {
             await showAppModal('Hata', 'Günlük veriler veya hedef makrolar yüklenemedi.', 'warning')
             return
         }
+        setTuneLoadMode('balance')
+        setTuneLoadScope('daily')
+        setTuneLoadStep('analyzing')
+        setTuneStepStartedAt(Date.now())
+        setIsTuneLoading(true)
 
         const targetCals = dailyTargets.calories || Math.round(
             ((dailyTargets.protein || 0) * 4) +
@@ -3817,7 +4326,10 @@ export default function PatientPlanPage() {
             })
         })
 
-        if (mutableFoods.length === 0) return
+        if (mutableFoods.length === 0) {
+            setIsTuneLoading(false)
+            return
+        }
 
         // 2. Score Function
         // Lower is better. Calorie deviations are heavily penalized to prevent massive overshoots.
@@ -3859,6 +4371,7 @@ export default function PatientPlanPage() {
         const iCalsPct = targetCals > 0 ? Math.round((initialCals / targetCals) * 100) : 100
 
         if (iProtPct >= 95 && iProtPct <= 105 && iFatPct >= 95 && iFatPct <= 105 && iCarbsPct >= 95 && iCarbsPct <= 105) {
+            setIsTuneLoading(false)
             await showAppModal('Harika!', `✅ ${currentDay.day_name} zaten dengeli!\nProtein: %${iProtPct} | Karb: %${iCarbsPct} | Yağ: %${iFatPct}`, 'success')
             return
         }
@@ -3955,7 +4468,7 @@ export default function PatientPlanPage() {
                 const availableSlots = Array.from(new Set(currentDay.diet_meals.map((m: any) => m.meal_time)))
                 const topUpSlot = (availableSlots.includes('ARA ÖĞÜN') ? 'ARA ÖĞÜN' : (availableSlots[availableSlots.length - 1] || 'AKŞAM')) as string
 
-                const planner = new Planner(patientInfo.id, user.id);
+                const planner = await getPlannerInstance(patientInfo.id, user.id);
                 // Gather existing week foods for frequency checks
                 const existingFoods: any[] = []
                 if (activeWeek?.week_days) {
@@ -4105,20 +4618,26 @@ export default function PatientPlanPage() {
         const isImproved = currentScore < calculateScore(mutableFoods.map(f => ({ mult: f.currentMult }))) - 1 || changes.some(c => c.type === 'add' || c.type === 'remove')
 
         if (changes.length === 0 || !isImproved) {
+            setIsTuneLoading(false)
             await showAppModal('Analiz Sonucu', `📊 ${currentDay.day_name}:\nKalori: %${iCalsPct}\nProtein: %${iProtPct} | Karb: %${iCarbsPct} | Yağ: %${iFatPct}\n\nPorsiyon değişimi veya yemek eklemesiyle/çıkarmasıyla daha iyi bir denge bulunamadı.`, 'warning')
             return
         }
 
+        setIsTuneLoading(false)
         const approvedChanges = await showBalanceModal(
             `${currentDay.day_name} İyileştirilecek`,
             changes,
             { calories: initialCals, protein: initialProt, fat: initialFat, carbs: initialCarbs },
-            { calories: targetCals, protein: targetProt, fat: targetFat, carbs: targetCarbs }
+            { calories: targetCals, protein: targetProt, fat: targetFat, carbs: targetCarbs },
+            { defaultSelectAll: true }
         )
 
         if (!approvedChanges || approvedChanges.length === 0) return
 
         try {
+            setTuneLoadStep('applying')
+            setTuneStepStartedAt(Date.now())
+            setIsTuneLoading(true)
             let applied = 0
             for (const c of approvedChanges) {
                 if (c.type === 'portion' && c.newMultiplier !== undefined && c.foodId) {
@@ -4148,6 +4667,8 @@ export default function PatientPlanPage() {
             await showAppModal('Başarılı', `✅ ${applied} değişiklik başarıyla uygulandı!`, 'success')
         } catch (err: any) {
             await showAppModal('Hata', 'Kayıt sırasında hata: ' + err.message, 'alert')
+        } finally {
+            setIsTuneLoading(false)
         }
     }
 
@@ -4477,7 +4998,7 @@ export default function PatientPlanPage() {
                 ) || false
 
                 if (!weekHasFoods) {
-                    // ── EMPTY WEEK: Show only onboarding ──
+                    // â”€â”€ EMPTY WEEK: Show only onboarding â”€â”€
                     return (
                         <div className="flex-1 flex flex-col items-center px-4 pt-6 pb-28">
                             {/* Elegant Hero Card */}
@@ -4564,11 +5085,11 @@ export default function PatientPlanPage() {
                     )
                 }
 
-                // ── WEEK HAS FOODS: Show normal UI ──
+                // â”€â”€ WEEK HAS FOODS: Show normal UI â”€â”€
                 return (
                     <>
 
-                        {/* ── STICKY TOP REGION (Day Selector + Dashboard + Menu Header) ── */}
+                        {/* â”€â”€ STICKY TOP REGION (Day Selector + Dashboard + Menu Header) â”€â”€ */}
                         <div className="sticky top-[73px] sm:top-[74px] z-[40] bg-gray-50 flex flex-col shadow-[0_4px_10px_-5px_rgba(0,0,0,0.1)] rounded-b-xl border-b border-gray-200/60 pb-1.5 transition-all">
                             
                             {/* Day Selector & Action Buttons (Combined) */}
@@ -5272,12 +5793,12 @@ export default function PatientPlanPage() {
                                         // Looks for role "ana yemek"
                                         // Check if foodToSwap.slotFoods is populated
                                         if (!foodToSwap.slotFoods || foodToSwap.slotFoods.length === 0) {
-                                            console.log("⚠️ No slotFoods available for main dish check")
+                                            console.log("âš ï¸ No slotFoods available for main dish check")
                                             return null
                                         }
 
                                         // Debug log to see what we have in slot
-                                        console.log("🔍 Checking for Main Dish in slot:", foodToSwap.slotFoods.map(f => `${f.food_name}(${f.role})`))
+                                        console.log("ğŸ” Checking for Main Dish in slot:", foodToSwap.slotFoods.map(f => `${f.food_name}(${f.role})`))
 
                                         const mainDish = foodToSwap.slotFoods.find(f => {
                                             const role = (f.role || "").toLowerCase()
@@ -5516,6 +6037,50 @@ export default function PatientPlanPage() {
                 </div>
             )}
 
+            {/* Balance / Flavor Loader Overlay */}
+            {isTuneLoading && (
+                <div className="fixed inset-0 z-[115] flex items-center justify-center bg-black/65 backdrop-blur-md p-4 animate-in fade-in duration-300">
+                    <div className="bg-slate-900 border border-emerald-500/20 rounded-3xl p-8 w-full max-w-sm shadow-[0_0_50px_-10px_rgba(16,185,129,0.25)] overflow-hidden relative">
+                        <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 via-transparent to-teal-500/10 pointer-events-none" />
+
+                        <div className="flex flex-col items-center text-center py-4 relative z-10">
+                            <div className="relative w-24 h-24 mb-8">
+                                <div className="absolute inset-0 rounded-full border-4 border-slate-800 border-t-emerald-500 animate-spin"></div>
+                                <div className="absolute inset-2 rounded-full border-4 border-slate-800 border-b-teal-400 animate-[spin_2s_linear_reverse_infinite] opacity-50"></div>
+                                <div className="absolute inset-0 flex items-center justify-center">
+                                    {tuneLoadMode === 'flavor'
+                                        ? <Sparkles size={34} className="text-emerald-400 animate-pulse" />
+                                        : <Scale size={34} className="text-emerald-400 animate-pulse" />}
+                                </div>
+                            </div>
+
+                            <h3 className="text-xl font-bold text-white mb-2">
+                                {tuneLoadMode === 'flavor'
+                                    ? `${tuneLoadScope === 'daily' ? 'Günlük' : 'Haftalık'} Lezzet Ayarı`
+                                    : `${tuneLoadScope === 'daily' ? 'Günlük' : 'Haftalık'} Dengeleme`}
+                            </h3>
+                            <p className="text-sm text-emerald-300/85 mb-6 min-h-5">
+                                {tuneMessages[tuneMessageIndex]}
+                            </p>
+
+                            <div className="w-full mb-2 text-[11px] text-emerald-200/80 flex items-center justify-between">
+                                <span>Aşama: {tuneLoadStep === 'analyzing' ? 'Analiz' : 'Uygulama'}</span>
+                                <span>{Math.round(tuneProgress)}%</span>
+                            </div>
+                            <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden shadow-inner">
+                                <div
+                                    className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full transition-all duration-300 ease-out relative"
+                                    style={{ width: `${Math.max(8, Math.min(98, tuneProgress))}%` }}
+                                ></div>
+                            </div>
+                            <p className="text-[11px] text-emerald-200/70 mt-2 min-h-4">
+                                {tuneEtaSec !== null ? `Yaklaşık ${Math.max(1, tuneEtaSec)} sn kaldı` : 'Hazırlanıyor...'}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Global Themed App Modal for Alerts and Confirms */}
             {appModal.isOpen && (
                 <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
@@ -5653,6 +6218,7 @@ export default function PatientPlanPage() {
                 changes={balanceModal.changes}
                 initialTotals={balanceModal.initialTotals}
                 targetMacros={balanceModal.targetMacros}
+                defaultSelectAll={balanceModal.defaultSelectAll}
                 onClose={() => {
                     balanceModal.resolve?.(null)
                     setBalanceModal(prev => ({ ...prev, isOpen: false }))
@@ -5665,4 +6231,5 @@ export default function PatientPlanPage() {
         </div>
     )
 }
+
 

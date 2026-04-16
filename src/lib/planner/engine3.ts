@@ -13,6 +13,32 @@ export type TargetMacros = {
     fat: number
 }
 
+type FlavorTuningConfig = {
+    enabled: boolean
+    allow_post_edit: boolean
+    respect_scope_filters: boolean
+    respect_frequency_rules: boolean
+    strict_locked_items: boolean
+    suggestion_count: number
+    macro_weight: number
+    flavor_weight: number
+    diversity_weight: number
+    compatibility_weight: number
+}
+
+const DEFAULT_FLAVOR_TUNING_CONFIG: FlavorTuningConfig = {
+    enabled: true,
+    allow_post_edit: true,
+    respect_scope_filters: true,
+    respect_frequency_rules: true,
+    strict_locked_items: true,
+    suggestion_count: 3,
+    macro_weight: 0.4,
+    flavor_weight: 0.35,
+    diversity_weight: 0.15,
+    compatibility_weight: 0.1
+}
+
 // Slot Configuration - defines how many foods per meal slot and which roles
 export type SlotConfig = {
     minItems: number
@@ -61,6 +87,7 @@ export class Planner {
     private programTemplateId: string | null = null // Patient's assigned program
     private teamOwnerId: string | null = null
     private activeDietRules: { allowedTags: string[], bannedKeywords: string[], bannedTags?: string[], bannedDetails?: Record<string, any>, dietName: string } | undefined = undefined
+    private flavorTuningConfig: FlavorTuningConfig = { ...DEFAULT_FLAVOR_TUNING_CONFIG }
 
     // Patient specific data for compatibility checks
     private patientDiseases: any[] = []
@@ -219,7 +246,8 @@ export class Planner {
         // Now fetch settings and rules (they depend on programTemplateId)
         await Promise.all([
             this.fetchSettings(),
-            this.fetchRules()
+            this.fetchRules(),
+            this.fetchFlavorTuningConfig()
         ])
 
         // Initialize Exempt Tags (Defaults + User Settings)
@@ -341,6 +369,76 @@ export class Planner {
                 ...programOverrides,
                 ...patientFSO
             }
+        }
+    }
+
+    private parseFlavorNumber(
+        value: any,
+        fallback: number,
+        min: number,
+        max: number
+    ): number {
+        const parsed = typeof value === 'number' ? value : Number(value ?? Number.NaN)
+        if (!Number.isFinite(parsed)) return fallback
+        return Math.min(max, Math.max(min, parsed))
+    }
+
+    private parseFlavorBoolean(value: any, fallback: boolean): boolean {
+        if (typeof value === 'boolean') return value
+        if (typeof value === 'string') {
+            const v = value.trim().toLowerCase()
+            if (v === 'true') return true
+            if (v === 'false') return false
+        }
+        return fallback
+    }
+
+    private async fetchFlavorTuningConfig() {
+        try {
+            let raw: any = null
+
+            if (this.teamOwnerId) {
+                const teamKey = `flavor_tuning_settings__team_${this.teamOwnerId}`
+                const { data: teamData } = await supabase
+                    .from('app_settings')
+                    .select('value')
+                    .eq('key', teamKey)
+                    .maybeSingle()
+                if (teamData?.value && typeof teamData.value === 'object') {
+                    raw = teamData.value
+                }
+            }
+
+            if (!raw) {
+                const { data } = await supabase
+                    .from('app_settings')
+                    .select('value')
+                    .eq('key', 'flavor_tuning_settings')
+                    .maybeSingle()
+                if (data?.value && typeof data.value === 'object') {
+                    raw = data.value
+                }
+            }
+
+            if (!raw) {
+                this.flavorTuningConfig = { ...DEFAULT_FLAVOR_TUNING_CONFIG }
+                return
+            }
+
+            this.flavorTuningConfig = {
+                enabled: this.parseFlavorBoolean(raw.enabled, DEFAULT_FLAVOR_TUNING_CONFIG.enabled),
+                allow_post_edit: this.parseFlavorBoolean(raw.allow_post_edit, DEFAULT_FLAVOR_TUNING_CONFIG.allow_post_edit),
+                respect_scope_filters: this.parseFlavorBoolean(raw.respect_scope_filters, DEFAULT_FLAVOR_TUNING_CONFIG.respect_scope_filters),
+                respect_frequency_rules: this.parseFlavorBoolean(raw.respect_frequency_rules, DEFAULT_FLAVOR_TUNING_CONFIG.respect_frequency_rules),
+                strict_locked_items: this.parseFlavorBoolean(raw.strict_locked_items, DEFAULT_FLAVOR_TUNING_CONFIG.strict_locked_items),
+                suggestion_count: Math.round(this.parseFlavorNumber(raw.suggestion_count, DEFAULT_FLAVOR_TUNING_CONFIG.suggestion_count, 1, 6)),
+                macro_weight: this.parseFlavorNumber(raw.macro_weight, DEFAULT_FLAVOR_TUNING_CONFIG.macro_weight, 0, 1),
+                flavor_weight: this.parseFlavorNumber(raw.flavor_weight, DEFAULT_FLAVOR_TUNING_CONFIG.flavor_weight, 0, 1),
+                diversity_weight: this.parseFlavorNumber(raw.diversity_weight, DEFAULT_FLAVOR_TUNING_CONFIG.diversity_weight, 0, 1),
+                compatibility_weight: this.parseFlavorNumber(raw.compatibility_weight, DEFAULT_FLAVOR_TUNING_CONFIG.compatibility_weight, 0, 1)
+            }
+        } catch {
+            this.flavorTuningConfig = { ...DEFAULT_FLAVOR_TUNING_CONFIG }
         }
     }
 
@@ -6007,6 +6105,332 @@ export class Planner {
                 break
             }
         } // end globalPass
+
+        return { plan: newPlan, changes }
+    }
+
+    private getDayTotalsFromMeals(dayMeals: any[]): { calories: number; protein: number; carbs: number; fat: number } {
+        return dayMeals.reduce(
+            (acc, m) => {
+                const mult = typeof m?.portion_multiplier === 'number' && Number.isFinite(m.portion_multiplier)
+                    ? m.portion_multiplier
+                    : 1
+                acc.calories += (m?.food?.calories || 0) * mult
+                acc.protein += (m?.food?.protein || 0) * mult
+                acc.carbs += (m?.food?.carbs || 0) * mult
+                acc.fat += (m?.food?.fat || 0) * mult
+                return acc
+            },
+            { calories: 0, protein: 0, carbs: 0, fat: 0 }
+        )
+    }
+
+    private calculateMacroDistance(
+        totals: { calories: number; protein: number; carbs: number; fat: number },
+        target: { calories: number; protein: number; carbs: number; fat: number }
+    ): number {
+        const safeTargetCalories = Math.max(1, Number(target?.calories || 0))
+        const safeTargetProtein = Math.max(1, Number(target?.protein || 0))
+        const safeTargetCarbs = Math.max(1, Number(target?.carbs || 0))
+        const safeTargetFat = Math.max(1, Number(target?.fat || 0))
+
+        const calDiff = Math.abs((totals.calories - safeTargetCalories) / safeTargetCalories)
+        const proteinDiff = Math.abs((totals.protein - safeTargetProtein) / safeTargetProtein)
+        const carbDiff = Math.abs((totals.carbs - safeTargetCarbs) / safeTargetCarbs)
+        const fatDiff = Math.abs((totals.fat - safeTargetFat) / safeTargetFat)
+
+        // Calorie slightly higher weight to keep plan stable while flavor swaps happen.
+        return (calDiff * 1.2) + proteinDiff + (carbDiff * 0.9) + (fatDiff * 0.9)
+    }
+
+    private getFlavorAffinityScore(candidate: any, slotFoods: any[], slotName: string, dayIndex: number): number {
+        let score = 0
+        const context = {
+            selectedFoods: slotFoods,
+            slotSelectedFoods: slotFoods,
+            slotName,
+            dayIndex,
+            weeklySelectedIds: new Map<string, number>()
+        }
+
+        for (const rule of this.rules) {
+            if (!rule?.is_active || rule.rule_type !== 'affinity') continue
+            const affinityScore = this.checkAffinityRule(rule, candidate, context)
+            if (affinityScore === Number.NEGATIVE_INFINITY) return -100000
+            if (Number.isFinite(affinityScore)) score += affinityScore
+        }
+        return score
+    }
+
+    private isLockedByConsistencyRule(food: any, slotNameRaw: string, dayNum: number): boolean {
+        if (!food) return false
+        const slotName = normalizeSlotName(String(slotNameRaw || ''))
+        for (const rule of this.rules) {
+            if (!rule?.is_active || rule.rule_type !== 'consistency') continue
+            const rawDef = rule.definition as any
+            const def = (rawDef && typeof rawDef === 'object' && 'data' in rawDef) ? rawDef.data : rawDef
+            if (!def?.target) continue
+
+            if (Array.isArray(def.scope_meals) && def.scope_meals.length > 0) {
+                const normalizedScopeMeals = def.scope_meals.map((meal: string) => normalizeSlotName(String(meal)))
+                if (!normalizedScopeMeals.includes(slotName)) continue
+            }
+
+            if (Array.isArray(def.scope_days) && def.scope_days.length > 0) {
+                if (!def.scope_days.map((d: any) => Number(d)).includes(Number(dayNum))) continue
+            }
+
+            if (this.matchesTarget(food, def.target)) return true
+        }
+        return false
+    }
+
+    public async applyFlavorTune(
+        plan: any,
+        mode: 'weekly' | 'daily' = 'weekly',
+        targetDay?: number
+    ): Promise<{ plan: any, changes: string[] }> {
+        const changes: string[] = []
+        const newPlan = JSON.parse(JSON.stringify(plan || {}))
+
+        const cfg = this.flavorTuningConfig || { ...DEFAULT_FLAVOR_TUNING_CONFIG }
+        if (!cfg.enabled || !cfg.allow_post_edit) {
+            return { plan: newPlan, changes }
+        }
+
+        if (!Array.isArray(newPlan?.meals) || newPlan.meals.length === 0) {
+            return { plan: newPlan, changes }
+        }
+
+        if (!this.allFoods.length) {
+            await this.init()
+        }
+
+        const suggestionCount = Math.max(1, Math.min(6, Math.round(cfg.suggestion_count || 3)))
+        const weightTotal = Math.max(
+            0.0001,
+            (cfg.macro_weight || 0) +
+            (cfg.flavor_weight || 0) +
+            (cfg.diversity_weight || 0) +
+            (cfg.compatibility_weight || 0)
+        )
+        const macroWeight = (cfg.macro_weight || 0) / weightTotal
+        const flavorWeight = (cfg.flavor_weight || 0) / weightTotal
+        const diversityWeight = (cfg.diversity_weight || 0) / weightTotal
+        const compatibilityWeight = (cfg.compatibility_weight || 0) / weightTotal
+
+        const targetMacros = {
+            calories: Number(newPlan?.targetMacros?.calories || 1800),
+            protein: Number(newPlan?.targetMacros?.protein || 90),
+            carbs: Number(newPlan?.targetMacros?.carbs || newPlan?.targetMacros?.carb || 180),
+            fat: Number(newPlan?.targetMacros?.fat || 60)
+        }
+
+        const daysToTune = mode === 'daily' && targetDay
+            ? [targetDay]
+            : [1, 2, 3, 4, 5, 6, 7]
+
+        const sourceFoods = (this.eligibleFoods && this.eligibleFoods.length > 0)
+            ? this.eligibleFoods
+            : this.allFoods
+
+        // Rebuild weekly tracker from incoming plan for frequency and variety checks.
+        this.currentWeekFoods = newPlan.meals.map((m: any) => ({
+            ...(m?.food || {}),
+            dayIndex: Number(m?.day || 1) - 1,
+            slot: m?.slot || '',
+            portion_multiplier: typeof m?.portion_multiplier === 'number' ? m.portion_multiplier : 1
+        }))
+
+        for (const dayNum of daysToTune) {
+            const dayMeals = newPlan.meals.filter((m: any) => Number(m?.day) === dayNum)
+            if (!dayMeals.length) continue
+
+            const dayIndex = dayNum - 1
+            let daySwapCount = 0
+            const slots = Array.from(new Set(dayMeals.map((m: any) => String(m?.slot || '')).filter(Boolean))) as string[]
+
+            for (const slotNameRaw of slots) {
+                if (daySwapCount >= suggestionCount) break
+
+                const slotMeals = dayMeals.filter((m: any) => String(m?.slot || '') === slotNameRaw)
+                if (!slotMeals.length) continue
+
+                const slotName = normalizeSlotName(slotNameRaw)
+                const slotMainDish = slotMeals.find((m: any) => {
+                    const canonicalRole = this.getCanonicalLockRole(m?.food?.role || '')
+                    return canonicalRole === 'maindish' || canonicalRole === 'breakfast_main'
+                })?.food || null
+
+                for (const meal of slotMeals) {
+                    if (daySwapCount >= suggestionCount) break
+                    if (!meal?.food?.id) continue
+
+                    const oldFood = meal.food
+                    const oldFoodId = oldFood.id
+                    const oldRole = this.getCanonicalLockRole(oldFood.role || '')
+                    if (!oldRole || oldRole === 'maindish' || oldRole === 'breakfast_main') continue
+
+                    if (cfg.strict_locked_items && meal.isLocked) continue
+                    if (cfg.strict_locked_items && this.isLockedByConsistencyRule(oldFood, slotName, dayNum)) continue
+                    
+                    const sourceType = meal.source?.type || ''
+                    if (sourceType === 'fixed_meal' || sourceType === 'lock_rule') continue
+                    if (meal.source?.is_required_role === true) continue
+
+                    const fixedByPortion = oldFood.portion_fixed === true || (
+                        oldFood.min_quantity !== null &&
+                        oldFood.max_quantity !== null &&
+                        Number(oldFood.min_quantity) === Number(oldFood.max_quantity)
+                    )
+                    if (cfg.strict_locked_items && fixedByPortion) continue
+
+                    const oldMult = typeof meal.portion_multiplier === 'number' && Number.isFinite(meal.portion_multiplier)
+                        ? meal.portion_multiplier
+                        : 1
+
+                    const dayTotalsBefore = this.getDayTotalsFromMeals(dayMeals)
+                    const macroDistanceBefore = this.calculateMacroDistance(dayTotalsBefore, targetMacros)
+
+                    const sameSlotOtherFoods = slotMeals
+                        .filter((m: any) => m !== meal)
+                        .map((m: any) => m?.food)
+                        .filter(Boolean)
+                    const sameDayOtherFoods = dayMeals
+                        .filter((m: any) => m !== meal)
+                        .map((m: any) => m?.food)
+                        .filter(Boolean)
+
+                    const slotFoodIds = new Set(
+                        slotMeals
+                            .map((m: any) => m?.food?.id)
+                            .filter(Boolean)
+                    )
+                    slotFoodIds.delete(oldFoodId)
+
+                    const baseAffinity = this.getFlavorAffinityScore(oldFood, sameSlotOtherFoods, slotName, dayIndex)
+                    const baseComp = slotMainDish ? this.getCompatibilityAnalysis(oldFood, slotMainDish).boost : 0
+                    const baseWeekCount = this.currentWeekFoods.filter((wf: any) => wf.id === oldFoodId).length
+                    const baseDiversity = Math.max(0, 4 - baseWeekCount)
+                    const baseComposite = (flavorWeight * (baseAffinity / 5000)) +
+                        (compatibilityWeight * (baseComp / 1000)) +
+                        (diversityWeight * baseDiversity)
+
+                    const candidates: Array<{
+                        food: any
+                        totalScore: number
+                        macroGain: number
+                        affinityScore: number
+                        compatibilityScore: number
+                        diversityScore: number
+                    }> = []
+
+                    for (const candidate of sourceFoods) {
+                        if (!candidate?.id || candidate.id === oldFoodId) continue
+                        if (slotFoodIds.has(candidate.id)) continue
+                        if (this.getCanonicalLockRole(candidate.role || '') !== oldRole) continue
+
+                        if (cfg.respect_scope_filters) {
+                            if (!this.isMealTypeCompatibleWithSlot(candidate, slotName)) continue
+                            if (!this.checkSeasonalityHard(candidate, this.today || new Date())) continue
+                        }
+
+                        if (this.hasForbiddenAffinityConflict(candidate, sameSlotOtherFoods)) continue
+
+                        if (cfg.respect_frequency_rules) {
+                            const weekCount = this.currentWeekFoods.filter((wf: any) => wf.id === candidate.id).length
+                            if (this.hasReachedWeeklyCap(candidate, weekCount)) continue
+
+                            const frequencyContext = {
+                                dayIndex,
+                                slotName,
+                                selectedFoods: sameDayOtherFoods,
+                                slotSelectedFoods: sameSlotOtherFoods,
+                                weeklySelectedIds: new Map<string, number>()
+                            }
+                            if (this.hasReachedFrequencyRuleMaxForFood(candidate, frequencyContext)) continue
+                        }
+
+                        meal.food = candidate
+                        meal.portion_multiplier = oldMult
+                        const dayTotalsAfter = this.getDayTotalsFromMeals(dayMeals)
+                        meal.food = oldFood
+                        meal.portion_multiplier = oldMult
+
+                        const macroDistanceAfter = this.calculateMacroDistance(dayTotalsAfter, targetMacros)
+                        const macroGain = macroDistanceBefore - macroDistanceAfter
+
+                        const affinityScore = this.getFlavorAffinityScore(candidate, sameSlotOtherFoods, slotName, dayIndex)
+                        if (!Number.isFinite(affinityScore) || affinityScore <= -100000) continue
+
+                        const compatibilityScore = slotMainDish
+                            ? this.getCompatibilityAnalysis(candidate, slotMainDish).boost
+                            : 0
+
+                        const candidateWeekCount = this.currentWeekFoods.filter((wf: any) => wf.id === candidate.id).length
+                        const diversityScore = Math.max(0, 4 - candidateWeekCount)
+                        const jitter = Math.random() * 0.03
+
+                        const totalScore =
+                            (macroWeight * macroGain) +
+                            (flavorWeight * (affinityScore / 5000)) +
+                            (compatibilityWeight * (compatibilityScore / 1000)) +
+                            (diversityWeight * diversityScore) +
+                            jitter
+
+                        candidates.push({
+                            food: candidate,
+                            totalScore,
+                            macroGain,
+                            affinityScore,
+                            compatibilityScore,
+                            diversityScore
+                        })
+                    }
+
+                    if (!candidates.length) continue
+
+                    candidates.sort((a, b) => b.totalScore - a.totalScore)
+                    const topPoolSize = Math.max(1, Math.min(5, Math.ceil(candidates.length * 0.1)))
+                    const topPool = candidates.slice(0, topPoolSize)
+                    const selected = topPool[Math.floor(Math.random() * topPool.length)]
+
+                    const improvement = selected.totalScore - baseComposite
+                    if (improvement <= 0.015) continue
+
+                    meal.food = selected.food
+                    meal.portion_multiplier = oldMult
+                    meal.source = {
+                        ...(meal.source || {}),
+                        type: 'flavor_tune',
+                        rule: 'Lezzet Ayari',
+                        rule_id: 'system_flavor_tune'
+                    }
+
+                    const weeklyIdx = this.currentWeekFoods.findIndex((wf: any) =>
+                        wf.id === oldFoodId &&
+                        Number(wf.dayIndex) === dayIndex &&
+                        normalizeSlotName(String(wf.slot || '')) === slotName
+                    )
+                    const replacement = {
+                        ...selected.food,
+                        dayIndex,
+                        slot: slotName,
+                        portion_multiplier: oldMult
+                    }
+                    if (weeklyIdx >= 0) {
+                        this.currentWeekFoods[weeklyIdx] = replacement
+                    } else {
+                        this.currentWeekFoods.push(replacement)
+                    }
+
+                    daySwapCount++
+                    changes.push(
+                        `Gun ${dayNum} ${slotName}: ${oldFood.name} -> ${selected.food.name} (lezzet skoru +${Math.max(0, improvement).toFixed(2)})`
+                    )
+                }
+            }
+        }
 
         return { plan: newPlan, changes }
     }

@@ -13,7 +13,7 @@ type TeamFoodMicronutrientOverrideRow = {
     micronutrient_ids: string[] | null
 }
 
-const FOOD_ID_BATCH_SIZE = 120
+const FOOD_ID_BATCH_SIZE = 50
 
 function chunkIds(ids: string[], size: number): string[][] {
     const chunks: string[][] = []

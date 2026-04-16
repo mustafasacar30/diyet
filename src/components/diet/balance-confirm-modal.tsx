@@ -1,49 +1,126 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
+import React, { useEffect, useMemo, useState } from 'react'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
-import { AlertCircle, ArrowRight } from 'lucide-react'
+import { ArrowRight, ChevronDown, ChevronUp } from 'lucide-react'
 
 export interface BalanceChange {
-    id: string; // Unique ID for the change
-    type: 'portion' | 'swap' | 'add' | 'remove';
-    foodId?: string;
-    foodName: string;
-    detail: string;
-    slotName?: string;
-    diffCals: number;
-    diffProt: number;
-    diffFat: number;
-    diffCarbs: number;
-    originalMultiplier?: number;
-    newMultiplier?: number;
-    newFood?: any;
-    // Weekly metadata
-    dayName?: string;
-    // Tiered recommendations logic
-    isAlternative?: boolean;
+    id: string
+    type: 'portion' | 'swap' | 'add' | 'remove'
+    foodId?: string
+    foodName: string
+    detail: string
+    slotName?: string
+    diffCals: number
+    diffProt: number
+    diffFat: number
+    diffCarbs: number
+    originalMultiplier?: number
+    newMultiplier?: number
+    newFood?: any
+    day?: number
+    dayName?: string
+    isAlternative?: boolean
 }
 
 interface BalanceConfirmModalProps {
-    isOpen: boolean;
-    onClose: () => void;
-    onConfirm: (approvedChanges: BalanceChange[]) => void;
-    title: string;
+    isOpen: boolean
+    onClose: () => void
+    onConfirm: (approvedChanges: BalanceChange[]) => void
+    title: string
     initialTotals: {
-        calories: number;
-        protein: number;
-        fat: number;
-        carbs: number;
-    };
+        calories: number
+        protein: number
+        fat: number
+        carbs: number
+    }
     targetMacros: {
-        calories: number;
-        protein: number;
-        fat: number;
-        carbs: number;
-    };
-    changes: BalanceChange[];
+        calories: number
+        protein: number
+        fat: number
+        carbs: number
+    }
+    changes: BalanceChange[]
+    defaultSelectAll?: boolean
+}
+
+const mojibakeMap: Array<[string, string]> = [
+    ['Ã‡', 'Ç'],
+    ['Ã§', 'ç'],
+    ['ÄŸ', 'ğ'],
+    ['Äž', 'Ğ'],
+    ['Ä', 'Ğ'],
+    ['Ä±', 'ı'],
+    ['Ä°', 'İ'],
+    ['Ã–', 'Ö'],
+    ['Ã¶', 'ö'],
+    ['Ãœ', 'Ü'],
+    ['Ã¼', 'ü'],
+    ['Åž', 'Ş'],
+    ['ÅŸ', 'ş'],
+    ['Ä°ptal', 'İptal'],
+    ['YaÄŸ', 'Yağ'],
+    ['DeÄŸişim', 'Değişim'],
+    ['Ã‡ıkarma', 'Çıkarma'],
+    ['DÃ¼zenleme', 'Düzenleme'],
+    ['Ã–neri', 'Öneri'],
+    ['GÃœNLÃœK', 'GÜNLÜK'],
+    ['â†’', '→'],
+]
+
+const normalizeText = (value?: string) => {
+    if (!value) return ''
+    let next = value
+    for (const [bad, good] of mojibakeMap) next = next.split(bad).join(good)
+    return next
+}
+
+const getTypeLabel = (type: BalanceChange['type']) => {
+    if (type === 'swap') return 'Değişim'
+    if (type === 'add') return 'Ekleme'
+    if (type === 'remove') return 'Çıkarma'
+    return 'Porsiyon'
+}
+
+const getTypeBadgeClass = (type: BalanceChange['type']) => {
+    if (type === 'swap') return 'bg-blue-100 text-blue-700'
+    if (type === 'add') return 'bg-emerald-100 text-emerald-700'
+    if (type === 'remove') return 'bg-rose-100 text-rose-700'
+    return 'bg-amber-100 text-amber-700'
+}
+
+const short = (text: string, max = 60) => (text.length > max ? `${text.slice(0, max - 1)}…` : text)
+
+const getDayToneClass = (dayNameRaw: string) => {
+    const day = normalizeText(dayNameRaw).toLowerCase()
+    if (day.includes('pazartesi')) return 'bg-emerald-50/70'
+    if (day.includes('salı')) return 'bg-sky-50/70'
+    if (day.includes('çarşamba')) return 'bg-amber-50/70'
+    if (day.includes('perşembe')) return 'bg-violet-50/70'
+    if (day.includes('cuma')) return 'bg-rose-50/70'
+    if (day.includes('cumartesi')) return 'bg-indigo-50/70'
+    if (day.includes('pazar')) return 'bg-teal-50/70'
+    return 'bg-slate-50/70'
+}
+
+const extractBeforeAfter = (change: BalanceChange) => {
+    const raw = normalizeText(change.detail || '')
+    const byArrow = raw.includes('→') ? raw.split('→') : (raw.includes('->') ? raw.split('->') : null)
+    if (change.type === 'swap' && byArrow && byArrow.length >= 2) {
+        return {
+            before: byArrow[0].trim(),
+            after: byArrow.slice(1).join('→').trim()
+        }
+    }
+    if (change.type === 'add') {
+        return { before: '—', after: normalizeText(change.foodName || 'Yeni yemek') }
+    }
+    if (change.type === 'remove') {
+        return { before: normalizeText(change.foodName || 'Yemek'), after: '—' }
+    }
+    return { before: normalizeText(change.foodName || 'Yemek'), after: raw || normalizeText(change.foodName || 'Yemek') }
 }
 
 export function BalanceConfirmModal({
@@ -53,37 +130,47 @@ export function BalanceConfirmModal({
     title,
     initialTotals,
     targetMacros,
-    changes
+    changes,
+    defaultSelectAll = false
 }: BalanceConfirmModalProps) {
     const [selectedChanges, setSelectedChanges] = useState<Set<string>>(new Set())
+    const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
 
-    // Initialize all primary changes as selected when modal opens
     useEffect(() => {
         if (isOpen && changes) {
-            setSelectedChanges(new Set(changes.filter(c => !c.isAlternative).map(c => c.id)))
+            const selected = defaultSelectAll
+                ? changes.map((c) => c.id)
+                : changes.filter((c) => !c.isAlternative).map((c) => c.id)
+            setSelectedChanges(new Set(selected))
+            setExpandedRows(new Set())
         }
-    }, [isOpen, changes])
+    }, [isOpen, changes, defaultSelectAll])
 
     const handleToggle = (id: string) => {
         const next = new Set(selectedChanges)
-        if (next.has(id)) {
-            next.delete(id)
-        } else {
-            next.add(id)
-        }
+        if (next.has(id)) next.delete(id)
+        else next.add(id)
         setSelectedChanges(next)
     }
 
-    // Calculate dynamic totals based on selected changes
-    const currentTotals = { ...initialTotals }
-    changes.forEach(c => {
-        if (selectedChanges.has(c.id)) {
-            currentTotals.calories += c.diffCals
-            currentTotals.protein += c.diffProt
-            currentTotals.fat += c.diffFat
-            currentTotals.carbs += c.diffCarbs
-        }
-    })
+    const toggleExpand = (id: string) => {
+        const next = new Set(expandedRows)
+        if (next.has(id)) next.delete(id)
+        else next.add(id)
+        setExpandedRows(next)
+    }
+
+    const currentTotals = useMemo(() => {
+        const totals = { ...initialTotals }
+        changes.forEach((c) => {
+            if (!selectedChanges.has(c.id)) return
+            totals.calories += c.diffCals
+            totals.protein += c.diffProt
+            totals.fat += c.diffFat
+            totals.carbs += c.diffCarbs
+        })
+        return totals
+    }, [changes, initialTotals, selectedChanges])
 
     const calcPct = (val: number, target: number) => {
         if (!target || target <= 0) return 0
@@ -96,7 +183,7 @@ export function BalanceConfirmModal({
         const displayInitial = Math.round(initialVal)
         const displayCurrent = Math.round(currentVal)
         const displayTarget = Math.round(target)
-        
+
         return (
             <div className="flex flex-col py-0.5 border-b border-slate-50 last:border-0">
                 <div className="flex items-center justify-between text-[10px] sm:text-xs">
@@ -113,15 +200,10 @@ export function BalanceConfirmModal({
                 <div className="flex items-center gap-1.5 mt-0.5">
                     <div className="w-8 text-[9px] text-slate-400 text-right">% {initialPct}</div>
                     <div className="flex-1 relative h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                        {/* Initial Progress Bar */}
-                        <div 
-                            className="absolute top-0 left-0 h-full bg-slate-300 opacity-50" 
-                            style={{ width: `${Math.min(100, initialPct)}%` }} 
-                        />
-                        {/* Current Progress Bar */}
-                        <div 
-                            className={`absolute top-0 left-0 h-full transition-all duration-300 ${currentPct >= 90 && currentPct <= 110 ? 'bg-emerald-500' : currentPct > 110 ? 'bg-amber-500' : 'bg-blue-500'}`} 
-                            style={{ width: `${Math.min(100, currentPct)}%` }} 
+                        <div className="absolute top-0 left-0 h-full bg-slate-300 opacity-50" style={{ width: `${Math.min(100, initialPct)}%` }} />
+                        <div
+                            className={`absolute top-0 left-0 h-full transition-all duration-300 ${currentPct >= 90 && currentPct <= 110 ? 'bg-emerald-500' : currentPct > 110 ? 'bg-amber-500' : 'bg-blue-500'}`}
+                            style={{ width: `${Math.min(100, currentPct)}%` }}
                         />
                     </div>
                     <div className={`w-8 text-[9px] font-bold text-right ${currentPct >= 90 && currentPct <= 110 ? 'text-emerald-600' : currentPct > 110 ? 'text-amber-600' : 'text-blue-600'}`}>
@@ -132,171 +214,130 @@ export function BalanceConfirmModal({
         )
     }
 
+    const renderDeltaChip = (label: string, value: number, positiveClass: string, negativeClass: string) => {
+        if (!value) return null
+        const klass = value > 0 ? positiveClass : negativeClass
+        return (
+            <span className={`px-2 py-0.5 rounded-full ${klass}`}>
+                {label}: {value > 0 ? '+' : ''}{Math.round(value)}
+            </span>
+        )
+    }
+
+    const renderChangeRow = (change: BalanceChange, alt = false) => {
+        const isSelected = selectedChanges.has(change.id)
+        const isExpanded = expandedRows.has(change.id)
+        const dayName = normalizeText(change.dayName || (change.day ? `Gün ${change.day}` : '-'))
+        const slotName = normalizeText(change.slotName || '-')
+        const detail = normalizeText(change.detail || '')
+        const pair = extractBeforeAfter(change)
+
+        const baseClass = alt
+            ? 'border-amber-200 bg-white'
+            : 'border-emerald-200 bg-white'
+        const selectedClass = isSelected
+            ? (alt ? 'shadow-[0_0_0_1px_rgba(251,191,36,0.35)]' : 'shadow-[0_0_0_1px_rgba(52,211,153,0.35)]')
+            : 'opacity-70'
+
+        return (
+            <div key={change.id} className={`rounded-lg border ${baseClass} ${selectedClass} ${getDayToneClass(dayName)}`}>
+                <div className="flex items-center gap-2 px-2.5 py-2">
+                    <Checkbox
+                        checked={isSelected}
+                        onCheckedChange={() => handleToggle(change.id)}
+                        className="w-4 h-4 rounded-sm data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600"
+                    />
+                    <button
+                        type="button"
+                        className="flex-1 text-left"
+                        onClick={() => toggleExpand(change.id)}
+                    >
+                        <div className="grid grid-cols-[68px_58px_66px_1fr_auto] items-center gap-1.5">
+                            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded truncate">{dayName}</span>
+                            <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded uppercase truncate">{slotName}</span>
+                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${getTypeBadgeClass(change.type)}`}>{getTypeLabel(change.type)}</span>
+                            <span className={`text-[11px] font-semibold text-slate-700 ${isSelected ? '' : 'opacity-70'}`}>Değişiklik detayı</span>
+                            {isExpanded ? <ChevronUp className="w-3.5 h-3.5 text-slate-400" /> : <ChevronDown className="w-3.5 h-3.5 text-slate-400" />}
+                        </div>
+                        <div className="mt-1.5 text-[12px] text-slate-700 leading-snug break-words whitespace-normal">
+                            <span className="font-medium">{pair.before}</span>
+                            <span className="mx-1 text-slate-400">→</span>
+                            <span className="font-semibold text-slate-900">{pair.after}</span>
+                        </div>
+                    </button>
+                </div>
+
+                {isExpanded && (
+                    <div className="px-2.5 pb-2.5 border-t border-slate-100">
+                        <div className="pt-2 text-[12px] text-slate-700 leading-snug">
+                            {detail}
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 text-[10px] font-medium mt-2">
+                            {renderDeltaChip('Kalori', change.diffCals, 'bg-amber-100 text-amber-700', 'bg-emerald-100 text-emerald-700')}
+                            {renderDeltaChip('Pro', change.diffProt, 'bg-blue-100 text-blue-700', 'bg-slate-100 text-slate-600')}
+                            {renderDeltaChip('Karb', change.diffCarbs, 'bg-orange-100 text-orange-700', 'bg-slate-100 text-slate-600')}
+                            {renderDeltaChip('Yağ', change.diffFat, 'bg-red-100 text-red-700', 'bg-slate-100 text-slate-600')}
+                        </div>
+                    </div>
+                )}
+            </div>
+        )
+    }
+
+    const primaryChanges = changes.filter((c) => !c.isAlternative)
+    const alternativeChanges = changes.filter((c) => c.isAlternative)
+
     return (
         <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-            <DialogContent className="!w-screen !h-[100dvh] !max-w-none !rounded-none !border-0 !left-0 !top-0 !translate-x-0 !translate-y-0 sm:!w-full sm:!h-auto sm:!max-w-[450px] sm:!max-h-[90dvh] sm:!rounded-xl sm:!top-[50%] sm:!left-[50%] sm:!translate-x-[-50%] sm:!translate-y-[-50%] sm:!border p-0 bg-slate-50 sm:bg-white flex flex-col overflow-hidden">
+            <DialogContent className="!w-screen !h-[100dvh] !max-w-none !rounded-none !border-0 !left-0 !top-0 !translate-x-0 !translate-y-0 sm:!w-full sm:!h-auto sm:!max-w-[560px] sm:!max-h-[90dvh] sm:!rounded-xl sm:!top-[50%] sm:!left-[50%] sm:!translate-x-[-50%] sm:!translate-y-[-50%] sm:!border p-0 bg-slate-50 sm:bg-white flex flex-col overflow-hidden">
                 <DialogHeader className="p-3 sm:p-4 bg-white border-b border-slate-100 shrink-0 flex flex-col items-center">
                     <DialogTitle className="text-base sm:text-lg text-center font-bold text-slate-800">
-                        {title}
+                        {normalizeText(title)}
                     </DialogTitle>
+                    <DialogDescription className="sr-only">
+                        Önerilen değişiklikleri seçip detayları inceleyerek onaylayın.
+                    </DialogDescription>
                 </DialogHeader>
 
                 <div className="flex-1 overflow-y-auto w-full flex flex-col relative">
-                    <div className="bg-white px-3 py-2 sm:p-4 border-b border-slate-100 sm:rounded-b-xl shadow-sm shrink-0 sticky top-0 z-20">
+                    <div className="bg-white px-3 py-2 sm:p-4 border-b border-slate-100 shadow-sm shrink-0 sticky top-0 z-20">
                         {renderMacroRow('Kalori', initialTotals.calories, currentTotals.calories, targetMacros.calories)}
                         {renderMacroRow('Protein', initialTotals.protein, currentTotals.protein, targetMacros.protein)}
                         {renderMacroRow('Karb', initialTotals.carbs, currentTotals.carbs, targetMacros.carbs)}
                         {renderMacroRow('Yağ', initialTotals.fat, currentTotals.fat, targetMacros.fat)}
                     </div>
 
-                    <div className="px-2 sm:px-6 pt-3 pb-6 space-y-5">
+                    <div className="px-2.5 sm:px-4 pt-3 pb-6 space-y-4">
                         {changes.length === 0 && (
                             <div className="text-center text-sm text-slate-500 py-6 bg-slate-50 rounded-lg border border-slate-100">
                                 Önerilen değişiklik bulunamadı.
                             </div>
                         )}
-                        
-                        {/* Phase 1: Primary Changes */}
-                        {changes.filter(c => !c.isAlternative).length > 0 && (
-                            <div>
-                                <div className="text-sm font-bold text-slate-800 mb-2.5 flex items-center gap-2">
-                                    <div className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-[11px]">1</div>
-                                    <span>Temel Düzenlemeler</span>
+
+                        {primaryChanges.length > 0 && (
+                            <div className="space-y-2">
+                                <div className="text-[11px] font-black text-slate-500 tracking-wide uppercase px-0.5">
+                                    Temel Düzenlemeler
+                                </div>
+                                <div className="grid grid-cols-[68px_58px_66px_1fr] gap-1.5 text-[10px] font-black uppercase tracking-wide text-slate-400 px-9">
+                                    <span>Gün</span>
+                                    <span>Öğün</span>
+                                    <span>Değişim</span>
+                                    <span>Yemek</span>
                                 </div>
                                 <div className="space-y-2">
-                                    {changes.filter(c => !c.isAlternative).map((change) => {
-                                        const isSelected = selectedChanges.has(change.id)
-                                        return (
-                                            <div 
-                                                key={change.id} 
-                                                className={`flex items-start gap-2 p-2.5 sm:p-3 rounded-lg border transition-all cursor-pointer ${isSelected ? 'bg-white border-emerald-400 shadow-[0_0_0_1px_rgba(52,211,153,0.3)]' : 'bg-white border-slate-200 hover:border-emerald-300 opacity-60 grayscale-[30%]'}`} 
-                                                onClick={() => handleToggle(change.id)}
-                                            >
-                                                <div className="pt-0.5 shrink-0">
-                                                    <Checkbox 
-                                                        checked={isSelected}
-                                                        onCheckedChange={() => handleToggle(change.id)}
-                                                        className={`w-4 h-4 rounded-sm ${isSelected ? 'data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600' : ''}`}
-                                                    />
-                                                </div>
-                                                <div className="flex-1 text-[13px] sm:text-sm leading-tight min-w-0">
-                                                    <div className="flex flex-wrap items-center gap-1.5 mb-1">
-                                                        {change.dayName && <span className="text-[10px] sm:text-xs font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded mr-1">{change.dayName}</span>}
-                                                        {change.slotName && <span className="text-[9px] sm:text-[10px] font-bold text-slate-500 uppercase tracking-wider bg-slate-100 px-1.5 py-0.5 rounded">{change.slotName}</span>}
-                                                        <span className={`font-bold ${isSelected ? 'text-slate-900' : 'text-slate-600 line-through decoration-slate-400'}`}>
-                                                            {change.foodName}
-                                                        </span>
-                                                        <div className="ml-0 sm:ml-auto w-full sm:w-auto mt-1 sm:mt-0">
-                                                            {change.type === 'add' && <span className="text-[9px] sm:text-[10px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">Ekleme</span>}
-                                                            {change.type === 'remove' && <span className="text-[9px] sm:text-[10px] font-bold text-rose-700 bg-rose-100 px-1.5 py-0.5 rounded">Çıkarma</span>}
-                                                            {change.type === 'swap' && <span className="text-[9px] sm:text-[10px] font-bold text-blue-700 bg-blue-100 px-1.5 py-0.5 rounded">Değişim</span>}
-                                                            {change.type === 'portion' && <span className="text-[9px] sm:text-[10px] font-bold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">Porsiyon</span>}
-                                                        </div>
-                                                    </div>
-                                                    <div className={`text-xs sm:text-[13px] ${isSelected ? 'text-slate-700' : 'text-slate-500 line-through decoration-slate-400'} mb-2`}>
-                                                        {change.detail}
-                                                    </div>
-                                                    {/* Delta Values */}
-                                                    <div className="flex flex-wrap gap-1.5 sm:gap-2 text-[10px] sm:text-[11px] font-medium mb-1">
-                                                        {change.diffCals !== 0 && (
-                                                            <span className={`px-2 py-0.5 rounded-full ${change.diffCals > 0 ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                                                                Kalori: {change.diffCals > 0 ? '+' : ''}{Math.round(change.diffCals)}
-                                                            </span>
-                                                        )}
-                                                        {change.diffProt !== 0 && (
-                                                            <span className={`px-2 py-0.5 rounded-full ${change.diffProt > 0 ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'}`}>
-                                                                Pro: {change.diffProt > 0 ? '+' : ''}{Math.round(change.diffProt)}
-                                                            </span>
-                                                        )}
-                                                        {change.diffCarbs !== 0 && (
-                                                            <span className={`px-2 py-0.5 rounded-full ${change.diffCarbs > 0 ? 'bg-orange-100 text-orange-700' : 'bg-slate-100 text-slate-600'}`}>
-                                                                Karb: {change.diffCarbs > 0 ? '+' : ''}{Math.round(change.diffCarbs)}
-                                                            </span>
-                                                        )}
-                                                        {change.diffFat !== 0 && (
-                                                            <span className={`px-2 py-0.5 rounded-full ${change.diffFat > 0 ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'}`}>
-                                                                Yağ: {change.diffFat > 0 ? '+' : ''}{Math.round(change.diffFat)}
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        )
-                                    })}
+                                    {primaryChanges.map((change) => renderChangeRow(change, false))}
                                 </div>
                             </div>
                         )}
 
-                        {/* Phase 2: Alternative Changes */}
-                        {changes.filter(c => c.isAlternative).length > 0 && (
-                            <div className="mt-4">
-                                <div className="text-sm font-bold text-amber-700 mb-2.5 flex items-center gap-2">
-                                    <div className="w-6 h-6 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center text-[11px]">2</div>
-                                    <span>Alternatif İnce Ayarlar (İsteğe Bağlı)</span>
-                                </div>
-                                <div className="text-xs text-slate-500 mb-3 ml-8 leading-relaxed">
-                                    Hedefe daha iyi yaklaşmak isterseniz aşağıdaki değişiklikleri seçerek makrolar üzerindeki etkisini anında görebilirsiniz.
+                        {alternativeChanges.length > 0 && (
+                            <div className="space-y-2 mt-2">
+                                <div className="text-[11px] font-black text-amber-700 tracking-wide uppercase px-0.5">
+                                    Alternatif İnce Ayarlar
                                 </div>
                                 <div className="space-y-2">
-                                    {changes.filter(c => c.isAlternative).map((change) => {
-                                        const isSelected = selectedChanges.has(change.id)
-                                        return (
-                                            <div 
-                                                key={change.id} 
-                                                className={`flex items-start gap-2 p-2.5 sm:p-3 rounded-lg border transition-all cursor-pointer ${isSelected ? 'bg-white border-amber-400 shadow-[0_0_0_1px_rgba(251,191,36,0.3)]' : 'bg-white border-slate-200 border-dashed hover:border-amber-300 opacity-80'}`} 
-                                                onClick={() => handleToggle(change.id)}
-                                            >
-                                                <div className="pt-0.5 shrink-0">
-                                                    <Checkbox 
-                                                        checked={isSelected}
-                                                        onCheckedChange={() => handleToggle(change.id)}
-                                                        className={`w-4 h-4 rounded-sm ${isSelected ? 'data-[state=checked]:bg-amber-600 data-[state=checked]:border-amber-600' : ''}`}
-                                                    />
-                                                </div>
-                                                <div className="flex-1 text-[13px] sm:text-sm leading-tight min-w-0">
-                                                    <div className="flex flex-wrap items-center gap-1.5 mb-1">
-                                                        {change.dayName && <span className="text-[10px] sm:text-xs font-bold text-slate-700 bg-slate-200 px-1.5 py-0.5 rounded mr-1">{change.dayName}</span>}
-                                                        {change.slotName && <span className="text-[9px] sm:text-[10px] font-bold text-slate-500 uppercase tracking-wider bg-slate-100 px-1.5 py-0.5 rounded">{change.slotName}</span>}
-                                                        <span className={`font-bold ${isSelected ? 'text-slate-900' : 'text-slate-600'}`}>
-                                                            {change.foodName}
-                                                        </span>
-                                                        <div className="ml-0 sm:ml-auto w-full sm:w-auto mt-1 sm:mt-0">
-                                                            {change.type === 'add' && <span className="text-[9px] sm:text-[10px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">Ekleme</span>}
-                                                            {change.type === 'remove' && <span className="text-[9px] sm:text-[10px] font-bold text-rose-700 bg-rose-100 px-1.5 py-0.5 rounded">Çıkarma</span>}
-                                                            {change.type === 'swap' && <span className="text-[9px] sm:text-[10px] font-bold text-blue-700 bg-blue-100 px-1.5 py-0.5 rounded">Değişim</span>}
-                                                            {change.type === 'portion' && <span className="text-[9px] sm:text-[10px] font-bold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">Porsiyon</span>}
-                                                        </div>
-                                                    </div>
-                                                    <div className="text-xs sm:text-[13px] text-slate-600 mb-2">
-                                                        {change.detail}
-                                                    </div>
-                                                    {/* Delta Values */}
-                                                    <div className="flex flex-wrap gap-1.5 sm:gap-2 text-[10px] sm:text-[11px] font-medium opacity-90 mb-1">
-                                                        {change.diffCals !== 0 && (
-                                                            <span className={`px-2 py-0.5 rounded-full ${change.diffCals > 0 ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                                                                Kalori: {change.diffCals > 0 ? '+' : ''}{Math.round(change.diffCals)}
-                                                            </span>
-                                                        )}
-                                                        {change.diffProt !== 0 && (
-                                                            <span className={`px-2 py-0.5 rounded-full ${change.diffProt > 0 ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'}`}>
-                                                                Pro: {change.diffProt > 0 ? '+' : ''}{Math.round(change.diffProt)}
-                                                            </span>
-                                                        )}
-                                                        {change.diffCarbs !== 0 && (
-                                                            <span className={`px-2 py-0.5 rounded-full ${change.diffCarbs > 0 ? 'bg-orange-100 text-orange-700' : 'bg-slate-100 text-slate-600'}`}>
-                                                                Karb: {change.diffCarbs > 0 ? '+' : ''}{Math.round(change.diffCarbs)}
-                                                            </span>
-                                                        )}
-                                                        {change.diffFat !== 0 && (
-                                                            <span className={`px-2 py-0.5 rounded-full ${change.diffFat > 0 ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'}`}>
-                                                                Yağ: {change.diffFat > 0 ? '+' : ''}{Math.round(change.diffFat)}
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        )
-                                    })}
+                                    {alternativeChanges.map((change) => renderChangeRow(change, true))}
                                 </div>
                             </div>
                         )}
@@ -304,13 +345,20 @@ export function BalanceConfirmModal({
                 </div>
 
                 <DialogFooter className="p-4 bg-white border-t border-slate-100 shrink-0 flex flex-row items-center gap-3 w-full">
-                    <Button variant="outline" className="flex-1 text-slate-600 border-slate-300 hover:bg-slate-100 hover:text-slate-900" onClick={onClose}>
+                    <Button
+                        variant="outline"
+                        className="flex-1 text-slate-600 border-slate-300 hover:bg-slate-100 hover:text-slate-900"
+                        onClick={onClose}
+                    >
                         İptal
                     </Button>
-                    <Button className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-sm" onClick={() => {
-                        const approved = changes.filter(c => selectedChanges.has(c.id))
-                        onConfirm(approved)
-                    }}>
+                    <Button
+                        className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-sm"
+                        onClick={() => {
+                            const approved = changes.filter((c) => selectedChanges.has(c.id))
+                            onConfirm(approved)
+                        }}
+                    >
                         Onayla
                     </Button>
                 </DialogFooter>
@@ -318,4 +366,3 @@ export function BalanceConfirmModal({
         </Dialog>
     )
 }
-

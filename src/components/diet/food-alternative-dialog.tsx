@@ -55,6 +55,19 @@ type FilterPrefs = {
     ignoredTagWords: string
 }
 
+type FlavorTuningSettings = {
+    enabled: boolean
+    allow_post_edit: boolean
+    respect_scope_filters: boolean
+    respect_frequency_rules: boolean
+    strict_locked_items: boolean
+    suggestion_count: number
+    macro_weight: number
+    flavor_weight: number
+    diversity_weight: number
+    compatibility_weight: number
+}
+
 const DEFAULT_PREFS: FilterPrefs = {
     includeCategory: true,
     includeRole: false,
@@ -77,6 +90,38 @@ const DEFAULT_PREFS: FilterPrefs = {
     showSettingsPanel: false,
     ignoredWords: "ve, ile, soslu, sote, haşlama, ızgara, tava, yemeği, çorbası, salatası, ezmesi, kıyma, gram, adet, porsiyon, dilim",
     ignoredTagWords: "kahvaltılık, atıştırmalık"
+}
+
+const DEFAULT_FLAVOR_TUNING: FlavorTuningSettings = {
+    enabled: true,
+    allow_post_edit: true,
+    respect_scope_filters: true,
+    respect_frequency_rules: true,
+    strict_locked_items: true,
+    suggestion_count: 3,
+    macro_weight: 0.4,
+    flavor_weight: 0.35,
+    diversity_weight: 0.15,
+    compatibility_weight: 0.1,
+}
+
+function clampFlavorWeight(value: unknown, fallback: number, min: number, max: number) {
+    const numeric = Number(value)
+    if (!Number.isFinite(numeric)) return fallback
+    return Math.min(max, Math.max(min, numeric))
+}
+
+function uniqueWordsFromName(value: string) {
+    return Array.from(
+        new Set(
+            String(value || "")
+                .toLocaleLowerCase("tr-TR")
+                .replace(/[^\p{L}\p{N}\s]/gu, " ")
+                .split(/\s+/)
+                .map(s => s.trim())
+                .filter(s => s.length >= 3)
+        )
+    )
 }
 
 export interface FoodAlternativeDialogProps {
@@ -104,6 +149,7 @@ export function FoodAlternativeDialog({ isOpen, onClose, originalFood, onSelect,
     const [loading, setLoading] = useState(false)
     const [foods, setFoods] = useState<any[]>([])
     const [prefs, setPrefs] = useState<FilterPrefs>(DEFAULT_PREFS)
+    const [flavorSettings, setFlavorSettings] = useState<FlavorTuningSettings>(DEFAULT_FLAVOR_TUNING)
     const [editingFood, setEditingFood] = useState<any>(null)
     const [searchOpen, setSearchOpen] = useState(false)
     const [searchQuery, setSearchQuery] = useState("")
@@ -211,6 +257,30 @@ export function FoodAlternativeDialog({ isOpen, onClose, originalFood, onSelect,
                     setPrefs(merged)
                 }
             }
+
+            const { data: flavorData, error: flavorError } = await supabase
+                .from('app_settings')
+                .select('value')
+                .eq('key', 'flavor_tuning_settings')
+                .maybeSingle()
+
+            if (!flavorError && flavorData?.value) {
+                const raw = flavorData.value
+                setFlavorSettings({
+                    enabled: Boolean(raw.enabled ?? DEFAULT_FLAVOR_TUNING.enabled),
+                    allow_post_edit: Boolean(raw.allow_post_edit ?? DEFAULT_FLAVOR_TUNING.allow_post_edit),
+                    respect_scope_filters: Boolean(raw.respect_scope_filters ?? DEFAULT_FLAVOR_TUNING.respect_scope_filters),
+                    respect_frequency_rules: Boolean(raw.respect_frequency_rules ?? DEFAULT_FLAVOR_TUNING.respect_frequency_rules),
+                    strict_locked_items: Boolean(raw.strict_locked_items ?? DEFAULT_FLAVOR_TUNING.strict_locked_items),
+                    suggestion_count: Math.round(clampFlavorWeight(raw.suggestion_count, DEFAULT_FLAVOR_TUNING.suggestion_count, 1, 6)),
+                    macro_weight: clampFlavorWeight(raw.macro_weight, DEFAULT_FLAVOR_TUNING.macro_weight, 0, 1),
+                    flavor_weight: clampFlavorWeight(raw.flavor_weight, DEFAULT_FLAVOR_TUNING.flavor_weight, 0, 1),
+                    diversity_weight: clampFlavorWeight(raw.diversity_weight, DEFAULT_FLAVOR_TUNING.diversity_weight, 0, 1),
+                    compatibility_weight: clampFlavorWeight(raw.compatibility_weight, DEFAULT_FLAVOR_TUNING.compatibility_weight, 0, 1),
+                })
+            } else if (!flavorError) {
+                setFlavorSettings(DEFAULT_FLAVOR_TUNING)
+            }
         } catch (e) {
             if (!isPolling) console.error("Settings load error:", e)
         }
@@ -267,6 +337,7 @@ export function FoodAlternativeDialog({ isOpen, onClose, originalFood, onSelect,
         if (!foods.length || !normalizedOriginalFood) return []
 
         const originalFood = normalizedOriginalFood
+        const isFlavorModeActive = flavorSettings.enabled && flavorSettings.allow_post_edit
         let candidates = foods.filter(f => f.id !== originalFood.id).map(f => {
             if (!f.diet_type && (f.keto || f.lowcarb || f.vegan || f.vejeteryan)) {
                 const types = []
@@ -284,6 +355,16 @@ export function FoodAlternativeDialog({ isOpen, onClose, originalFood, onSelect,
             if (Array.isArray(val)) return val.map(String).map(s => s.trim().toLowerCase())
             return String(val).toLowerCase().split(',').map(s => s.trim())
         }
+
+        const blendWeights = {
+            macro: clampFlavorWeight(flavorSettings.macro_weight, DEFAULT_FLAVOR_TUNING.macro_weight, 0, 1),
+            flavor: clampFlavorWeight(flavorSettings.flavor_weight, DEFAULT_FLAVOR_TUNING.flavor_weight, 0, 1),
+            diversity: clampFlavorWeight(flavorSettings.diversity_weight, DEFAULT_FLAVOR_TUNING.diversity_weight, 0, 1),
+            compatibility: clampFlavorWeight(flavorSettings.compatibility_weight, DEFAULT_FLAVOR_TUNING.compatibility_weight, 0, 1),
+        }
+        const blendTotalWeight = blendWeights.macro + blendWeights.flavor + blendWeights.diversity + blendWeights.compatibility
+        const originalTagSet = new Set(safeSplit(originalFood.compatibility_tags || originalFood.tags))
+        const originalNameTokens = uniqueWordsFromName(originalFood.name || "")
 
         let mainDishTags: string[] = []
         let shouldUseCompatibility = false
@@ -467,9 +548,55 @@ export function FoodAlternativeDialog({ isOpen, onClose, originalFood, onSelect,
                 finalScore += bonus
             }
 
-            finalScore = Math.min(100, Math.max(0, finalScore))
+            const macroScore = Math.min(100, Math.max(0, finalScore))
+            let blendedScore = macroScore
 
-            return { ...food, similarity: finalScore, _compatibility: compatibility }
+            if (isFlavorModeActive && blendTotalWeight > 0) {
+                const foodTagSet = new Set(safeSplit(food.compatibility_tags || food.tags))
+                const sharedTagCount = Array.from(foodTagSet).filter(tag => originalTagSet.has(tag)).length
+                const tagScore = originalTagSet.size > 0
+                    ? (sharedTagCount / originalTagSet.size) * 100
+                    : 50
+
+                const foodNameTokens = uniqueWordsFromName(food.name || "")
+                const sharedNameTokenCount = foodNameTokens.filter(token => originalNameTokens.includes(token)).length
+                const nameScore = originalNameTokens.length > 0
+                    ? (sharedNameTokenCount / originalNameTokens.length) * 100
+                    : 50
+
+                const flavorScore = Math.min(100, (tagScore * 0.7) + (nameScore * 0.3))
+                const diversityScore = nearbyUsedFoodIds.includes(food.id)
+                    ? (flavorSettings.strict_locked_items ? 0 : 25)
+                    : 100
+
+                const warningList = Array.isArray((compatibility as any)?.warnings) ? (compatibility as any).warnings : []
+                const hasHardBlock = (compatibility as any)?.compatible === false && (compatibility as any)?.severity === "block"
+                const warningPenalty = warningList.filter((w: any) => w?.type === "negative").length
+                const softWarningPenalty = warningList.filter((w: any) => w?.type === "warning").length
+
+                let compatibilityScore = 100
+                if (hasHardBlock) {
+                    compatibilityScore = 0
+                } else if ((compatibility as any)?.compatible === false || warningPenalty > 0) {
+                    compatibilityScore = 45
+                } else if (softWarningPenalty > 0) {
+                    compatibilityScore = 72
+                }
+
+                blendedScore =
+                    (
+                        macroScore * blendWeights.macro +
+                        flavorScore * blendWeights.flavor +
+                        diversityScore * blendWeights.diversity +
+                        compatibilityScore * blendWeights.compatibility
+                    ) / blendTotalWeight
+            }
+
+            return {
+                ...food,
+                similarity: Math.min(100, Math.max(0, blendedScore)),
+                _compatibility: compatibility,
+            }
         })
 
         scored.sort((a, b) => b.similarity - a.similarity)
@@ -489,7 +616,7 @@ export function FoodAlternativeDialog({ isOpen, onClose, originalFood, onSelect,
         })
 
         return uniqueScored
-    }, [foods, originalFood, prefs, nearbyUsedFoodIds, mainDishOfSlot, isTargetMainDish, JSON.stringify(dailyTotals), JSON.stringify(dailyTargets), activeDietRules, patientDiseases, patientLabs, patientMedicationRules, activeMacroPreference])
+    }, [foods, originalFood, prefs, nearbyUsedFoodIds, mainDishOfSlot, isTargetMainDish, JSON.stringify(dailyTotals), JSON.stringify(dailyTargets), activeDietRules, patientDiseases, patientLabs, patientMedicationRules, activeMacroPreference, flavorSettings])
 
     const [position, setPosition] = useState({ x: 0, y: 0 })
     const [isDragging, setIsDragging] = useState(false)

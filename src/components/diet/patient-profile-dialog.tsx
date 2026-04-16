@@ -107,6 +107,7 @@ const profileSchema = z.object({
     max_past_weeks: z.coerce.number().optional(),
     allow_past: z.boolean().default(false).optional(),
     allow_future: z.boolean().default(false).optional(),
+    show_flavor_tune: z.boolean().default(false).optional(),
     macro_target_mode: z.enum(["calculated", "plan"]).default("calculated").optional(),
     allow_program_selection: z.boolean().nullable().optional(), // null means use global
     allow_goal_selection: z.boolean().nullable().optional(), // null means use global
@@ -231,7 +232,7 @@ export function PatientProfileDialog({
 
     async function fetchGlobalSettings() {
         const { data } = await supabase
-            .from('app_settings')
+            .from('diet_app_settings')
             .select('value')
             .eq('id', 'registration_settings')
             .single()
@@ -373,6 +374,7 @@ export function PatientProfileDialog({
             max_past_weeks: 2,
             allow_past: false,
             allow_future: false,
+            show_flavor_tune: false,
             macro_target_mode: "calculated",
             allow_program_selection: null as boolean | null,
             allow_goal_selection: null as boolean | null,
@@ -408,6 +410,7 @@ export function PatientProfileDialog({
                     max_past_weeks: 2,
                     allow_past: false,
                     allow_future: false,
+                    show_flavor_tune: false,
                     macro_target_mode: "calculated",
                     allow_program_selection: null,
                     allow_goal_selection: null,
@@ -474,6 +477,7 @@ export function PatientProfileDialog({
 
         if (data) {
             console.log("Patient data loaded:", data)
+            console.log("=== DB'den Gelen Görünürlük Ayarı ===", data.visibility_settings)
 
             // Calculate age from birth_date
             let calculatedAge = 0
@@ -499,6 +503,7 @@ export function PatientProfileDialog({
                 max_past_weeks: data.visibility_settings?.max_past_weeks ?? 2,
                 allow_past: data.visibility_settings?.allow_past ?? false,
                 allow_future: data.visibility_settings?.allow_future ?? false,
+                show_flavor_tune: data.visibility_settings?.show_flavor_tune ?? false,
                 macro_target_mode: data.macro_target_mode || "calculated",
                 allow_program_selection: data.preferences?.allow_program_selection ?? null,
                 allow_goal_selection: data.preferences?.allow_goal_selection ?? null,
@@ -525,6 +530,7 @@ export function PatientProfileDialog({
     async function onSubmit(values: z.infer<typeof profileSchema>) {
         setLoading(true)
         setError(null)
+        console.log("=== Profil Kaydediliyor ===", "TİK DURUMU:", values.show_flavor_tune, "TÜM DEĞERLER:", values)
 
         // Calculate birth_date from age
         let birthDateStr = null
@@ -597,7 +603,7 @@ export function PatientProfileDialog({
             delete newPrefs.allow_week_delete
         }
 
-        const { error: updateError } = await supabase
+        const { data: updatedRows, error: updateError } = await supabase
             .from("patients")
             .update({
                 full_name: values.full_name,
@@ -614,7 +620,8 @@ export function PatientProfileDialog({
                     max_future_weeks: values.max_future_weeks,
                     max_past_weeks: values.max_past_weeks,
                     allow_past: values.allow_past,
-                    allow_future: values.allow_future
+                    allow_future: values.allow_future,
+                    show_flavor_tune: values.show_flavor_tune
                 },
                 preferences: newPrefs,
                 auto_plan_limit_count: values.auto_plan_limit_count || null,
@@ -627,6 +634,15 @@ export function PatientProfileDialog({
                 ai_search_limit_period_hours: values.ai_search_limit_period_hours || null
             })
             .eq("id", currentPatientId)
+            .select("id")
+
+        if (updateError) {
+            console.error("UPDATE ERROR:", updateError)
+        } else {
+            console.log("=== Güncellenen Satır Sayısı ===", updatedRows?.length)
+            const { data: checkData } = await supabase.from("patients").select("visibility_settings").eq("id", currentPatientId).single()
+            console.log("=== Kayıt Sonrası DB Kontrolü ===", checkData?.visibility_settings)
+        }
 
         // SYNC WEIGHT AND ACTIVITY
         if (!updateError && currentPatientId && values.weight && values.activity_level) {
@@ -1293,6 +1309,31 @@ export function PatientProfileDialog({
                                                 {form.watch('allow_future') ? 'Tüm gelecek haftalar görünür.' : `İleri ${form.watch('max_future_weeks') || 2} gelecek hafta görünür.`}
                                             </p>
                                         </div>
+                                        </div>
+
+                                        {/* Show Flavor Tune Feature */}
+                                        <div className="space-y-2 border rounded-md p-3 col-span-2">
+                                            <FormField
+                                                control={form.control}
+                                                name="show_flavor_tune"
+                                                render={({ field }) => (
+                                                    <FormItem className="flex flex-row items-center space-x-3 space-y-0">
+                                                        <FormControl>
+                                                            <Checkbox
+                                                                checked={field.value}
+                                                                onCheckedChange={field.onChange}
+                                                            />
+                                                        </FormControl>
+                                                        <div className="leading-none">
+                                                            <FormLabel className="text-xs">Lezzet Ayarı (Dengele) Özelliği Hasta Taraflı Açılsın</FormLabel>
+                                                        </div>
+                                                    </FormItem>
+                                                )}
+                                            />
+                                            <p className="text-[10px] text-muted-foreground">
+                                                Etkinleştirildiğinde hasta, listesinde belirlenen sınırları geçmeden yapay zeka destekli haftalık dengeleme simülasyonu çalıştırabilir. Öğelerin kendi menülerinden değiştirilmesine ek olarak toplu ve anlık iyileştirme sağlar.
+                                            </p>
+                                        </div>
                                     </div>
 
                                     <div className="grid grid-cols-1 gap-4 mt-4">
@@ -1555,7 +1596,6 @@ export function PatientProfileDialog({
                                             />
                                         </div>
                                     </div>
-                                </div>
 
                                 <DialogFooter>
                                     <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>İptal</Button>
@@ -1669,3 +1709,4 @@ export function PatientProfileDialog({
         </Dialog>
     )
 }
+

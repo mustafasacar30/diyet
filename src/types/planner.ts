@@ -1,6 +1,6 @@
 export type RuleType = 'frequency' | 'affinity' | 'consistency' | 'preference' | 'nutritional' | 'fixed_meal' | 'week_override' | 'rotation' | 'or_group'
 
-export type TargetType = 'category' | 'tag' | 'role' | 'food_id' | 'diet_type' | 'macronutrient'
+export type TargetType = 'category' | 'tag' | 'role' | 'food_id' | 'diet_type' | 'macronutrient' | 'name_contains'
 
 export interface RuleTarget {
     type: TargetType
