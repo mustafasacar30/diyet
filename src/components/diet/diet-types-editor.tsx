@@ -69,6 +69,9 @@ export function DietTypesEditor({
     const [teamOwnerId, setTeamOwnerId] = useState<string | null>(null)
     const [isTeamScopedContext, setIsTeamScopedContext] = useState(false)
     const [isProgramScopedContext, setIsProgramScopedContext] = useState(false)
+    const [copyDialogOpen, setCopyDialogOpen] = useState(false)
+    const [copySourceDietType, setCopySourceDietType] = useState<any | null>(null)
+    const [copyName, setCopyName] = useState('')
 
     useEffect(() => {
         setIsProgramScopedContext(!!programTemplateId)
@@ -382,6 +385,65 @@ export function DietTypesEditor({
         else onUpdate()
     }
 
+    const openCopyDialog = (dt: any) => {
+        if (isProgramScopedContext) {
+            alert('Program modunda diyet türü kopyalama henüz açık değil.')
+            return
+        }
+
+        if (isTeamScopedContext) {
+            alert('TakÄ±m modunda diyet tÃ¼rÃ¼ kopyalama henÃ¼z aÃ§Ä±k deÄŸil.')
+            return
+        }
+
+        setCopySourceDietType(dt)
+        setCopyName(`${String(dt?.name || 'Diyet Türü').trim()} - Kopya`)
+        setCopyDialogOpen(true)
+    }
+
+    const handleCopyDietType = async () => {
+        if (!copySourceDietType) return
+        const nextName = String(copyName || '').trim()
+        if (!nextName) {
+            alert('Kopya adı boş olamaz.')
+            return
+        }
+
+        setSaving(true)
+        try {
+            const source = copySourceDietType
+            const payload = {
+                patient_id: patientId || null,
+                parent_diet_type_id: null,
+                name: nextName,
+                abbreviation: source.abbreviation || nextName.charAt(0).toUpperCase(),
+                description: source.description || null,
+                carb_factor: Number.isFinite(Number(source.carb_factor)) ? Number(source.carb_factor) : 1.0,
+                protein_factor: Number.isFinite(Number(source.protein_factor)) ? Number(source.protein_factor) : 1.0,
+                fat_factor: Number.isFinite(Number(source.fat_factor)) ? Number(source.fat_factor) : 1.0,
+                allowed_tags: Array.isArray(source.allowed_tags) ? source.allowed_tags : [],
+                banned_keywords: Array.isArray(source.banned_keywords) ? source.banned_keywords : [],
+                banned_tags: Array.isArray(source.banned_tags) ? source.banned_tags : [],
+                banned_details: source.banned_details || {}
+            }
+
+            const { error } = await supabase
+                .from('diet_types')
+                .insert(payload)
+
+            if (error) throw error
+
+            setCopyDialogOpen(false)
+            setCopySourceDietType(null)
+            setCopyName('')
+            onUpdate()
+        } catch (error: any) {
+            alert('Kopyalama hatasÄ±: ' + (error?.message || error))
+        } finally {
+            setSaving(false)
+        }
+    }
+
     const handleReset = async (dt: any) => {
         if (isProgramScopedContext && programTemplateId) {
             if (dt.scope_source !== 'program') {
@@ -680,6 +742,11 @@ export function DietTypesEditor({
                                             <RotateCcw size={14} />
                                         </Button>
                                     )}
+                                    {!isTeamScopedContext && !isProgramScopedContext && (
+                                        <Button size="sm" variant="ghost" onClick={() => openCopyDialog(dt)} title="Kopyala">
+                                            <Copy size={14} />
+                                        </Button>
+                                    )}
                                     <Button size="sm" variant="ghost" onClick={() => startEdit(dt)}>
                                         <Pencil size={14} />
                                     </Button>
@@ -702,6 +769,45 @@ export function DietTypesEditor({
                     </div>
                 )
             }
+
+            <Dialog open={copyDialogOpen} onOpenChange={setCopyDialogOpen}>
+                <DialogContent className="max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Diyet Türünü Kopyala</DialogTitle>
+                        <DialogDescription>
+                            Kopya adını düzenleyebilirsiniz. Varsayılan olarak "Diyet Adı - Kopya" önerilir.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="space-y-2">
+                        <Label htmlFor="diet-copy-name">Kopya Adı</Label>
+                        <Input
+                            id="diet-copy-name"
+                            value={copyName}
+                            onChange={(e) => setCopyName(e.target.value)}
+                            placeholder="Örn: Ketojenik - Kopya"
+                            autoFocus
+                        />
+                    </div>
+
+                    <DialogFooter>
+                        <Button
+                            variant="outline"
+                            onClick={() => {
+                                setCopyDialogOpen(false)
+                                setCopySourceDietType(null)
+                                setCopyName('')
+                            }}
+                            disabled={saving}
+                        >
+                            İptal
+                        </Button>
+                        <Button onClick={handleCopyDietType} disabled={saving || !copyName.trim()}>
+                            {saving ? 'Kopyalanıyor...' : 'Kopyala'}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div >
     )
 }

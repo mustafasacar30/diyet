@@ -8,7 +8,17 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
-import { Plus, Pencil, Trash2, Calendar, Activity, Ban, ArrowLeft, Loader2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, Calendar, Activity, Ban, ArrowLeft, Loader2, Copy } from 'lucide-react'
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import ProgramDialog from '@/components/programs/program-dialog'
 import {
     AlertDialog,
@@ -76,6 +86,10 @@ function ProgramsContent() {
     const [editingProgram, setEditingProgram] = useState<ProgramTemplate | null>(null)
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
     const [programToDelete, setProgramToDelete] = useState<ProgramTemplate | null>(null)
+    const [cloneDialogOpen, setCloneDialogOpen] = useState(false)
+    const [programToClone, setProgramToClone] = useState<ProgramTemplate | null>(null)
+    const [cloneProgramName, setCloneProgramName] = useState('')
+    const [cloningProgram, setCloningProgram] = useState(false)
     const [scopeActionProgramId, setScopeActionProgramId] = useState<string | null>(null)
     const { scopeMode } = useAuth()
     const [teamScope, setTeamScope] = useState<{
@@ -357,6 +371,170 @@ function ProgramsContent() {
         setDialogOpen(true)
     }
 
+    function openCloneDialog(program: ProgramTemplate) {
+        if (hasTeamScope) {
+            alert('Takım modunda yeni program kopyası oluşturma kapalı.')
+            return
+        }
+        setProgramToClone(program)
+        setCloneProgramName(`${program.name} - Kopya`)
+        setCloneDialogOpen(true)
+    }
+
+    async function handleCloneProgram() {
+        if (!programToClone) return
+        const nextName = cloneProgramName.trim()
+        if (!nextName) {
+            alert('Program adı boş olamaz.')
+            return
+        }
+
+        setCloningProgram(true)
+        try {
+            const sourceProgramId = programToClone.id
+
+            const { data: insertedProgram, error: insertProgramError } = await supabase
+                .from('program_templates')
+                .insert({
+                    name: nextName,
+                    description: programToClone.description,
+                    total_weeks: programToClone.total_weeks,
+                    default_activity_level: programToClone.default_activity_level,
+                    is_active: programToClone.is_active,
+                })
+                .select('*')
+                .single()
+
+            if (insertProgramError) throw insertProgramError
+            const newProgramId = insertedProgram.id as string
+
+            const weeks = programToClone.program_template_weeks || []
+            if (weeks.length > 0) {
+                const weekPayload = weeks.map((w) => ({
+                    program_template_id: newProgramId,
+                    week_start: w.week_start,
+                    week_end: w.week_end,
+                    diet_type_id: w.diet_type_id,
+                    notes: w.notes ?? null,
+                }))
+                const { error: weeksError } = await supabase
+                    .from('program_template_weeks')
+                    .insert(weekPayload)
+                if (weeksError) throw weeksError
+            }
+
+            const restrictions = programToClone.program_template_restrictions || []
+            if (restrictions.length > 0) {
+                const restrictionPayload = restrictions.map((r) => ({
+                    program_template_id: newProgramId,
+                    restriction_type: r.restriction_type,
+                    restriction_value: r.restriction_value,
+                    reason: r.reason ?? null,
+                    severity: r.severity,
+                }))
+                const { error: restrictionsError } = await supabase
+                    .from('program_template_restrictions')
+                    .insert(restrictionPayload)
+                if (restrictionsError) throw restrictionsError
+            }
+
+            const { data: sourceRules, error: rulesFetchError } = await supabase
+                .from('planning_rules')
+                .select('*')
+                .eq('scope', 'program')
+                .eq('program_template_id', sourceProgramId)
+                .is('team_owner_id', null)
+                .order('sort_order', { ascending: true })
+                .order('priority', { ascending: false })
+            if (rulesFetchError) throw rulesFetchError
+
+            if ((sourceRules || []).length > 0) {
+                const rulesPayload = (sourceRules || []).map((rule: any) => ({
+                    name: rule.name,
+                    description: rule.description ?? null,
+                    rule_type: rule.rule_type,
+                    priority: Number.isFinite(Number(rule.priority)) ? Number(rule.priority) : 0,
+                    is_active: rule.is_active !== false,
+                    is_ignored: rule.is_ignored === true,
+                    definition: rule.definition || {},
+                    sort_order: Number.isFinite(Number(rule.sort_order)) ? Number(rule.sort_order) : 0,
+                    scope: 'program',
+                    program_template_id: newProgramId,
+                    team_owner_id: null,
+                    source_rule_id: null,
+                    pending_global_approval: false,
+                }))
+                const { error: insertRulesError } = await supabase
+                    .from('planning_rules')
+                    .insert(rulesPayload)
+                if (insertRulesError) throw insertRulesError
+            }
+
+            const { data: sourceDietTypeOverrides, error: dietOverrideFetchError } = await supabase
+                .from('program_diet_type_overrides')
+                .select('*')
+                .eq('program_template_id', sourceProgramId)
+                .is('team_owner_id', null)
+            if (dietOverrideFetchError) throw dietOverrideFetchError
+
+            if ((sourceDietTypeOverrides || []).length > 0) {
+                const overridePayload = (sourceDietTypeOverrides || []).map((row: any) => {
+                    const nextRow = { ...row, program_template_id: newProgramId, team_owner_id: null }
+                    delete nextRow.id
+                    delete nextRow.created_at
+                    delete nextRow.updated_at
+                    return nextRow
+                })
+                const { error: insertOverrideError } = await supabase
+                    .from('program_diet_type_overrides')
+                    .insert(overridePayload)
+                if (insertOverrideError) throw insertOverrideError
+            }
+
+            const { data: sourceSettingsRows, error: settingsFetchError } = await supabase
+                .from('planner_settings')
+                .select('*')
+                .eq('scope', 'program')
+                .eq('program_template_id', sourceProgramId)
+                .is('team_owner_id', null)
+                .limit(1)
+            if (settingsFetchError) throw settingsFetchError
+
+            const sourceSettings = sourceSettingsRows?.[0]
+            if (sourceSettings) {
+                const settingsPayload: any = {
+                    ...sourceSettings,
+                    program_template_id: newProgramId,
+                    team_owner_id: null,
+                    patient_id: null,
+                    scope: 'program',
+                    source_scope: 'program',
+                    inherited_from_id: null,
+                }
+                delete settingsPayload.id
+                delete settingsPayload.created_at
+                delete settingsPayload.updated_at
+                delete settingsPayload.effective_team_owner_id
+                delete settingsPayload.effective_user_id
+
+                const { error: insertSettingsError } = await supabase
+                    .from('planner_settings')
+                    .insert(settingsPayload)
+                if (insertSettingsError) throw insertSettingsError
+            }
+
+            setCloneDialogOpen(false)
+            setProgramToClone(null)
+            setCloneProgramName('')
+            await fetchPrograms()
+        } catch (error: any) {
+            console.error('Program clone error:', error)
+            alert('Program kopyalama hatası: ' + (error?.message || 'Bilinmeyen hata'))
+        } finally {
+            setCloningProgram(false)
+        }
+    }
+
     function handleDialogClose() {
         setDialogOpen(false)
         setEditingProgram(null)
@@ -513,6 +691,16 @@ function ProgramsContent() {
                                                 <Button
                                                     variant="outline"
                                                     size="sm"
+                                                    onClick={() => openCloneDialog(program)}
+                                                    title="Programı kopyala"
+                                                >
+                                                    <Copy size={14} />
+                                                </Button>
+                                            )}
+                                            {!hasTeamScope && (
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
                                                     className="text-red-600 hover:text-red-700 hover:bg-red-50"
                                                     onClick={() => {
                                                         setProgramToDelete(program)
@@ -558,6 +746,43 @@ function ProgramsContent() {
                 forcedMode={canToggleScopeMode ? scopeMode : undefined}
             />
 
+            <Dialog open={cloneDialogOpen} onOpenChange={setCloneDialogOpen}>
+                <DialogContent className="max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Programı Kopyala</DialogTitle>
+                        <DialogDescription>
+                            Program tüm detaylarıyla kopyalanır: hafta planı, yasaklar, kurallar ve program ayarları.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-2">
+                        <Label htmlFor="program-copy-name">Yeni Program Adı</Label>
+                        <Input
+                            id="program-copy-name"
+                            value={cloneProgramName}
+                            onChange={(e) => setCloneProgramName(e.target.value)}
+                            placeholder="Örn: Lipödem Beslenmesi - Kopya"
+                            autoFocus
+                        />
+                    </div>
+                    <DialogFooter>
+                        <Button
+                            variant="outline"
+                            onClick={() => {
+                                setCloneDialogOpen(false)
+                                setProgramToClone(null)
+                                setCloneProgramName('')
+                            }}
+                            disabled={cloningProgram}
+                        >
+                            İptal
+                        </Button>
+                        <Button onClick={handleCloneProgram} disabled={cloningProgram || !cloneProgramName.trim()}>
+                            {cloningProgram ? 'Kopyalanıyor...' : 'Kopyala'}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
             {/* Delete Confirmation */}
             <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
                 <AlertDialogContent>
@@ -582,5 +807,3 @@ function ProgramsContent() {
         </div>
     )
 }
-
-
