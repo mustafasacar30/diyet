@@ -60,6 +60,8 @@ type ApiResponse = {
         filteredMeals: number
         filteredWeeks: number
         dataSource?: "render" | "pool" | "both"
+        includePoolUnmatched?: boolean
+        unmatchedPoolOccurrences?: number
     }
     metrics: MetricRow[]
     frequency_metrics?: FrequencyMetricRow[]
@@ -238,6 +240,34 @@ const DEFAULT_FREQUENCY_IGNORED_TERMS = [
 ].join(", ")
 
 const PATTERN_SETTINGS_KEY = "pattern_insights_settings"
+const PATTERN_INSIGHTS_PAGE_CACHE_KEY = "pattern_insights_page_cache_v1"
+
+type PatternInsightsPageCache = {
+    data: ApiResponse | null
+    filters: {
+        selectedPrograms: string[]
+        selectedPhases: string[]
+        selectedMeals: string[]
+        selectedRoles: string[]
+        selectedCategories: string[]
+        selectedTags: string[]
+        dataSourceMode: "both" | "render" | "pool"
+        includePoolUnmatched: boolean
+        weekStart: string
+        weekEnd: string
+        minSupport: string
+        minConfidence: string
+        limit: string
+        seasonMonthStart: string
+        seasonMonthEnd: string
+    }
+    ui: {
+        showFilters: boolean
+        showQuickGuide: boolean
+        activeInsightTab: "generalized" | "frequency" | "table-filters"
+    }
+    savedAt: number
+}
 
 const CANDIDATE_PRESETS: Record<
     CandidatePresetKey,
@@ -474,9 +504,11 @@ function MultiSelectDropdown({
 
 export default function PatternInsightsPage() {
     const router = useRouter()
-    const [loading, setLoading] = useState(false)
+    const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
     const [data, setData] = useState<ApiResponse | null>(null)
+    const [cacheHydrated, setCacheHydrated] = useState(false)
+    const [hasRestoredData, setHasRestoredData] = useState(false)
 
     const [showFilters, setShowFilters] = useState(true)
     const [showQuickGuide, setShowQuickGuide] = useState(false)
@@ -522,6 +554,7 @@ export default function PatternInsightsPage() {
     const [selectedCategories, setSelectedCategories] = useState<string[]>([])
     const [selectedTags, setSelectedTags] = useState<string[]>([])
     const [dataSourceMode, setDataSourceMode] = useState<"both" | "render" | "pool">("both")
+    const [includePoolUnmatched, setIncludePoolUnmatched] = useState(false)
 
     const [weekStart, setWeekStart] = useState("1")
     const [weekEnd, setWeekEnd] = useState("26")
@@ -561,6 +594,7 @@ export default function PatternInsightsPage() {
             if (selectedRoles.length > 0) qs.set("food_roles", selectedRoles.join(","))
             if (selectedCategories.length > 0) qs.set("food_categories", selectedCategories.join(","))
             qs.set("data_source", dataSourceMode)
+            if (includePoolUnmatched) qs.set("include_pool_unmatched", "1")
 
             qs.set("week_start", String(parseNumberish(weekStart) ?? 1))
             qs.set("week_end", String(parseNumberish(weekEnd) ?? 26))
@@ -661,9 +695,126 @@ export default function PatternInsightsPage() {
 
     useEffect(() => {
         loadPatternSettings()
-        fetchData()
+
+        if (typeof window === "undefined") {
+            setCacheHydrated(true)
+            return
+        }
+
+        try {
+            const raw = window.sessionStorage.getItem(PATTERN_INSIGHTS_PAGE_CACHE_KEY)
+            if (!raw) {
+                setCacheHydrated(true)
+                return
+            }
+
+            const parsed = JSON.parse(raw) as Partial<PatternInsightsPageCache>
+            const cachedData = parsed?.data ?? null
+            const cachedFilters = parsed?.filters
+            const cachedUi = parsed?.ui
+
+            if (cachedFilters) {
+                setSelectedPrograms(cachedFilters.selectedPrograms || [])
+                setSelectedPhases(cachedFilters.selectedPhases || [])
+                setSelectedMeals(cachedFilters.selectedMeals || [])
+                setSelectedRoles(cachedFilters.selectedRoles || [])
+                setSelectedCategories(cachedFilters.selectedCategories || [])
+                setSelectedTags(cachedFilters.selectedTags || [])
+                setDataSourceMode(cachedFilters.dataSourceMode || "both")
+                setIncludePoolUnmatched(Boolean(cachedFilters.includePoolUnmatched))
+                setWeekStart(cachedFilters.weekStart || "1")
+                setWeekEnd(cachedFilters.weekEnd || "26")
+                setMinSupport(cachedFilters.minSupport || "3")
+                setMinConfidence(cachedFilters.minConfidence || "0,1")
+                setLimit(cachedFilters.limit || "120")
+                setSeasonMonthStart(cachedFilters.seasonMonthStart || "")
+                setSeasonMonthEnd(cachedFilters.seasonMonthEnd || "")
+            }
+
+            if (cachedUi) {
+                setShowFilters(Boolean(cachedUi.showFilters))
+                setShowQuickGuide(Boolean(cachedUi.showQuickGuide))
+                setActiveInsightTab(cachedUi.activeInsightTab || "generalized")
+            }
+
+            if (cachedData) {
+                setData(cachedData)
+                setHasRestoredData(true)
+                setError(null)
+                setLoading(false)
+            }
+        } catch {
+            // ignore broken cache and fall back to network fetch
+        } finally {
+            setCacheHydrated(true)
+        }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
+
+    useEffect(() => {
+        if (!cacheHydrated) return
+        if (hasRestoredData) return
+        fetchData()
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [cacheHydrated, hasRestoredData])
+
+    useEffect(() => {
+        if (!cacheHydrated || typeof window === "undefined") return
+
+        const payload: PatternInsightsPageCache = {
+            data,
+            filters: {
+                selectedPrograms,
+                selectedPhases,
+                selectedMeals,
+                selectedRoles,
+                selectedCategories,
+                selectedTags,
+                dataSourceMode,
+                includePoolUnmatched,
+                weekStart,
+                weekEnd,
+                minSupport,
+                minConfidence,
+                limit,
+                seasonMonthStart,
+                seasonMonthEnd,
+            },
+            ui: {
+                showFilters,
+                showQuickGuide,
+                activeInsightTab,
+            },
+            savedAt: Date.now(),
+        }
+
+        try {
+            window.sessionStorage.setItem(PATTERN_INSIGHTS_PAGE_CACHE_KEY, JSON.stringify(payload))
+        } catch {
+            // ignore quota/cache errors
+        }
+    }, [
+        cacheHydrated,
+        data,
+        selectedPrograms,
+        selectedPhases,
+        selectedMeals,
+        selectedRoles,
+        selectedCategories,
+        selectedTags,
+        dataSourceMode,
+        includePoolUnmatched,
+        weekStart,
+        weekEnd,
+        minSupport,
+        minConfidence,
+        limit,
+        seasonMonthStart,
+        seasonMonthEnd,
+        showFilters,
+        showQuickGuide,
+        activeInsightTab,
+    ])
 
     const rows = useMemo(() => {
         return (data?.metrics || []).map((row, idx) => ({
@@ -1392,6 +1543,13 @@ export default function PatternInsightsPage() {
                                             Sadece Havuz
                                         </Button>
                                     </div>
+                                    <label className="inline-flex items-center gap-2 rounded-md border bg-white px-3 py-1.5 text-xs text-slate-700">
+                                        <Checkbox
+                                            checked={includePoolUnmatched}
+                                            onCheckedChange={v => setIncludePoolUnmatched(v === true)}
+                                        />
+                                        Havuzda eslesmeyenleri de say
+                                    </label>
                                     <MultiSelectDropdown
                                         title="Programlar"
                                         options={(options?.programs || []).map(p => ({ value: p.id, label: p.name }))}
@@ -1598,6 +1756,13 @@ export default function PatternInsightsPage() {
                         <CardContent>
                             <p className="text-xs text-slate-500">Sepet Sayisi</p>
                             <p className="text-3xl font-bold">{data?.summary?.basketCount ?? 0}</p>
+                            {data?.summary?.includePoolUnmatched ? (
+                                <div className="mt-2">
+                                    <Badge variant="outline" className="border-amber-300 text-amber-700">
+                                        Eslesmeyen dahil ({data?.summary?.unmatchedPoolOccurrences ?? 0})
+                                    </Badge>
+                                </div>
+                            ) : null}
                         </CardContent>
                     </Card>
                     <Card className="py-3">

@@ -24,7 +24,7 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from "@/components/ui/sheet"
-import { Plus, Calendar, Save, Calculator, ChefHat, FileText, ChevronRight, ChevronLeft, MoreHorizontal, Copy, Pencil, Trash2, Sliders, X, AlertTriangle, Settings, RefreshCw, Wand2, Search, Filter, BookOpenText, Printer, ArrowLeft, Heart, Info, Archive, LayoutGrid, List, StickyNote, Activity, Menu, RotateCcw, Eraser, Grid3X3, Sparkles, Lock, Unlock, ChevronUp, ChevronDown, Camera, Image, ClipboardList, Check } from "lucide-react"
+import { Plus, Calendar, Save, Calculator, ChefHat, FileText, ChevronRight, ChevronLeft, MoreHorizontal, Copy, Pencil, Trash2, Sliders, X, AlertTriangle, Settings, RefreshCw, Wand2, Search, Filter, BookOpenText, Printer, ArrowLeft, Heart, Info, Archive, LayoutGrid, List, StickyNote, Activity, Menu, RotateCcw, Eraser, Grid3X3, Sparkles, Lock, Unlock, ChevronUp, ChevronDown, Camera, Image, ClipboardList, Check, Loader2 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
     Select,
@@ -3934,6 +3934,21 @@ export default function PatientDetailPage({ params }: { params: Promise<{ id: st
                     />
                 )
             }
+
+            {isGeneratingPlan && (
+                <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/45 backdrop-blur-[1.5px]">
+                    <div className="w-[92%] max-w-md rounded-2xl border border-slate-700/40 bg-gradient-to-b from-[#041730] to-[#03223d] p-6 shadow-2xl">
+                        <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-white/10 bg-white/5">
+                            <Loader2 className="h-8 w-8 animate-spin text-white" />
+                        </div>
+                        <h4 className="text-center text-xl font-bold text-white">Otomatik Plan Hazırlanıyor...</h4>
+                        <p className="mt-2 text-center text-sm text-cyan-200">Kurallar, makrolar ve örüntü eşleşmeleri hesaplanıyor</p>
+                        <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-white/10">
+                            <div className="h-full w-[45%] animate-pulse rounded-full bg-gradient-to-r from-emerald-400 via-cyan-400 to-violet-500" />
+                        </div>
+                    </div>
+                </div>
+            )}
         </DndContext>
         </>
     )

@@ -1,0 +1,286 @@
+﻿                 <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setIsFoodSidebarVisible(!isFoodSidebarVisible)}>
+                    <Search size={16} />
+                </Button>
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setNotesSheetOpen(true)}>
+                    <StickyNote size={16} />
+                </Button>
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleAutoGenerate()}>
+                    <Sparkles size={16} className="text-green-600" />
+                </Button>
+            </div>
+        </>,
+        slot
+    )
+}
+
+function checkSeasonality(food: any, targetDate?: Date): { inSeason: boolean, reason?: string } {
+    if (!food || !targetDate) return { inSeason: true }
+
+    const sStart = food.season_start || 1
+    const sEnd = food.season_end || 12
+
+    if (sStart === 1 && sEnd === 12) return { inSeason: true }
+
+    const month = targetDate.getMonth() + 1 // 1-12
+
+    let inSeason = false
+    if (sStart <= sEnd) {
+        // Normal range (e.g. 5-9)
+        inSeason = month >= sStart && month <= sEnd
+    } else {
+        // Cross-year range (e.g. 11-4)
+        inSeason = month >= sStart || month <= sEnd
+    }
+
+    if (!inSeason) {
+        return { inSeason: false, reason: `Sezon Dışı (${MONTH_NAMES[sStart - 1]} - ${MONTH_NAMES[sEnd - 1]})` }
+    }
+    return { inSeason: true }
+}
+
+export default function PatientDetailPage({ params }: { params: Promise<{ id: string }> }) {
+
+    const { showAppModal } = useAppModal()
+    const { id } = use(params)
+    const { isPatient } = useAuth()
+    const [patient, setPatient] = useState<Patient | null>(null)
+    const [weeks, setWeeks] = useState<DietWeek[]>([])
+    const [allPlanDays, setAllPlanDays] = useState<any[]>([])
+    // Stores duplicate week IDs to clean up
+    const [duplicateWeekIds, setDuplicateWeekIds] = useState<string[]>([])
+    const [activeWeekId, setActiveWeekId] = useState<string | null>(null)
+    const [loading, setLoading] = useState(true)
+    const [refreshTrigger, setRefreshTrigger] = useState(0)
+    const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
+    const [activeMainTab, setActiveMainTab] = useState('diet')
+    const [editingWeek, setEditingWeek] = useState<DietWeek | null>(null)
+    const [weekDialogOpen, setWeekDialogOpen] = useState(false)
+    const [importDialogOpen, setImportDialogOpen] = useState(false)
+    const [archivedPlansDialogOpen, setArchivedPlansDialogOpen] = useState(false)
+    const [autoStartGoogleSheets, setAutoStartGoogleSheets] = useState(false)
+    const [activeDragFood, setActiveDragFood] = useState<any>(null)
+    const [mealTypes, setMealTypes] = useState<string[]>(['KAHVALTI', 'ÖĞLEN', 'AKŞAM', 'ARA ÖĞÜN'])
+    const [slotConfigs, setSlotConfigs] = useState<SlotConfig[]>([
+        { name: 'KAHVALTI', min_items: 1, max_items: 1 },
+        { name: 'ÖĞLEN', min_items: 2, max_items: 4 },
+        { name: 'AKŞAM', min_items: 2, max_items: 4 },
+        { name: 'ARA ÖĞÜN', min_items: 1, max_items: 2 },
+    ])
+    const [macroTolerances, setMacroTolerances] = useState<any>(null)
+    const [mealTypesDialogOpen, setMealTypesDialogOpen] = useState(false)
+    // Legend Dialog State
+    const [isLegendOpen, setIsLegendOpen] = useState(false)
+    const [templateDialogOpen, setTemplateDialogOpen] = useState(false)
+    const [dietTypesDialogOpen, setDietTypesDialogOpen] = useState(false)
+    const [patientRulesDialogOpen, setPatientRulesDialogOpen] = useState(false)
+    const [lockDialogData, setLockDialogData] = useState<{ open: boolean, mode: 'lock' | 'unlock', meal: any, dayDate?: string } | null>(null)
+    const [noteLockDialogData, setNoteLockDialogData] = useState<{ open: boolean, mode: 'lock' | 'unlock', note: any } | null>(null)
+    const [dietPlanId, setDietPlanId] = useState<string | null>(null)
+    const [foods, setFoods] = useState<any[]>([])
+    const [weekCopyDialogData, setWeekCopyDialogData] = useState<{ open: boolean, week: DietWeek } | null>(null)
+    const [weekLoopDialogOpen, setWeekLoopDialogOpen] = useState(false)
+    const [copiedWeekInitModalOpen, setCopiedWeekInitModalOpen] = useState(false)
+    const [notesSheetOpen, setNotesSheetOpen] = useState(false)
+    const [profileDialogOpen, setProfileDialogOpen] = useState(false)
+    const [dietTypesList, setDietTypesList] = useState<any[]>([])
+    const [weeklyAvgStats, setWeeklyAvgStats] = useState<any>(null)
+    const [patientProgram, setPatientProgram] = useState<any>(null)
+    const [allPatientMeals, setAllPatientMeals] = useState<any[]>([])
+    const isFetchingAllPatientMealsRef = useRef(false)
+    const pendingAllPatientMealsFetchRef = useRef(false)
+    const [showMealBadges, setShowMealBadges] = useState<boolean>(true)
+    const [sidebarSortPreference, setSidebarSortPreference] = useState<'asc' | 'desc' | null>(null)
+    const [patientLabs, setPatientLabs] = useState<any[]>([])
+    const [patientMedicationRules, setPatientMedicationRules] = useState<any[]>([])
+    const [foodMicronutrients, setFoodMicronutrients] = useState<Record<string, string[]>>({})
+
+    // Helper for Day Initials
+    const getDayInitial = (startDateStr: string, dayNumber: number) => {
+        const date = new Date(startDateStr)
+        date.setDate(date.getDate() + (dayNumber - 1))
+        const day = date.getDay() // 0=Sun, 1=Mon...
+        return ['P', 'P', 'S', 'Ç', 'P', 'C', 'C'][day]
+    }
+
+    async function toggleDayActive(dayId: string, currentState: boolean) {
+        const { error } = await supabase.from('diet_days').update({ is_active: !currentState }).eq('id', dayId)
+        if (!error) {
+            setAllPlanDays(prev => prev.map(d => d.id === dayId ? { ...d, is_active: !currentState } : d))
+            setRefreshTrigger(prev => prev + 1)
+        }
+    }
+
+    // Planner Settings (Scalable Units)
+    const scalableUnits = useScalableUnits()
+
+    // Recipe Integration
+    const { manualMatches, bans, cards } = useRecipeManager()
+    const [recipeDialogOpen, setRecipeDialogOpen] = useState(false)
+    const [selectedRecipe, setSelectedRecipe] = useState<{ url: string, name: string } | null>(null)
+
+    // Helper to open recipe
+    function handleShowRecipe(url: string, name: string) {
+        console.log("Admin: handleShowRecipe called with", { url, name })
+        setSelectedRecipe({ url, name })
+        setRecipeDialogOpen(true)
+    }
+
+    // Auto Planner State
+    const [autoPlanOpen, setAutoPlanOpen] = useState(false)
+    const [generatedPlan, setGeneratedPlan] = useState<any>(null)
+    const [isGeneratingPlan, setIsGeneratingPlan] = useState(false)
+    const [isApplyingPlan, setIsApplyingPlan] = useState(false)
+    const { user, profile } = useAuth()
+
+    async function resolveFoodTeamOwnerId(): Promise<string | null> {
+        if (!user?.id) return null
+        const scope = await resolveTeamScopeContextForUser(user.id, {
+            role: profile?.role || null,
+            is_global_access: (profile as any)?.is_global_access === true
+        })
+        return scope.teamOwnerId
+    }
+
+    async function saveFoodByScope(
+        foodId: string,
+        updates: Record<string, any>,
+        teamOwnerIdOverride?: string | null
+    ) {
+        const teamOwnerId = teamOwnerIdOverride ?? await resolveFoodTeamOwnerId()
+
+        if (teamOwnerId && user?.id) {
+            const { error } = await upsertTeamFoodOverride({
+                teamOwnerId,
+                baseFoodId: foodId,
+                createdBy: user.id,
+                updates
+            })
+            if (error) throw error
+
+            const { data: baseFood, error: baseFoodError } = await supabase
+                .from('foods')
+                .select('*')
+                .eq('id', foodId)
+                .single()
+            if (baseFoodError) throw baseFoodError
+
+            const scopedFoods = await applyTeamFoodOverrides(baseFood ? [baseFood] : [], teamOwnerId)
+            const effectiveFoods = await applyTeamFoodMicronutrientOverrides(scopedFoods, teamOwnerId)
+            return effectiveFoods[0] || scopedFoods[0] || baseFood
+        }
+
+        const { data, error } = await supabase
+            .from('foods')
+            .update(updates)
+            .eq('id', foodId)
+            .select()
+            .single()
+        if (error) throw error
+        return data
+    }
+
+    async function handleAutoGenerate(macroAdjustments?: Record<string, number>) {
+        if (!activeWeekId || !patient || !user) return
+
+        setIsGeneratingPlan(true)
+        try {
+            const planner = new Planner(patient.id, user.id)
+            await planner.init()
+
+            const activeWeek = weeks.find(w => w.id === activeWeekId)
+            const startDate = activeWeek?.start_date ? new Date(activeWeek.start_date) : new Date()
+            const weekMealTypes = mealTypes && mealTypes.length > 0 ? mealTypes : ['KAHVALTI', 'ÖĞLEN', 'AKŞAM']
+
+            let resolvedDietType: any = null
+            const weekOverrideRule = patient.planning_rules?.find(r =>
+                r.rule_type === 'week_override' &&
+                r.is_active &&
+                activeWeek &&
+                activeWeek.week_number >= r.definition.data.week_start &&
+                activeWeek.week_number <= r.definition.data.week_end
+            )
+
+            if (weekOverrideRule?.definition.data.diet_type_id) {
+                resolvedDietType = dietTypesList.find(d => d.id === weekOverrideRule.definition.data.diet_type_id)
+            }
+
+            if (!resolvedDietType && patientProgram?.program_template_weeks && activeWeek) {
+                const rule = patientProgram.program_template_weeks.find((pw: any) =>
+                    activeWeek.week_number >= pw.week_start && activeWeek.week_number <= pw.week_end
+                )
+                if (rule?.diet_type_id) {
+                    resolvedDietType = dietTypesList.find(d => d.id === rule.diet_type_id)
+                }
+            }
+
+            if (!resolvedDietType && activeWeek?.assigned_diet_type_id) {
+                resolvedDietType = dietTypesList.find(d => d.id === activeWeek.assigned_diet_type_id)
+            }
+
+            if (resolvedDietType && !resolvedDietType.patient_id) {
+                const specificOverride = dietTypesList.find(d => d.patient_id === patient.id && d.parent_diet_type_id === resolvedDietType.id)
+                if (specificOverride) resolvedDietType = specificOverride
+            }
+
+            await supabase.from('diet_weeks').update({
+                meal_types: weekMealTypes,
+                assigned_diet_type_id: resolvedDietType?.id || null
+            }).eq('id', activeWeek?.id)
+
+            const dietTypeFactors = resolvedDietType ? {
+                carb_factor: resolvedDietType.carb_factor,
+                protein_factor: resolvedDietType.protein_factor,
+                fat_factor: resolvedDietType.fat_factor
+            } : null
+
+            const currentWeight = (activeWeek?.weight_log as number) || (patient as any)?.weight_log || (patient as any)?.weight || 70
+            const activityLevel = (activeWeek?.activity_level_log as number) || (patient as any)?.activity_level || 3
+
+            const calculated = calculateDailyTargets(currentWeight, activityLevel, dietTypeFactors || undefined, patient?.patient_goals)
+            const targetMacros = calculated ? {
+                calories: calculated.calories,
+                protein: calculated.protein,
+                carbs: calculated.carb,
+                fat: calculated.fat
+            } : { calories: 1800, protein: 90, carbs: 180, fat: 60 }
+
+            if (macroAdjustments) {
+                if (macroAdjustments.protein) targetMacros.protein = Math.round(targetMacros.protein * macroAdjustments.protein)
+                if (macroAdjustments.carb) targetMacros.carbs = Math.round(targetMacros.carbs * macroAdjustments.carb)
+                if (macroAdjustments.fat) targetMacros.fat = Math.round(targetMacros.fat * macroAdjustments.fat)
+                targetMacros.calories = targetMacros.protein * 4 + targetMacros.carbs * 4 + targetMacros.fat * 9
+            }
+
+            const programBannedTags = patientProgram?.program_template_restrictions
+                ?.filter((r: any) => r.restriction_type === 'banned_tag')
+                .map((r: any) => r.restriction_value) || []
+
+            const historicalFoodCounts = new Map<string, number>()
+            if (activeWeek?.id) {
+                const { data: weekRow } = await supabase.from('diet_weeks').select('diet_plan_id').eq('id', activeWeek.id).maybeSingle()
+                const currentPlanId = weekRow?.diet_plan_id
+                if (currentPlanId) {
+                    const { data: otherWeeks } = await supabase.from('diet_weeks').select('id').eq('diet_plan_id', currentPlanId).neq('id', activeWeek.id)
+                    if (otherWeeks && otherWeeks.length > 0) {
+                        const otherWeekIds = otherWeeks.map(w => w.id)
+                        const { data: otherDays } = await supabase.from('diet_days').select('id').in('diet_week_id', otherWeekIds)
+                        if (otherDays && otherDays.length > 0) {
+                            const { data: otherMeals } = await supabase.from('diet_meals').select('food_id').in('diet_day_id', otherDays.map(d => d.id))
+                            if (otherMeals) {
+                                for (const m of otherMeals) { if (m.food_id) historicalFoodCounts.set(m.food_id, (historicalFoodCounts.get(m.food_id) || 0) + 1) }
+                            }
+                        }
+                    }
+                }
+            }
+
+            const plan = await planner.generateWeeklyPlan(
+                startDate,
+                weekMealTypes,
+                slotConfigs,
+                targetMacros,
+                resolvedDietType,
+                programBannedTags,
+                historicalFoodCounts,
+                activeWeek?.week_number || 1
+            )

@@ -158,7 +158,7 @@ export default function DashboardLayout({
         aiTabs.push({ href: '/admin/food-discovery', label: 'AI Keşif', icon: ChefHat })
         aiTabs.push({ href: '/admin/card-maker', label: 'Kart Maker', icon: ImageIcon })
         aiTabs.push({ href: '/admin/pattern-insights', label: 'Oruntu Analizi', icon: BarChart3 })
-        aiTabs.push({ href: '/admin/menu-import-pool', label: 'Menu Havuzu', icon: FileSpreadsheet })
+        aiTabs.push({ href: '/admin/menu-import-pool', label: 'Drive İçe Aktar', icon: FileSpreadsheet })
 
         if (profile?.role === 'doctor' || profile?.role === 'dietitian') {
             adminTabs.push({ href: '/admin/settings/profile', label: 'Profil Ayarlar\u0131', icon: Settings })

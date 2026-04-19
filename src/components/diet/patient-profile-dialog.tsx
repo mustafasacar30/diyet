@@ -1,27 +1,331 @@
-"use client"
+﻿"use client"
 
-import { useState, useEffect, useRef, useCallback } from "react"
+import { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
-import { Plus, Trash2, Pencil, Check, X, GripHorizontal, Image as ImageIcon, Search } from "lucide-react"
+import {
+    Plus,
+    Trash2,
+    Pencil,
+    Check,
+    X,
+    GripHorizontal,
+    Image as ImageIcon,
+    Search,
+    Wand2,
+    Scale,
+    Sparkles,
+    Link2,
+    ShieldCheck,
+    Zap,
+    ChefHat,
+    Heart,
+    Brain,
+    AlertTriangle,
+    Info,
+    CheckCircle2,
+    ArrowRight
+} from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Switch } from "@/components/ui/switch"
 import { supabase } from "@/lib/supabase"
 import { Textarea } from "@/components/ui/textarea"
 import { Label as ShcnLabel } from "@/components/ui/label"
 import { createPatientWithAuth } from "@/actions/patient-actions"
 import { useAuth } from "@/contexts/auth-context"
+import { resolveTeamScopeContextFromAuth } from "@/lib/team-scope"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Slider } from "@/components/ui/slider"
+import { Badge } from "@/components/ui/badge"
 import LabResultsGrid from "./LabResultsGrid"
 import PatientNotesEditor from "./PatientNotesEditor"
 import { Camera, ClipboardList, Phone, Target } from "lucide-react"
 import { MultiSelectCreatable } from "@/components/ui/multi-select-creatable"
+
+type FlavorTuningSettings = {
+    enabled: boolean
+    allow_post_edit: boolean
+    respect_scope_filters: boolean
+    respect_frequency_rules: boolean
+    use_pattern_insights: boolean
+    strict_locked_items: boolean
+    suggestion_count: number
+    macro_weight: number
+    flavor_weight: number
+    diversity_weight: number
+    compatibility_weight: number
+    pattern_weight: number
+    pattern_min_confidence: number
+    pattern_min_lift: number
+    pattern_min_support: number
+}
+
+const DEFAULT_FLAVOR_SETTINGS: FlavorTuningSettings = {
+    enabled: true,
+    allow_post_edit: true,
+    respect_scope_filters: true,
+    respect_frequency_rules: true,
+    use_pattern_insights: true,
+    strict_locked_items: true,
+    suggestion_count: 3,
+    macro_weight: 0.4,
+    flavor_weight: 0.35,
+    diversity_weight: 0.15,
+    compatibility_weight: 0.1,
+    pattern_weight: 0.2,
+    pattern_min_confidence: 0.15,
+    pattern_min_lift: 1.1,
+    pattern_min_support: 3,
+}
+
+const clampNum = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
+const parseNumberWithRange = (value: any, fallback: number, min: number, max: number) => {
+    const parsed = typeof value === 'number' ? value : Number(value ?? Number.NaN)
+    if (!Number.isFinite(parsed)) return fallback
+    return clampNum(parsed, min, max)
+}
+
+const normalizeFlavorSettings = (raw: any): FlavorTuningSettings => ({
+    enabled: Boolean(raw?.enabled ?? DEFAULT_FLAVOR_SETTINGS.enabled),
+    allow_post_edit: Boolean(raw?.allow_post_edit ?? DEFAULT_FLAVOR_SETTINGS.allow_post_edit),
+    respect_scope_filters: Boolean(raw?.respect_scope_filters ?? DEFAULT_FLAVOR_SETTINGS.respect_scope_filters),
+    respect_frequency_rules: Boolean(raw?.respect_frequency_rules ?? DEFAULT_FLAVOR_SETTINGS.respect_frequency_rules),
+    use_pattern_insights: Boolean(raw?.use_pattern_insights ?? DEFAULT_FLAVOR_SETTINGS.use_pattern_insights),
+    strict_locked_items: Boolean(raw?.strict_locked_items ?? DEFAULT_FLAVOR_SETTINGS.strict_locked_items),
+    suggestion_count: Math.round(parseNumberWithRange(raw?.suggestion_count, DEFAULT_FLAVOR_SETTINGS.suggestion_count, 1, 6)),
+    macro_weight: parseNumberWithRange(raw?.macro_weight, DEFAULT_FLAVOR_SETTINGS.macro_weight, 0, 1),
+    flavor_weight: parseNumberWithRange(raw?.flavor_weight, DEFAULT_FLAVOR_SETTINGS.flavor_weight, 0, 1),
+    diversity_weight: parseNumberWithRange(raw?.diversity_weight, DEFAULT_FLAVOR_SETTINGS.diversity_weight, 0, 1),
+    compatibility_weight: parseNumberWithRange(raw?.compatibility_weight, DEFAULT_FLAVOR_SETTINGS.compatibility_weight, 0, 1),
+    pattern_weight: parseNumberWithRange(raw?.pattern_weight, DEFAULT_FLAVOR_SETTINGS.pattern_weight, 0, 1),
+    pattern_min_confidence: parseNumberWithRange(raw?.pattern_min_confidence, DEFAULT_FLAVOR_SETTINGS.pattern_min_confidence, 0, 1),
+    pattern_min_lift: parseNumberWithRange(raw?.pattern_min_lift, DEFAULT_FLAVOR_SETTINGS.pattern_min_lift, 0.1, 10),
+    pattern_min_support: Math.round(parseNumberWithRange(raw?.pattern_min_support, DEFAULT_FLAVOR_SETTINGS.pattern_min_support, 1, 999)),
+})
+
+type FlavorPresetTemplate = {
+    id: string
+    name: string
+    icon: any
+    description: string
+    color: string
+    bgGradient: string
+    borderColor: string
+    values: Partial<FlavorTuningSettings>
+}
+
+const FLAVOR_PRESET_TEMPLATES: FlavorPresetTemplate[] = [
+    {
+        id: 'strict_clinical',
+        name: 'Klinik Katı',
+        icon: ShieldCheck,
+        description: 'Makrolar mutlak öncelik. Lezzet ikinci planda. Diyabet ve hassas hasta profilleri için.',
+        color: 'text-red-600',
+        bgGradient: 'from-red-50 to-rose-50',
+        borderColor: 'border-red-200 hover:border-red-400',
+        values: {
+            macro_weight: 0.7,
+            flavor_weight: 0.15,
+            diversity_weight: 0.1,
+            compatibility_weight: 0.05,
+            pattern_weight: 0.18,
+            pattern_min_confidence: 0.24,
+            pattern_min_lift: 1.35,
+            pattern_min_support: 5,
+            suggestion_count: 2,
+            respect_frequency_rules: true,
+            strict_locked_items: true,
+        },
+    },
+    {
+        id: 'balanced',
+        name: 'Dengeli (Varsayılan)',
+        icon: Scale,
+        description: 'Makro ve lezzet dengesini gözeten standart mod. Çoğu hasta için ideal.',
+        color: 'text-blue-600',
+        bgGradient: 'from-blue-50 to-indigo-50',
+        borderColor: 'border-blue-200 hover:border-blue-400',
+        values: {
+            ...DEFAULT_FLAVOR_SETTINGS,
+        },
+    },
+    {
+        id: 'flavor_forward',
+        name: 'Lezzet Öncelikli',
+        icon: ChefHat,
+        description: 'Lezzet ve çeşitlilik ön planda. Makroları gözetir ama esner.',
+        color: 'text-amber-600',
+        bgGradient: 'from-amber-50 to-yellow-50',
+        borderColor: 'border-amber-200 hover:border-amber-400',
+        values: {
+            macro_weight: 0.2,
+            flavor_weight: 0.45,
+            diversity_weight: 0.2,
+            compatibility_weight: 0.15,
+            pattern_weight: 0.2,
+            pattern_min_confidence: 0.12,
+            pattern_min_lift: 1.0,
+            pattern_min_support: 2,
+            suggestion_count: 4,
+            strict_locked_items: false,
+        },
+    },
+    {
+        id: 'maximum_variety',
+        name: 'Maksimum Çeşitlilik',
+        icon: Sparkles,
+        description: 'Tekrardan kaçınma birinci öncelik. Her gün farklı tatlar.',
+        color: 'text-purple-600',
+        bgGradient: 'from-purple-50 to-fuchsia-50',
+        borderColor: 'border-purple-200 hover:border-purple-400',
+        values: {
+            macro_weight: 0.25,
+            flavor_weight: 0.25,
+            diversity_weight: 0.35,
+            compatibility_weight: 0.15,
+            pattern_weight: 0.24,
+            pattern_min_confidence: 0.1,
+            pattern_min_lift: 1.0,
+            pattern_min_support: 2,
+            suggestion_count: 5,
+            respect_frequency_rules: true,
+            strict_locked_items: false,
+        },
+    },
+    {
+        id: 'gourmet_pairing',
+        name: 'Gurme Eşleşme',
+        icon: Heart,
+        description: 'Ana yemek + yan yemek uyumu en önemli kriter.',
+        color: 'text-emerald-600',
+        bgGradient: 'from-emerald-50 to-teal-50',
+        borderColor: 'border-emerald-200 hover:border-emerald-400',
+        values: {
+            macro_weight: 0.25,
+            flavor_weight: 0.25,
+            diversity_weight: 0.1,
+            compatibility_weight: 0.4,
+            pattern_weight: 0.35,
+            pattern_min_confidence: 0.2,
+            pattern_min_lift: 1.2,
+            pattern_min_support: 3,
+            suggestion_count: 3,
+            strict_locked_items: true,
+        },
+    },
+    {
+        id: 'aggressive_flavor',
+        name: 'Ultra Esnek',
+        icon: Zap,
+        description: 'Makrolar daha esnek. Lezzet, çeşitlilik ve uyumluluk öncelikli.',
+        color: 'text-orange-600',
+        bgGradient: 'from-orange-50 to-red-50',
+        borderColor: 'border-orange-200 hover:border-orange-400',
+        values: {
+            macro_weight: 0.05,
+            flavor_weight: 0.5,
+            diversity_weight: 0.25,
+            compatibility_weight: 0.2,
+            pattern_weight: 0.3,
+            pattern_min_confidence: 0.08,
+            pattern_min_lift: 0.9,
+            pattern_min_support: 1,
+            suggestion_count: 6,
+            respect_frequency_rules: false,
+            strict_locked_items: false,
+        },
+    },
+]
+
+function isCloseNumber(a: number, b: number, epsilon = 0.0001) {
+    return Math.abs(a - b) <= epsilon
+}
+
+function inferActiveFlavorPreset(settings: FlavorTuningSettings): string | null {
+    for (const preset of FLAVOR_PRESET_TEMPLATES) {
+        const keys = Object.keys(preset.values) as Array<keyof FlavorTuningSettings>
+        const isMatch = keys.every((key) => {
+            const presetValue = preset.values[key]
+            const currentValue = settings[key]
+            if (typeof presetValue === 'number' && typeof currentValue === 'number') {
+                return isCloseNumber(currentValue, presetValue)
+            }
+            return currentValue === presetValue
+        })
+        if (isMatch) return preset.id
+    }
+    return null
+}
+
+function getFlavorScenarioAnalysis(settings: FlavorTuningSettings) {
+    const { macro_weight: mw, flavor_weight: fw, diversity_weight: dw, compatibility_weight: cw } = settings
+    const total = mw + fw + dw + cw
+    const mp = total > 0 ? (mw / total) * 100 : 25
+    const fp = total > 0 ? (fw / total) * 100 : 25
+
+    const warnings: string[] = []
+    const tips: string[] = []
+
+    if (!settings.enabled) warnings.push('Lezzet ayarı kapalıysa hasta tarafındaki gurme düzenlemeler devre dışı kalır.')
+    if (!settings.allow_post_edit) warnings.push('Post-edit kapalıysa plan sonrası düzenleme yapamazsınız.')
+    if (!settings.respect_scope_filters) warnings.push('Program/Faz filtresi kapalıysa program dışı alternatifler gelebilir.')
+    if (!settings.respect_frequency_rules) warnings.push('Sıklık kuralları kapalıysa aynı yemek haftada çok sık tekrar edebilir.')
+    if (settings.suggestion_count >= 5) tips.push('Yüksek öneri sayısı daha fazla alternatif üretir ama süreyi artırır.')
+    if (settings.suggestion_count <= 1) tips.push('Düşük öneri sayısı daha hızlıdır ama seçenekler daralır.')
+
+    if (mp >= 60) {
+        return {
+            summary: 'Klinik Katı Mod',
+            icon: ShieldCheck,
+            color: 'text-red-600',
+            bgColor: 'bg-red-50',
+            scenarios: [
+                { emoji: '🔬', title: 'Klinik Güvenlik', description: 'Makro hedeflerinden sapma en düşük seviyede tutulur.' },
+                { emoji: '⚠️', title: 'Motivasyon Riski', description: 'Lezzet ikinci planda kaldığı için hasta motivasyonu düşebilir.' },
+                { emoji: '✅', title: 'Kontrol Kolaylığı', description: 'Diyetisyen için daha öngörülebilir bir plan üretir.' },
+            ],
+            warnings,
+            tips,
+        }
+    }
+
+    if (fp >= 45) {
+        return {
+            summary: 'Lezzet Öncelikli Mod',
+            icon: ChefHat,
+            color: 'text-amber-600',
+            bgColor: 'bg-amber-50',
+            scenarios: [
+                { emoji: '😋', title: 'Hasta Uyumu', description: 'Damak tadı daha güçlü gözetilir, plan sürdürülebilirliği artabilir.' },
+                { emoji: '⚠️', title: 'Makro Sapma Riski', description: 'Makrolarda daha geniş tolerans oluşabilir.' },
+                { emoji: '🎯', title: 'Uzun Vadeli Uyum', description: 'Sevilen kombinasyonlar daha fazla öne çıkar.' },
+            ],
+            warnings,
+            tips,
+        }
+    }
+
+    return {
+        summary: 'Dengeli Mod',
+        icon: Scale,
+        color: 'text-blue-600',
+        bgColor: 'bg-blue-50',
+        scenarios: [
+            { emoji: '⚖️', title: 'Denge', description: 'Makro, lezzet, çeşitlilik ve uyumluluk birlikte optimize edilir.' },
+            { emoji: '🔄', title: 'Esnek Davranış', description: 'Alternatif üretimiyle birlikte makro dengesini korur.' },
+            { emoji: '🧠', title: 'Açıklanabilirlik', description: 'Diyetisyen için yorumlanabilir öneriler üretir.' },
+        ],
+        warnings,
+        tips,
+    }
+}
 
 // Draggable Dialog Wrapper
 function DraggableDialogContent({ children, className, ...props }: React.ComponentPropsWithoutRef<typeof DialogContent>) {
@@ -142,7 +446,7 @@ export function PatientProfileDialog({
     onUpdate
 }: PatientProfileDialogProps) {
     const [loading, setLoading] = useState(false)
-    const { user } = useAuth()
+    const { user, scopeMode } = useAuth()
     const isDietitian = true // Assuming admin/dietitian view for this dialog
     const [error, setError] = useState<string | null>(null)
     const [diseases, setDiseases] = useState<{ id: string, name: string }[]>([])
@@ -191,6 +495,11 @@ export function PatientProfileDialog({
         allow_goal_selection: false,
         allow_week_delete: false
     })
+    const [isFlavorSettingsLoading, setIsFlavorSettingsLoading] = useState(false)
+    const [patientFlavorOverrideEnabled, setPatientFlavorOverrideEnabled] = useState(false)
+    const [patientFlavorSettings, setPatientFlavorSettings] = useState<FlavorTuningSettings>(DEFAULT_FLAVOR_SETTINGS)
+    const [inheritedFlavorSettings, setInheritedFlavorSettings] = useState<FlavorTuningSettings>(DEFAULT_FLAVOR_SETTINGS)
+    const [inheritedFlavorScopeLabel, setInheritedFlavorScopeLabel] = useState<'team' | 'global' | 'default'>('default')
 
     // Goals State
     const GOAL_OPTIONS: { id: string, name: string }[] = [
@@ -210,7 +519,7 @@ export function PatientProfileDialog({
 
 
     // Micronutrient & Labs State
-    const [activeTab, setActiveTab] = useState<"profile" | "labs">("profile")
+    const [activeTab, setActiveTab] = useState<"profile" | "flavor" | "labs" | "imaging" | "observations" | "logs">("profile")
     const [micronutrientList, setMicronutrientList] = useState<any[]>([])
     const [labResults, setLabResults] = useState<any[]>([])
     const [editingLabId, setEditingLabId] = useState<string | null>(null)
@@ -226,23 +535,146 @@ export function PatientProfileDialog({
             fetchMicronutrients()
             fetchMedications()
             fetchGlobalSettings()
-            if (patientId) fetchLabResults()
+            if (patientId) {
+                fetchLabResults()
+                fetchPatientFlavorSettings(patientId)
+            }
         }
     }, [open, patientId])
 
     async function fetchGlobalSettings() {
-        const { data } = await supabase
-            .from('diet_app_settings')
-            .select('value')
-            .eq('id', 'registration_settings')
-            .single()
+        const scopeCtx = await resolveTeamScopeContextFromAuth()
+        const teamModeActive =
+            scopeMode === 'team' &&
+            !!scopeCtx.teamOwnerId &&
+            (!scopeCtx.canUseGlobal || scopeCtx.role === 'doctor' || scopeCtx.role === 'dietitian')
 
-        if (data && data.value) {
+        const key = teamModeActive
+            ? `registration_settings__team_${scopeCtx.teamOwnerId}`
+            : 'registration_settings'
+
+        let value: any = null
+
+        const { data: keyData } = await supabase
+            .from('app_settings')
+            .select('value')
+            .eq('key', key)
+            .maybeSingle()
+
+        if (keyData?.value) {
+            value = keyData.value
+        } else if (teamModeActive) {
+            const { data: fallbackData } = await supabase
+                .from('app_settings')
+                .select('value')
+                .eq('key', 'registration_settings')
+                .maybeSingle()
+            if (fallbackData?.value) value = fallbackData.value
+        }
+
+        if (!value) {
+            // Legacy compatibility: older environments may still keep this in `id`.
+            const { data: legacyData } = await supabase
+                .from('app_settings')
+                .select('value')
+                .eq('id', 'registration_settings')
+                .maybeSingle()
+            if (legacyData?.value) value = legacyData.value
+        }
+
+        if (value) {
             setGlobalSettings({
-                allow_program_selection: !!data.value.allow_program_selection,
-                allow_goal_selection: !!data.value.allow_goal_selection,
-                allow_week_delete: !!data.value.allow_week_delete
+                allow_program_selection: !!value.allow_program_selection,
+                allow_goal_selection: !!value.allow_goal_selection,
+                allow_week_delete: !!value.allow_week_delete
             })
+        }
+    }
+
+    async function resolveFlavorBaseSettingsKey() {
+        const scopeCtx = await resolveTeamScopeContextFromAuth()
+        const canToggleForAdminDoctor =
+            scopeMode === 'team' &&
+            scopeCtx.role === 'doctor' &&
+            scopeCtx.canUseGlobal &&
+            !!scopeCtx.userId
+
+        const effectiveTeamOwnerId = canToggleForAdminDoctor
+            ? scopeCtx.userId
+            : scopeCtx.teamOwnerId
+
+        const teamModeActive =
+            scopeMode === 'team' &&
+            !!effectiveTeamOwnerId &&
+            (
+                !scopeCtx.canUseGlobal ||
+                canToggleForAdminDoctor ||
+                scopeCtx.role === 'dietitian'
+            )
+
+        if (teamModeActive && effectiveTeamOwnerId) {
+            return {
+                key: `flavor_tuning_settings__team_${effectiveTeamOwnerId}`,
+                fallbackKey: 'flavor_tuning_settings' as string | null,
+                label: 'team' as const,
+            }
+        }
+
+        return {
+            key: 'flavor_tuning_settings',
+            fallbackKey: null as string | null,
+            label: 'global' as const,
+        }
+    }
+
+    async function fetchPatientFlavorSettings(targetPatientId: string) {
+        setIsFlavorSettingsLoading(true)
+        try {
+            const patientKey = `flavor_tuning_settings__patient_${targetPatientId}`
+            const { data: patientRow } = await supabase
+                .from('app_settings')
+                .select('value')
+                .eq('key', patientKey)
+                .maybeSingle()
+
+            if (patientRow?.value && typeof patientRow.value === 'object') {
+                const normalized = normalizeFlavorSettings(patientRow.value)
+                setPatientFlavorOverrideEnabled(true)
+                setPatientFlavorSettings(normalized)
+                setInheritedFlavorSettings(normalized)
+                setInheritedFlavorScopeLabel('default')
+                return
+            }
+
+            const { key, fallbackKey, label } = await resolveFlavorBaseSettingsKey()
+            let inheritedRaw: any = null
+
+            const { data: baseRow } = await supabase
+                .from('app_settings')
+                .select('value')
+                .eq('key', key)
+                .maybeSingle()
+
+            if (baseRow?.value && typeof baseRow.value === 'object') {
+                inheritedRaw = baseRow.value
+            } else if (fallbackKey) {
+                const { data: fallbackRow } = await supabase
+                    .from('app_settings')
+                    .select('value')
+                    .eq('key', fallbackKey)
+                    .maybeSingle()
+                if (fallbackRow?.value && typeof fallbackRow.value === 'object') {
+                    inheritedRaw = fallbackRow.value
+                }
+            }
+
+            const normalizedInherited = normalizeFlavorSettings(inheritedRaw || DEFAULT_FLAVOR_SETTINGS)
+            setInheritedFlavorSettings(normalizedInherited)
+            setInheritedFlavorScopeLabel(inheritedRaw ? label : 'default')
+            setPatientFlavorOverrideEnabled(false)
+            setPatientFlavorSettings(normalizedInherited)
+        } finally {
+            setIsFlavorSettingsLoading(false)
         }
     }
 
@@ -644,6 +1076,35 @@ export function PatientProfileDialog({
             console.log("=== Kayıt Sonrası DB Kontrolü ===", checkData?.visibility_settings)
         }
 
+        // Save patient-level flavor tuning override (inherits team/global when disabled)
+        if (!updateError && currentPatientId) {
+            const patientFlavorKey = `flavor_tuning_settings__patient_${currentPatientId}`
+            if (patientFlavorOverrideEnabled) {
+                const flavorNormalized = normalizeFlavorSettings(patientFlavorSettings)
+                const { error: flavorSaveError } = await supabase
+                    .from('app_settings')
+                    .upsert([{
+                        key: patientFlavorKey,
+                        value: flavorNormalized,
+                        updated_at: new Date().toISOString(),
+                    }], { onConflict: 'key' })
+                if (flavorSaveError) {
+                    console.error("FLAVOR OVERRIDE SAVE ERROR:", flavorSaveError)
+                } else {
+                    setPatientFlavorSettings(flavorNormalized)
+                }
+            } else {
+                const { error: flavorDeleteError } = await supabase
+                    .from('app_settings')
+                    .delete()
+                    .eq('key', patientFlavorKey)
+                if (flavorDeleteError) {
+                    console.error("FLAVOR OVERRIDE DELETE ERROR:", flavorDeleteError)
+                }
+                await fetchPatientFlavorSettings(currentPatientId)
+            }
+        }
+
         // SYNC WEIGHT AND ACTIVITY
         if (!updateError && currentPatientId && values.weight && values.activity_level) {
             const { syncPatientWeightAndActivity } = await import('@/utils/measurement-sync')
@@ -871,6 +1332,37 @@ export function PatientProfileDialog({
         (med.generic_name && med.generic_name.toLowerCase().includes(medSearchTerm.toLowerCase()))
     ).filter(med => !selectedMedicationIds.includes(med.id))
 
+    const flavorWeightTotal =
+        patientFlavorSettings.macro_weight +
+        patientFlavorSettings.flavor_weight +
+        patientFlavorSettings.diversity_weight +
+        patientFlavorSettings.compatibility_weight
+    const flavorMacroPct = flavorWeightTotal > 0 ? (patientFlavorSettings.macro_weight / flavorWeightTotal) * 100 : 25
+    const flavorTastePct = flavorWeightTotal > 0 ? (patientFlavorSettings.flavor_weight / flavorWeightTotal) * 100 : 25
+    const flavorDiversityPct = flavorWeightTotal > 0 ? (patientFlavorSettings.diversity_weight / flavorWeightTotal) * 100 : 25
+    const flavorCompatPct = flavorWeightTotal > 0 ? (patientFlavorSettings.compatibility_weight / flavorWeightTotal) * 100 : 25
+    const activeFlavorPreset = useMemo(
+        () => inferActiveFlavorPreset(patientFlavorSettings),
+        [patientFlavorSettings]
+    )
+    const flavorAnalysis = useMemo(
+        () => getFlavorScenarioAnalysis(patientFlavorSettings),
+        [patientFlavorSettings]
+    )
+
+    const applyFlavorPreset = useCallback((preset: FlavorPresetTemplate) => {
+        setPatientFlavorOverrideEnabled(true)
+        setPatientFlavorSettings(prev => normalizeFlavorSettings({
+            ...prev,
+            ...preset.values,
+        }))
+    }, [])
+
+    const updateFlavorWeight = useCallback((key: 'macro_weight' | 'flavor_weight' | 'diversity_weight' | 'compatibility_weight', value: number) => {
+        setPatientFlavorOverrideEnabled(true)
+        setPatientFlavorSettings(prev => ({ ...prev, [key]: value }))
+    }, [])
+
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DraggableDialogContent className="sm:max-w-[700px] bg-card text-card-foreground max-h-[95vh] overflow-y-auto">
@@ -888,12 +1380,13 @@ export function PatientProfileDialog({
                 )}
 
                 <Tabs value={activeTab} onValueChange={(v: any) => setActiveTab(v)}>
-                    <TabsList className="grid w-full grid-cols-5 mb-4">
-                        <TabsTrigger value="profile">👤 Profil</TabsTrigger>
-                        <TabsTrigger value="labs" disabled={isCreateMode}>🩸 Tahliller</TabsTrigger>
-                        <TabsTrigger value="imaging" disabled={isCreateMode}>📷 Görüntüleme</TabsTrigger>
-                        <TabsTrigger value="observations" disabled={isCreateMode}>📋 Seyir</TabsTrigger>
-                        <TabsTrigger value="logs" disabled={isCreateMode}>📜 Loglar</TabsTrigger>
+                    <TabsList className="grid w-full grid-cols-6 mb-4">
+                        <TabsTrigger value="profile">Profil</TabsTrigger>
+                        <TabsTrigger value="flavor" disabled={isCreateMode}>Lezzet Ayarı</TabsTrigger>
+                        <TabsTrigger value="labs" disabled={isCreateMode}>Tahliller</TabsTrigger>
+                        <TabsTrigger value="imaging" disabled={isCreateMode}>Görüntüleme</TabsTrigger>
+                        <TabsTrigger value="observations" disabled={isCreateMode}>Seyir</TabsTrigger>
+                        <TabsTrigger value="logs" disabled={isCreateMode}>Loglar</TabsTrigger>
                     </TabsList>
 
                     <TabsContent value="profile">
@@ -903,7 +1396,7 @@ export function PatientProfileDialog({
                                 {/* Auth Fields - Only shown in create mode */}
                                 {isCreateMode && (
                                     <div className="border-b pb-4 mb-4 space-y-3">
-                                        <h4 className="font-medium text-sm text-gray-700">🔐 Giriş Bilgileri</h4>
+                                        <h4 className="font-medium text-sm text-gray-700">Giriş Bilgileri</h4>
                                         <FormField
                                             control={form.control}
                                             name="email"
@@ -982,7 +1475,7 @@ export function PatientProfileDialog({
                                     <div className="h-px bg-red-100 my-4" />
 
                                     <h4 className="font-medium text-sm text-gray-800 flex items-center gap-2">
-                                        🩺 Hastalıklar & Koşullar
+                                        Hastalıklar & Koşullar
                                         <span className="text-[10px] bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-normal">Yeni</span>
                                     </h4>
                                     <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto">
@@ -1007,7 +1500,7 @@ export function PatientProfileDialog({
                                 {/* Medications Section - Smart Search */}
                                 <div className="border bg-blue-50/50 p-4 rounded-md space-y-3">
                                     <h4 className="font-medium text-sm text-gray-800 flex items-center gap-2">
-                                        💊 Kullandığı İlaçlar
+                                        Kullandığı İlaçlar
                                     </h4>
 
                                     {/* Search Input */}
@@ -1325,15 +1818,16 @@ export function PatientProfileDialog({
                                                             />
                                                         </FormControl>
                                                         <div className="leading-none">
-                                                            <FormLabel className="text-xs">Lezzet Ayarı (Dengele) Özelliği Hasta Taraflı Açılsın</FormLabel>
+                                                            <FormLabel className="text-xs">Lezzet Ayarı (Dengele) Özelliği Hasta Tarafı Açık Olsun</FormLabel>
                                                         </div>
                                                     </FormItem>
                                                 )}
                                             />
                                             <p className="text-[10px] text-muted-foreground">
-                                                Etkinleştirildiğinde hasta, listesinde belirlenen sınırları geçmeden yapay zeka destekli haftalık dengeleme simülasyonu çalıştırabilir. Öğelerin kendi menülerinden değiştirilmesine ek olarak toplu ve anlık iyileştirme sağlar.
+                                                Etkinleştirildiğinde hasta, listesinde belirlenen sınırları aşmadan yapay zeka destekli haftalık dengeleme simülasyonu çalıştırabilir. Öğelerin kendi menülerinden değiştirilmesine ek olarak toplu ve anlık iyileştirme sağlar.
                                             </p>
                                         </div>
+
                                     </div>
 
                                     <div className="grid grid-cols-1 gap-4 mt-4">
@@ -1605,6 +2099,285 @@ export function PatientProfileDialog({
                         </Form>
                     </TabsContent>
 
+                    <TabsContent value="flavor" className="space-y-4">
+                        {!patientId ? (
+                            <div className="text-center py-8 text-gray-400 italic">
+                                Lezzet ayarını düzenlemek için önce hastayı kaydedin.
+                            </div>
+                        ) : (
+                            <div className="space-y-4">
+                                <div className="rounded-lg border bg-emerald-50/30 p-4 space-y-3">
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <h4 className="font-semibold text-sm">Lezzet Ayarı (Hasta Override)</h4>
+                                            <p className="text-[11px] text-muted-foreground">
+                                                Miras sırası: Hasta override → {inheritedFlavorScopeLabel === 'team' ? 'Takım' : 'Global'} → Global
+                                            </p>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <Button
+                                                type="button"
+                                                variant="outline"
+                                                size="sm"
+                                                className="h-8 text-xs"
+                                                onClick={() => {
+                                                    setPatientFlavorOverrideEnabled(true)
+                                                    setPatientFlavorSettings(inheritedFlavorSettings)
+                                                }}
+                                            >
+                                                Devral ve Düzenle
+                                            </Button>
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="sm"
+                                                className="h-8 text-xs text-rose-600 hover:text-rose-700"
+                                                onClick={() => {
+                                                    setPatientFlavorOverrideEnabled(false)
+                                                    setPatientFlavorSettings(inheritedFlavorSettings)
+                                                }}
+                                            >
+                                                Override Sıfırla
+                                            </Button>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex items-center space-x-3 rounded-md border bg-white p-3">
+                                        <Checkbox
+                                            checked={patientFlavorOverrideEnabled}
+                                            onCheckedChange={(v) => setPatientFlavorOverrideEnabled(Boolean(v))}
+                                            disabled={isFlavorSettingsLoading}
+                                        />
+                                        <div>
+                                            <p className="text-sm font-medium">Hasta için özel lezzet ayarı kullan</p>
+                                            <p className="text-[11px] text-muted-foreground">Kapalıysa takım/global ayarlar devralınır.</p>
+                                        </div>
+                                    </div>
+
+                                    <div className="rounded-xl border bg-white p-4">
+                                        <div className="mb-3 flex items-center gap-2">
+                                            <Wand2 className="h-5 w-5 text-amber-500" />
+                                            <h4 className="font-semibold text-sm">Hızlı Profiller</h4>
+                                        </div>
+                                        <p className="mb-4 text-[11px] text-muted-foreground">
+                                            Bir profil seçerek tüm ağırlıkları tek tıkla ayarlayın. Sonra ince ayar yapabilirsiniz.
+                                        </p>
+                                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                                            {FLAVOR_PRESET_TEMPLATES.map((preset) => {
+                                                const Icon = preset.icon
+                                                const isActive = activeFlavorPreset === preset.id
+                                                return (
+                                                    <button
+                                                        key={preset.id}
+                                                        type="button"
+                                                        disabled={!patientFlavorOverrideEnabled}
+                                                        onClick={() => applyFlavorPreset(preset)}
+                                                        className={`relative rounded-xl border-2 p-3 text-left transition-all ${
+                                                            isActive ? 'ring-2 ring-offset-1 scale-[1.01]' : ''
+                                                        } ${preset.borderColor} bg-gradient-to-br ${preset.bgGradient} ${!patientFlavorOverrideEnabled ? 'opacity-50 cursor-not-allowed' : 'hover:shadow-md'}`}
+                                                    >
+                                                        {isActive && <CheckCircle2 className={`absolute right-2 top-2 h-4 w-4 ${preset.color}`} />}
+                                                        <div className="mb-2 flex items-center gap-2">
+                                                            <Icon className={`h-4 w-4 ${preset.color}`} />
+                                                            <span className="text-sm font-semibold text-gray-800">{preset.name}</span>
+                                                        </div>
+                                                        <p className="text-[11px] leading-relaxed text-gray-600">{preset.description}</p>
+                                                    </button>
+                                                )
+                                            })}
+                                        </div>
+                                    </div>
+
+                                    {isFlavorSettingsLoading ? (
+                                        <p className="text-[11px] text-muted-foreground">Lezzet ayarları yükleniyor...</p>
+                                    ) : (
+                                        <>
+                                            <div className="rounded-lg border bg-white p-3 space-y-3">
+                                                <h5 className="text-xs font-semibold text-gray-700">Güvenlik Kontrolleri</h5>
+                                                {[
+                                                    { key: 'enabled' as const, label: 'Lezzet Ayarı Aktif', desc: 'Ana anahtar: Kapalıysa tüm Gurme butonları devre dışı' },
+                                                    { key: 'allow_post_edit' as const, label: 'Post-edit önerileri', desc: 'Plan oluşturulduktan sonra düzenleme izni' },
+                                                    { key: 'respect_scope_filters' as const, label: 'Program/Faz filtresi', desc: 'Yalnızca hastanın programa uygun gıdalar' },
+                                                    { key: 'respect_frequency_rules' as const, label: 'Sıklık kuralları', desc: 'Haftalık tekrar limitine uy' },
+                                                    { key: 'use_pattern_insights' as const, label: 'Örüntü içgörüleri', desc: 'Geçmiş kombinasyon metriklerini skora kat' },
+                                                    { key: 'strict_locked_items' as const, label: 'Kilitli öğeleri koru', desc: 'Diyetisyenin kilitlediği yemeklere dokunma' },
+                                                ].map((item) => (
+                                                    <div key={item.key} className="flex items-center justify-between gap-3">
+                                                        <div className="min-w-0">
+                                                            <p className="text-xs font-semibold">{item.label}</p>
+                                                            <p className="truncate text-[10px] text-muted-foreground">{item.desc}</p>
+                                                        </div>
+                                                        <Switch
+                                                            checked={Boolean(patientFlavorSettings[item.key])}
+                                                            disabled={!patientFlavorOverrideEnabled}
+                                                            onCheckedChange={(checked: boolean) => setPatientFlavorSettings(prev => ({ ...prev, [item.key]: checked }))}
+                                                        />
+                                                    </div>
+                                                ))}
+                                            </div>
+
+                                            <div className="rounded-lg border bg-white p-3 space-y-3">
+                                                <div className="flex items-center justify-between">
+                                                    <ShcnLabel className="text-xs font-semibold">Öneri sayısı</ShcnLabel>
+                                                    <Badge variant="outline" className="text-xs tabular-nums">{patientFlavorSettings.suggestion_count}</Badge>
+                                                </div>
+                                                <Slider
+                                                    disabled={!patientFlavorOverrideEnabled}
+                                                    value={[patientFlavorSettings.suggestion_count]}
+                                                    onValueChange={([v]) => setPatientFlavorSettings(prev => ({ ...prev, suggestion_count: Math.round(clampNum(v, 1, 6)) }))}
+                                                    min={1}
+                                                    max={6}
+                                                    step={1}
+                                                />
+                                            </div>
+
+                                            <div className="rounded-lg border bg-white p-3 space-y-3">
+                                                <div className="flex items-center justify-between">
+                                                    <ShcnLabel className="text-xs font-semibold">Ağırlık Dağılımı</ShcnLabel>
+                                                    <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-300 text-[10px] text-slate-500 cursor-help" title="Makro, lezzet, çeşitlilik ve uyumluluk birlikte öneri skorunu belirler.">?</span>
+                                                </div>
+                                                <div className="flex rounded-full overflow-hidden h-2.5 bg-gray-100">
+                                                    <div className="bg-red-500" style={{ width: `${flavorMacroPct}%` }} />
+                                                    <div className="bg-amber-500" style={{ width: `${flavorTastePct}%` }} />
+                                                    <div className="bg-purple-500" style={{ width: `${flavorDiversityPct}%` }} />
+                                                    <div className="bg-emerald-500" style={{ width: `${flavorCompatPct}%` }} />
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    <div className="space-y-1">
+                                                        <div className="flex items-center justify-between text-[11px]"><span>Makro</span><Badge variant="outline" className="text-[10px] tabular-nums">%{Math.round(flavorMacroPct)}</Badge></div>
+                                                        <Slider disabled={!patientFlavorOverrideEnabled} value={[Math.round(patientFlavorSettings.macro_weight * 100)]} onValueChange={([v]) => setPatientFlavorSettings(prev => ({ ...prev, macro_weight: Math.round(v) / 100 }))} min={0} max={100} step={1} />
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <div className="flex items-center justify-between text-[11px]"><span>Lezzet</span><Badge variant="outline" className="text-[10px] tabular-nums">%{Math.round(flavorTastePct)}</Badge></div>
+                                                        <Slider disabled={!patientFlavorOverrideEnabled} value={[Math.round(patientFlavorSettings.flavor_weight * 100)]} onValueChange={([v]) => setPatientFlavorSettings(prev => ({ ...prev, flavor_weight: Math.round(v) / 100 }))} min={0} max={100} step={1} />
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <div className="flex items-center justify-between text-[11px]"><span>Çeşitlilik</span><Badge variant="outline" className="text-[10px] tabular-nums">%{Math.round(flavorDiversityPct)}</Badge></div>
+                                                        <Slider disabled={!patientFlavorOverrideEnabled} value={[Math.round(patientFlavorSettings.diversity_weight * 100)]} onValueChange={([v]) => setPatientFlavorSettings(prev => ({ ...prev, diversity_weight: Math.round(v) / 100 }))} min={0} max={100} step={1} />
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <div className="flex items-center justify-between text-[11px]"><span>Uyumluluk</span><Badge variant="outline" className="text-[10px] tabular-nums">%{Math.round(flavorCompatPct)}</Badge></div>
+                                                        <Slider disabled={!patientFlavorOverrideEnabled} value={[Math.round(patientFlavorSettings.compatibility_weight * 100)]} onValueChange={([v]) => setPatientFlavorSettings(prev => ({ ...prev, compatibility_weight: Math.round(v) / 100 }))} min={0} max={100} step={1} />
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div className="rounded-lg border bg-white p-3 space-y-3">
+                                                <div className="flex items-center justify-between">
+                                                    <ShcnLabel className="text-xs font-semibold">Örüntü Eşikleri</ShcnLabel>
+                                                    <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-300 text-[10px] text-slate-500 cursor-help" title="Confidence/lift/support arttıkça daha güçlü ama daha az öneri gelir.">?</span>
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    <div className="space-y-1">
+                                                        <div className="flex items-center justify-between text-[11px]"><span>Örüntü ağırlığı</span><Badge variant="outline" className="text-[10px] tabular-nums">{patientFlavorSettings.pattern_weight.toFixed(2)}</Badge></div>
+                                                        <Slider disabled={!patientFlavorOverrideEnabled} value={[Math.round(patientFlavorSettings.pattern_weight * 100)]} onValueChange={([v]) => setPatientFlavorSettings(prev => ({ ...prev, pattern_weight: Math.round(v) / 100 }))} min={0} max={100} step={1} />
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <div className="flex items-center justify-between text-[11px]"><span>Min confidence</span><Badge variant="outline" className="text-[10px] tabular-nums">{patientFlavorSettings.pattern_min_confidence.toFixed(2)}</Badge></div>
+                                                        <Slider disabled={!patientFlavorOverrideEnabled} value={[Math.round(patientFlavorSettings.pattern_min_confidence * 100)]} onValueChange={([v]) => setPatientFlavorSettings(prev => ({ ...prev, pattern_min_confidence: Math.round(v) / 100 }))} min={0} max={100} step={1} />
+                                                    </div>
+                                                    <div className="col-span-2 pt-2 text-[11px] font-semibold text-gray-700">Güven Filtresi</div>
+                                                    <div className="space-y-1">
+                                                        <div className="flex items-center justify-between text-[11px]"><span>Min lift</span><Badge variant="outline" className="text-[10px] tabular-nums">{patientFlavorSettings.pattern_min_lift.toFixed(2)}</Badge></div>
+                                                        <Slider disabled={!patientFlavorOverrideEnabled} value={[Math.round(patientFlavorSettings.pattern_min_lift * 100)]} onValueChange={([v]) => setPatientFlavorSettings(prev => ({ ...prev, pattern_min_lift: Math.max(0.1, Math.round(v) / 100) }))} min={10} max={300} step={1} />
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <div className="flex items-center justify-between text-[11px]"><span>Min support</span><Badge variant="outline" className="text-[10px] tabular-nums">{Math.round(patientFlavorSettings.pattern_min_support)}</Badge></div>
+                                                        <Slider disabled={!patientFlavorOverrideEnabled} value={[Math.round(patientFlavorSettings.pattern_min_support)]} onValueChange={([v]) => setPatientFlavorSettings(prev => ({ ...prev, pattern_min_support: Math.max(1, Math.round(v)) }))} min={1} max={30} step={1} />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+
+                                <div className="rounded-xl border border-violet-200 bg-violet-50/70 px-4 py-3 text-[12px] text-violet-900">
+                                    <p className="font-semibold mb-1">Gurme Editöre Etkisi</p>
+                                    <p>Bu ayarlar, lezzet değişimlerinde hangi önerinin neden seçileceğini belirler. Eşikler yükseldikçe daha güçlü ama daha az öneri gelir.</p>
+                                </div>
+
+                                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-[12px] text-slate-700 space-y-2">
+                                    <p className="font-semibold text-slate-800">Hızlı Profiller ve Alt 4 Slider İlişkisi</p>
+                                    <p>Hızlı profil seçimi üstteki 4 ağırlıkla birlikte alttaki örüntü ve güven filtrelerini de eşler.</p>
+                                    <p><span className="font-medium">Klinik Katı:</span> confidence/lift/support artar. Daha az ama daha güvenilir örüntü önerisi gelir.</p>
+                                    <p><span className="font-medium">Ultra Esnek:</span> eşikler düşer. Alternatif sayısı artar, fakat örüntü güven kalitesi daha değişken olabilir.</p>
+                                    <p><span className="font-medium">Gurme Eşleşme:</span> pattern ağırlığı artar; uyumluluk ve geçmiş kombinasyon etkisi belirginleşir.</p>
+                                </div>
+
+                                {(() => {
+                                    const AnalysisIcon = flavorAnalysis.icon
+                                    return (
+                                        <div className="overflow-hidden rounded-xl border bg-white">
+                                            <div className={`flex items-center gap-3 border-b px-4 py-3 ${flavorAnalysis.bgColor}`}>
+                                                <AnalysisIcon className={`h-5 w-5 ${flavorAnalysis.color}`} />
+                                                <div>
+                                                    <h4 className="font-bold text-sm text-gray-900">{flavorAnalysis.summary}</h4>
+                                                    <p className="text-[11px] text-gray-500">Bu ayarlarda gurme düzenleyici aşağıdaki davranışı gösterir.</p>
+                                                </div>
+                                            </div>
+                                            <div className="space-y-3 p-4">
+                                                <div className="grid gap-3 lg:grid-cols-3">
+                                                    {flavorAnalysis.scenarios.map((scenario, i) => (
+                                                        <div key={i} className="rounded-lg border bg-white p-3">
+                                                            <div className="mb-1 flex items-start gap-2">
+                                                                <span className="text-lg">{scenario.emoji}</span>
+                                                                <p className="text-xs font-bold text-gray-800">{scenario.title}</p>
+                                                            </div>
+                                                            <p className="text-[11px] leading-relaxed text-gray-600">{scenario.description}</p>
+                                                        </div>
+                                                    ))}
+                                                </div>
+
+                                                {flavorAnalysis.warnings.length > 0 && (
+                                                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                                                        <h5 className="mb-2 flex items-center gap-2 text-xs font-bold text-amber-800">
+                                                            <AlertTriangle className="h-4 w-4" />
+                                                            Dikkat Edilmesi Gerekenler
+                                                        </h5>
+                                                        <div className="space-y-1.5">
+                                                            {flavorAnalysis.warnings.map((warning, i) => (
+                                                                <div key={i} className="flex items-start gap-1.5 text-[11px] text-amber-700">
+                                                                    <ArrowRight className="mt-0.5 h-3 w-3 shrink-0" />
+                                                                    <span>{warning}</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {flavorAnalysis.tips.length > 0 && (
+                                                    <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
+                                                        <h5 className="mb-2 flex items-center gap-2 text-xs font-bold text-blue-800">
+                                                            <Info className="h-4 w-4" />
+                                                            Uzman İpuçları
+                                                        </h5>
+                                                        <div className="space-y-1.5">
+                                                            {flavorAnalysis.tips.map((tip, i) => (
+                                                                <div key={i} className="flex items-start gap-1.5 text-[11px] text-blue-700">
+                                                                    <Brain className="mt-0.5 h-3 w-3 shrink-0" />
+                                                                    <span>{tip}</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                <div className="rounded-md border bg-slate-50 px-3 py-2 text-[11px] text-slate-600">
+                                                    💡 Not: Ağırlıkların toplamı 1 olmak zorunda değildir. Motor bu değerleri normalize eder; önemli olan göreceli büyüklüklerdir.
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )
+                                })()}
+
+                                <div className="flex justify-end">
+                                    <Button type="button" onClick={() => form.handleSubmit(onSubmit)()} disabled={loading}>
+                                        {loading ? 'Kaydediliyor...' : 'Ayarları Kaydet'}
+                                    </Button>
+                                </div>
+                            </div>
+                        )}
+                    </TabsContent>
+
                     <TabsContent value="labs" className="space-y-6">
                         {patientId ? (
                             <LabResultsGrid patientId={patientId} />
@@ -1709,4 +2482,5 @@ export function PatientProfileDialog({
         </Dialog>
     )
 }
+
 

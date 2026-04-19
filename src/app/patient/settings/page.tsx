@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { useAuth } from "@/contexts/auth-context"
 import { supabase } from "@/lib/supabase"
+import { resolveTeamScopeContextFromAuth } from "@/lib/team-scope"
 import { cn } from "@/lib/utils"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -72,16 +73,44 @@ export default function PatientSettingsPage() {
             let globalAllowProgram = false
             let globalAllowGoal = false
             let globalAllowWeekDelete = false
+
+            const scopeCtx = await resolveTeamScopeContextFromAuth()
+            const teamModeActive = !!scopeCtx.teamOwnerId && !scopeCtx.canUseGlobal
+            const settingsKey = teamModeActive
+                ? `registration_settings__team_${scopeCtx.teamOwnerId}`
+                : 'registration_settings'
+
+            let settingsValue: any = null
             const { data: settingsData } = await supabase
                 .from('app_settings')
                 .select('value')
-                .eq('id', 'registration_settings')
-                .single()
+                .eq('key', settingsKey)
+                .maybeSingle()
 
-            if (settingsData && settingsData.value) {
-                globalAllowProgram = !!settingsData.value.allow_program_selection
-                globalAllowGoal = !!settingsData.value.allow_goal_selection
-                globalAllowWeekDelete = !!settingsData.value.allow_week_delete
+            if (settingsData?.value) {
+                settingsValue = settingsData.value
+            } else if (teamModeActive) {
+                const { data: fallbackData } = await supabase
+                    .from('app_settings')
+                    .select('value')
+                    .eq('key', 'registration_settings')
+                    .maybeSingle()
+                if (fallbackData?.value) settingsValue = fallbackData.value
+            }
+
+            if (!settingsValue) {
+                const { data: legacyData } = await supabase
+                    .from('app_settings')
+                    .select('value')
+                    .eq('id', 'registration_settings')
+                    .maybeSingle()
+                if (legacyData?.value) settingsValue = legacyData.value
+            }
+
+            if (settingsValue) {
+                globalAllowProgram = !!settingsValue.allow_program_selection
+                globalAllowGoal = !!settingsValue.allow_goal_selection
+                globalAllowWeekDelete = !!settingsValue.allow_week_delete
             }
 
             // 2. Fetch Programs

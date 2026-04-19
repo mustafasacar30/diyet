@@ -1,0 +1,616 @@
+[
+  {
+    "id": "6d81d43c-64bd-4162-8509-304a28c0e1a6",
+    "name": "Protein dolgu",
+    "description": "",
+    "rule_type": "nutritional",
+    "priority": 100,
+    "is_active": true,
+    "definition": {
+      "data": {
+        "action": {
+          "type": "add",
+          "target": {
+            "type": "food_id",
+            "value": "e78de1dc-e5a3-4798-bb22-37b4381f9147"
+          }
+        },
+        "condition": {
+          "macro": "protein",
+          "value": 6,
+          "operator": "<"
+        },
+        "target_slot": "AKŞAM"
+      },
+      "type": "nutritional"
+    },
+    "created_at": "2026-03-11T11:45:58.448492+00:00",
+    "updated_at": "2026-03-11T11:45:58.448492+00:00",
+    "user_id": null,
+    "sort_order": 0,
+    "scope": "global",
+    "patient_id": null,
+    "source_rule_id": null,
+    "pending_global_approval": false,
+    "is_ignored": false,
+    "program_template_id": null,
+    "team_owner_id": null,
+    "scope_source": "global",
+    "base_rule_id": "6d81d43c-64bd-4162-8509-304a28c0e1a6"
+  },
+  {
+    "id": "e90c6fa0-bdd0-4139-87b3-c83143734917",
+    "name": "Börek kilit",
+    "description": "",
+    "rule_type": "consistency",
+    "priority": 98,
+    "is_active": true,
+    "definition": {
+      "data": {
+        "target": {
+          "type": "category",
+          "value": "BÖREKLER"
+        },
+        "lock_duration": "weekly"
+      },
+      "type": "consistency"
+    },
+    "created_at": "2026-03-13T08:32:02.947471+00:00",
+    "updated_at": "2026-03-13T15:33:02.101705+00:00",
+    "user_id": null,
+    "sort_order": 0,
+    "scope": "global",
+    "patient_id": null,
+    "source_rule_id": null,
+    "pending_global_approval": false,
+    "is_ignored": false,
+    "program_template_id": null,
+    "team_owner_id": null,
+    "scope_source": "global",
+    "base_rule_id": "e90c6fa0-bdd0-4139-87b3-c83143734917"
+  },
+  {
+    "id": "a461fb48-f6a3-4867-bbe0-36a31d89a372",
+    "name": "poğaça kilit",
+    "description": "poğaçaları aynı ollmasını sağlar",
+    "rule_type": "consistency",
+    "priority": 97,
+    "is_active": true,
+    "definition": {
+      "data": {
+        "target": {
+          "type": "category",
+          "value": "POĞAÇA"
+        },
+        "lock_duration": "weekly"
+      },
+      "type": "consistency"
+    },
+    "created_at": "2026-03-13T08:18:47.140008+00:00",
+    "updated_at": "2026-03-13T08:18:47.140008+00:00",
+    "user_id": null,
+    "sort_order": 0,
+    "scope": "global",
+    "patient_id": null,
+    "source_rule_id": null,
+    "pending_global_approval": false,
+    "is_ignored": false,
+    "program_template_id": null,
+    "team_owner_id": null,
+    "scope_source": "global",
+    "base_rule_id": "a461fb48-f6a3-4867-bbe0-36a31d89a372"
+  },
+  {
+    "id": "b9221917-8d5e-4da0-a9bf-64cfc44e9acf",
+    "name": "börek 3 gün",
+    "description": "",
+    "rule_type": "frequency",
+    "priority": 94,
+    "is_active": true,
+    "definition": {
+      "data": {
+        "period": "daily",
+        "target": {
+          "type": "category",
+          "value": "BÖREKLER"
+        },
+        "max_count": 1,
+        "min_count": 1,
+        "scope_days": [
+          1,
+          2,
+          3
+        ],
+        "scope_meals": [
+          "ÖĞLEN"
+        ],
+        "force_inclusion": true
+      },
+      "type": "frequency"
+    },
+    "created_at": "2026-03-13T15:33:55.101353+00:00",
+    "updated_at": "2026-03-13T15:33:55.101353+00:00",
+    "user_id": null,
+    "sort_order": 0,
+    "scope": "global",
+    "patient_id": null,
+    "source_rule_id": null,
+    "pending_global_approval": false,
+    "is_ignored": false,
+    "program_template_id": null,
+    "team_owner_id": null,
+    "scope_source": "global",
+    "base_rule_id": "b9221917-8d5e-4da0-a9bf-64cfc44e9acf"
+  },
+  {
+    "id": "f1f97fe7-62db-4b3f-9e63-7129e186761a",
+    "name": "çorba kilit",
+    "description": "çorbalar haftalık aynı olacak",
+    "rule_type": "consistency",
+    "priority": 90,
+    "is_active": true,
+    "definition": {
+      "data": {
+        "target": {
+          "type": "category",
+          "value": "ÇORBALAR"
+        },
+        "lock_duration": "weekly"
+      },
+      "type": "consistency"
+    },
+    "created_at": "2026-02-05T12:27:35.385218+00:00",
+    "updated_at": "2026-02-05T19:11:47.422891+00:00",
+    "user_id": null,
+    "sort_order": 0,
+    "scope": "global",
+    "patient_id": null,
+    "source_rule_id": null,
+    "pending_global_approval": false,
+    "is_ignored": false,
+    "program_template_id": null,
+    "team_owner_id": null,
+    "scope_source": "global",
+    "base_rule_id": "f1f97fe7-62db-4b3f-9e63-7129e186761a"
+  },
+  {
+    "id": "3e133169-c596-46ca-b650-753d8d78ff08",
+    "name": "prot_dolgu_hindi_füme",
+    "description": "",
+    "rule_type": "nutritional",
+    "priority": 50,
+    "is_active": true,
+    "definition": {
+      "data": {
+        "action": {
+          "type": "add",
+          "target": {
+            "type": "food_id",
+            "value": "3d6958cf-0019-4a1f-8052-b73a8e475ae8"
+          }
+        },
+        "condition": {
+          "macro": "protein",
+          "value": 5,
+          "operator": "<"
+        },
+        "target_slot": "ÖĞLEN"
+      },
+      "type": "nutritional"
+    },
+    "created_at": "2026-03-11T11:45:54.256348+00:00",
+    "updated_at": "2026-03-11T11:45:54.256348+00:00",
+    "user_id": null,
+    "sort_order": 0,
+    "scope": "global",
+    "patient_id": null,
+    "source_rule_id": null,
+    "pending_global_approval": false,
+    "is_ignored": false,
+    "program_template_id": null,
+    "team_owner_id": null,
+    "scope_source": "global",
+    "base_rule_id": "3e133169-c596-46ca-b650-753d8d78ff08"
+  },
+  {
+    "id": "85086f1e-03f7-47b2-a5dc-5fa1b18268cd",
+    "name": "Muffin kilit",
+    "description": "",
+    "rule_type": "consistency",
+    "priority": 50,
+    "is_active": true,
+    "definition": {
+      "data": {
+        "target": {
+          "type": "category",
+          "value": "MUFFİN"
+        },
+        "lock_duration": "weekly"
+      },
+      "type": "consistency"
+    },
+    "created_at": "2026-03-13T08:27:26.549966+00:00",
+    "updated_at": "2026-03-13T08:27:26.549966+00:00",
+    "user_id": null,
+    "sort_order": 0,
+    "scope": "global",
+    "patient_id": null,
+    "source_rule_id": null,
+    "pending_global_approval": false,
+    "is_ignored": false,
+    "program_template_id": null,
+    "team_owner_id": null,
+    "scope_source": "global",
+    "base_rule_id": "85086f1e-03f7-47b2-a5dc-5fa1b18268cd"
+  },
+  {
+    "id": "d5ccfac5-ff14-4804-ac06-d8f86c283af1",
+    "name": "Ana yemek sıklık",
+    "description": "Her öğüne bir tane ana yemek rolunde yemek",
+    "rule_type": "frequency",
+    "priority": 100,
+    "is_active": true,
+    "definition": {
+      "data": {
+        "period": "per_meal",
+        "target": {
+          "type": "role",
+          "value": "mainDish"
+        },
+        "max_count": 1,
+        "min_count": 1,
+        "scope_days": [],
+        "scope_meals": [
+          "AKŞAM",
+          "ÖĞLEN"
+        ]
+      },
+      "type": "frequency"
+    },
+    "created_at": "2026-02-02T16:42:23.125381+00:00",
+    "updated_at": "2026-02-04T16:44:42.109228+00:00",
+    "user_id": null,
+    "sort_order": 1,
+    "scope": "global",
+    "patient_id": null,
+    "source_rule_id": null,
+    "pending_global_approval": false,
+    "is_ignored": false,
+    "program_template_id": null,
+    "team_owner_id": null,
+    "scope_source": "global",
+    "base_rule_id": "d5ccfac5-ff14-4804-ac06-d8f86c283af1"
+  },
+  {
+    "id": "53942cc5-4544-45c6-b789-4fece39c7c00",
+    "name": "balık - > tahin",
+    "description": "balık taglı emeklerde tahşin yanına ekleme",
+    "rule_type": "affinity",
+    "priority": 92,
+    "is_active": true,
+    "definition": {
+      "data": {
+        "outcome": {
+          "type": "food_id",
+          "value": "tahin"
+        },
+        "trigger": {
+          "type": "tag",
+          "value": "balık"
+        },
+        "association": "boost",
+        "probability": 70
+      },
+      "type": "affinity"
+    },
+    "created_at": "2026-02-02T16:44:20.738253+00:00",
+    "updated_at": "2026-02-04T16:44:42.109228+00:00",
+    "user_id": null,
+    "sort_order": 2,
+    "scope": "global",
+    "patient_id": null,
+    "source_rule_id": null,
+    "pending_global_approval": false,
+    "is_ignored": false,
+    "program_template_id": null,
+    "team_owner_id": null,
+    "scope_source": "global",
+    "base_rule_id": "53942cc5-4544-45c6-b789-4fece39c7c00"
+  },
+  {
+    "id": "a21c7a80-f603-4a1e-81a3-ecff042faa24",
+    "name": "ekmek kilit",
+    "description": "",
+    "rule_type": "consistency",
+    "priority": 91,
+    "is_active": true,
+    "definition": {
+      "data": {
+        "target": {
+          "type": "category",
+          "value": "EKMEKLER"
+        },
+        "lock_duration": "weekly"
+      },
+      "type": "consistency"
+    },
+    "created_at": "2026-02-02T16:46:40.914003+00:00",
+    "updated_at": "2026-02-04T16:44:42.109228+00:00",
+    "user_id": null,
+    "sort_order": 3,
+    "scope": "global",
+    "patient_id": null,
+    "source_rule_id": null,
+    "pending_global_approval": false,
+    "is_ignored": false,
+    "program_template_id": null,
+    "team_owner_id": null,
+    "scope_source": "global",
+    "base_rule_id": "a21c7a80-f603-4a1e-81a3-ecff042faa24"
+  },
+  {
+    "id": "9205fa42-be2e-4886-9322-fe4bdc5675a0",
+    "name": "yan yemek sıklık 1-2",
+    "description": "her ana öğüne 1 - 2 tane yan yemek",
+    "rule_type": "frequency",
+    "priority": 99,
+    "is_active": true,
+    "definition": {
+      "data": {
+        "period": "per_meal",
+        "target": {
+          "type": "role",
+          "value": "sideDish"
+        },
+        "max_count": 1,
+        "min_count": 1,
+        "scope_meals": [
+          "ÖĞLEN",
+          "AKŞAM"
+        ],
+        "random_day_count": 7
+      },
+      "type": "frequency"
+    },
+    "created_at": "2026-02-03T14:36:18.578255+00:00",
+    "updated_at": "2026-02-04T21:28:00.321947+00:00",
+    "user_id": null,
+    "sort_order": 4,
+    "scope": "global",
+    "patient_id": null,
+    "source_rule_id": null,
+    "pending_global_approval": false,
+    "is_ignored": false,
+    "program_template_id": null,
+    "team_owner_id": null,
+    "scope_source": "global",
+    "base_rule_id": "9205fa42-be2e-4886-9322-fe4bdc5675a0"
+  },
+  {
+    "id": "48366015-1be1-4682-9b50-62af89c28c0b",
+    "name": "akşam çorba 2 gün",
+    "description": "",
+    "rule_type": "frequency",
+    "priority": 97,
+    "is_active": true,
+    "definition": {
+      "data": {
+        "period": "weekly",
+        "target": {
+          "type": "category",
+          "value": "ÇORBALAR"
+        },
+        "max_count": 3,
+        "min_count": 3,
+        "scope_meals": [
+          "AKŞAM"
+        ],
+        "force_inclusion": true,
+        "random_day_count": 7
+      },
+      "type": "frequency"
+    },
+    "created_at": "2026-02-03T14:37:38.163867+00:00",
+    "updated_at": "2026-03-11T11:42:21.988193+00:00",
+    "user_id": null,
+    "sort_order": 5,
+    "scope": "global",
+    "patient_id": null,
+    "source_rule_id": null,
+    "pending_global_approval": false,
+    "is_ignored": false,
+    "program_template_id": null,
+    "team_owner_id": null,
+    "scope_source": "global",
+    "base_rule_id": "48366015-1be1-4682-9b50-62af89c28c0b"
+  },
+  {
+    "id": "ef1d70a7-48d8-4d2d-97df-2c711f1c2b65",
+    "name": "ekmek 6 gün",
+    "description": "haftada 6 gün ekmek",
+    "rule_type": "frequency",
+    "priority": 95,
+    "is_active": true,
+    "definition": {
+      "data": {
+        "period": "per_meal",
+        "target": {
+          "type": "category",
+          "value": "EKMEKLER"
+        },
+        "max_count": 1,
+        "min_count": 1,
+        "scope_meals": [
+          "ÖĞLEN",
+          "AKŞAM"
+        ],
+        "force_inclusion": true,
+        "random_day_count": 6
+      },
+      "type": "frequency"
+    },
+    "created_at": "2026-02-03T14:39:03.515888+00:00",
+    "updated_at": "2026-03-13T19:17:49.991771+00:00",
+    "user_id": null,
+    "sort_order": 6,
+    "scope": "global",
+    "patient_id": null,
+    "source_rule_id": null,
+    "pending_global_approval": false,
+    "is_ignored": false,
+    "program_template_id": null,
+    "team_owner_id": null,
+    "scope_source": "global",
+    "base_rule_id": "ef1d70a7-48d8-4d2d-97df-2c711f1c2b65"
+  },
+  {
+    "id": "b10cabb9-6ed3-46f4-81ec-12ff25aea547",
+    "name": "tatlı 3 gün",
+    "description": "",
+    "rule_type": "frequency",
+    "priority": 94,
+    "is_active": true,
+    "definition": {
+      "data": {
+        "period": "daily",
+        "target": {
+          "type": "category",
+          "value": "TATLILAR"
+        },
+        "max_count": 1,
+        "min_count": 1,
+        "scope_meals": [
+          "AKŞAM"
+        ],
+        "random_day_count": 3
+      },
+      "type": "frequency"
+    },
+    "created_at": "2026-02-03T14:39:49.12372+00:00",
+    "updated_at": "2026-02-04T16:44:42.109228+00:00",
+    "user_id": null,
+    "sort_order": 7,
+    "scope": "global",
+    "patient_id": null,
+    "source_rule_id": null,
+    "pending_global_approval": false,
+    "is_ignored": false,
+    "program_template_id": null,
+    "team_owner_id": null,
+    "scope_source": "global",
+    "base_rule_id": "b10cabb9-6ed3-46f4-81ec-12ff25aea547"
+  },
+  {
+    "id": "ae82e86d-3bd2-4233-b268-0610769cd6dd",
+    "name": "kuruyemiş 5 gün",
+    "description": "",
+    "rule_type": "frequency",
+    "priority": 96,
+    "is_active": true,
+    "definition": {
+      "data": {
+        "period": "daily",
+        "target": {
+          "type": "category",
+          "value": "KURUYEMİŞLER"
+        },
+        "max_count": 1,
+        "min_count": 1,
+        "scope_meals": [
+          "AKŞAM",
+          "ÖĞLEN"
+        ],
+        "force_inclusion": true,
+        "random_day_count": 5
+      },
+      "type": "frequency"
+    },
+    "created_at": "2026-02-03T14:40:57.784371+00:00",
+    "updated_at": "2026-03-11T11:42:52.157855+00:00",
+    "user_id": null,
+    "sort_order": 8,
+    "scope": "global",
+    "patient_id": null,
+    "source_rule_id": null,
+    "pending_global_approval": false,
+    "is_ignored": false,
+    "program_template_id": null,
+    "team_owner_id": null,
+    "scope_source": "global",
+    "base_rule_id": "ae82e86d-3bd2-4233-b268-0610769cd6dd"
+  },
+  {
+    "id": "26e55ee4-9b64-4784-9ac3-9eccb740346d",
+    "name": "kahvaltı sabit",
+    "description": "",
+    "rule_type": "fixed_meal",
+    "priority": 93,
+    "is_active": true,
+    "definition": {
+      "data": {
+        "foods": [
+          "1/2 Avokado",
+          "Zeytin (10 adet)",
+          "Bir yemek kaşığı tahin içerisine, 1 adet ezilmiş ceviz içi ve hafif tarçın serpin)",
+          "Kurşun geçirmez kahve"
+        ],
+        "scope_days": [],
+        "target_slot": "KAHVALTI",
+        "selection_mode": "rotate"
+      },
+      "type": "fixed_meal"
+    },
+    "created_at": "2026-02-03T14:56:51.811791+00:00",
+    "updated_at": "2026-02-05T05:58:37.966729+00:00",
+    "user_id": null,
+    "sort_order": 9,
+    "scope": "global",
+    "patient_id": null,
+    "source_rule_id": null,
+    "pending_global_approval": false,
+    "is_ignored": false,
+    "program_template_id": null,
+    "team_owner_id": null,
+    "scope_source": "global",
+    "base_rule_id": "26e55ee4-9b64-4784-9ac3-9eccb740346d"
+  },
+  {
+    "id": "80e40104-6d56-4fac-b836-c175d0d986bb",
+    "name": "heg öğün salata / rol olarak ekledim",
+    "description": "",
+    "rule_type": "frequency",
+    "priority": 98,
+    "is_active": true,
+    "definition": {
+      "data": {
+        "period": "per_meal",
+        "target": {
+          "type": "role",
+          "value": "salad"
+        },
+        "max_count": 1,
+        "min_count": 1,
+        "scope_days": [],
+        "scope_meals": [
+          "ÖĞLEN",
+          "AKŞAM"
+        ],
+        "force_inclusion": true
+      },
+      "type": "frequency"
+    },
+    "created_at": "2026-02-03T18:15:00.065011+00:00",
+    "updated_at": "2026-03-11T11:45:02.147467+00:00",
+    "user_id": null,
+    "sort_order": 10,
+    "scope": "global",
+    "patient_id": null,
+    "source_rule_id": null,
+    "pending_global_approval": false,
+    "is_ignored": false,
+    "program_template_id": null,
+    "team_owner_id": null,
+    "scope_source": "global",
+    "base_rule_id": "80e40104-6d56-4fac-b836-c175d0d986bb"
+  }
+]

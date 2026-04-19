@@ -73,10 +73,21 @@ type DedupeBucket = {
     sourcePatients: Set<string>
 }
 
+type FoodMatchCandidate = {
+    id: string
+    name: string
+    normalized: string
+    calories: number
+    carbs: number
+    protein: number
+    fat: number
+}
+
 const ALLOWED_ROLES = new Set(["admin", "doctor", "dietitian"])
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const HASH_QUERY_CHUNK = 100
 const INSERT_CHUNK = 40
+const FOOD_FETCH_CHUNK = 2000
 
 function asCleanText(value: unknown, maxLength = 512): string | null {
     if (typeof value !== "string") return null
@@ -253,6 +264,148 @@ function normalizeText(raw: unknown): string {
 
 function normalizeFoodName(raw: string): string {
     return normalizeText(raw).toLocaleLowerCase("tr-TR")
+}
+
+function normalizeForMatch(raw: string) {
+    return String(raw || "")
+        .toLocaleUpperCase("tr-TR")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/\u0130/g, "I")
+        .replace(/I\u0307/g, "I")
+        .replace(/Ç/g, "C")
+        .replace(/Ğ/g, "G")
+        .replace(/Ö/g, "O")
+        .replace(/Ş/g, "S")
+        .replace(/Ü/g, "U")
+        .replace(/[^A-Z0-9]/g, "")
+}
+
+function hasAnyMissingMatchedFood(days: ParsedDay[]) {
+    for (const day of days || []) {
+        for (const meal of day.meals || []) {
+            for (const food of meal.foods || []) {
+                const label = normalizeText(food.foodName || food.originalText || "")
+                if (!label) continue
+                if (!asMaybeUuid(food.matchedFoodId)) return true
+            }
+        }
+    }
+    return false
+}
+
+function findBestFoodMatch(labelRaw: string, foods: FoodMatchCandidate[]) {
+    const target = normalizeForMatch(labelRaw)
+    if (!target || target.length < 2 || foods.length === 0) return null
+
+    let best: FoodMatchCandidate | null = null
+    let bestScore = 0
+
+    for (const food of foods) {
+        const current = food.normalized
+        if (!current) continue
+
+        if (current.includes(target)) {
+            const score = target.length / Math.max(current.length, 1)
+            if (score > bestScore) {
+                bestScore = score
+                best = food
+            }
+        }
+
+        if (current.startsWith(target) || target.startsWith(current)) {
+            const shorterLen = Math.min(current.length, target.length)
+            if (shorterLen >= 3 && 0.95 > bestScore) {
+                bestScore = 0.95
+                best = food
+            }
+        }
+    }
+
+    if (best && best.normalized === target) {
+        bestScore = 1
+    }
+
+    return best ? { food: best, score: bestScore } : null
+}
+
+function applyBestFoodMatches(base: BaseEntry, foods: FoodMatchCandidate[]): BaseEntry {
+    if (!Array.isArray(base.parsed_days) || base.parsed_days.length === 0 || foods.length === 0) {
+        return base
+    }
+
+    let changed = false
+    const patchedDays = base.parsed_days.map(day => {
+        const patchedMeals = (day.meals || []).map(meal => {
+            const patchedFoods = (meal.foods || []).map(food => {
+                if (asMaybeUuid(food.matchedFoodId)) return food
+
+                const foodLabel = normalizeText(food.foodName || food.originalText || "")
+                if (!foodLabel) return food
+
+                const match = findBestFoodMatch(foodLabel, foods)
+                if (!match) return food
+
+                const calories = Number.isFinite(Number(food.calories)) ? Number(food.calories) : 0
+                const carbs = Number.isFinite(Number(food.carbs)) ? Number(food.carbs) : 0
+                const protein = Number.isFinite(Number(food.protein)) ? Number(food.protein) : 0
+                const fat = Number.isFinite(Number(food.fat)) ? Number(food.fat) : 0
+                const hasAnyMacro = calories > 0 || carbs > 0 || protein > 0 || fat > 0
+
+                changed = true
+                return {
+                    ...food,
+                    matchedFoodId: match.food.id,
+                    status: "matched",
+                    calories: hasAnyMacro ? calories : match.food.calories,
+                    carbs: hasAnyMacro ? carbs : match.food.carbs,
+                    protein: hasAnyMacro ? protein : match.food.protein,
+                    fat: hasAnyMacro ? fat : match.food.fat,
+                }
+            })
+            return { ...meal, foods: patchedFoods }
+        })
+        return { ...day, meals: patchedMeals }
+    })
+
+    if (!changed) return base
+    return { ...base, parsed_days: patchedDays }
+}
+
+async function loadFoodMatchCandidates(): Promise<FoodMatchCandidate[]> {
+    const foods: FoodMatchCandidate[] = []
+    let from = 0
+
+    while (true) {
+        const { data, error } = await supabaseAdmin
+            .from("foods")
+            .select("id, name, calories, carbs, protein, fat")
+            .order("id", { ascending: true })
+            .range(from, from + FOOD_FETCH_CHUNK - 1)
+
+        if (error) throw error
+        if (!data || data.length === 0) break
+
+        for (const row of data) {
+            const id = asMaybeUuid((row as any)?.id)
+            const name = normalizeText((row as any)?.name || "")
+            if (!id || !name) continue
+            foods.push({
+                id,
+                name,
+                normalized: normalizeForMatch(name),
+                calories: Number.isFinite(Number((row as any)?.calories)) ? Number((row as any)?.calories) : 0,
+                carbs: Number.isFinite(Number((row as any)?.carbs)) ? Number((row as any)?.carbs) : 0,
+                protein: Number.isFinite(Number((row as any)?.protein)) ? Number((row as any)?.protein) : 0,
+                fat: Number.isFinite(Number((row as any)?.fat)) ? Number((row as any)?.fat) : 0,
+            })
+        }
+
+        if (data.length < FOOD_FETCH_CHUNK) break
+        from += FOOD_FETCH_CHUNK
+    }
+
+    return foods
 }
 
 function splitTabPrefixFromDayName(rawDayName: string) {
@@ -518,6 +671,7 @@ export async function POST(req: NextRequest) {
         const dedupeMap = new Map<string, DedupeBucket>()
         let skipped = 0
         let payloadMealPackages = 0
+        let foodCandidates: FoodMatchCandidate[] | null = null
 
         for (const rawEntry of rawEntries) {
             const base = prepareBaseEntry(rawEntry || {})
@@ -526,7 +680,18 @@ export async function POST(req: NextRequest) {
                 continue
             }
             const enrichedBase = enrichParsedDaysWithRawMacros(base)
-            const packages = expandToMealPackages(enrichedBase)
+            let matchedBase = enrichedBase
+
+            if (hasAnyMissingMatchedFood(enrichedBase.parsed_days)) {
+                if (!foodCandidates) {
+                    foodCandidates = await loadFoodMatchCandidates()
+                }
+                if (foodCandidates.length > 0) {
+                    matchedBase = applyBestFoodMatches(enrichedBase, foodCandidates)
+                }
+            }
+
+            const packages = expandToMealPackages(matchedBase)
             if (packages.length === 0) {
                 skipped += 1
                 continue
@@ -567,10 +732,13 @@ export async function POST(req: NextRequest) {
         const hasMealPackageColumns = !schemaProbeError
 
         const existingRows: any[] = []
+        const existingSelect = hasMealPackageColumns
+            ? "id, dedupe_hash, repeat_count, source_tab_name, source_file_name, source_patient_name, matched_food_ids, unknown_food_names, food_count, unknown_count, day_name, meal_name"
+            : "id, dedupe_hash, repeat_count, source_tab_name, source_file_name, source_patient_name"
         for (const hashChunk of chunkArray(hashes, HASH_QUERY_CHUNK)) {
             const { data, error: existingError } = await supabaseAdmin
                 .from("menu_import_pool")
-                .select("id, dedupe_hash, repeat_count, source_tab_name, source_file_name, source_patient_name")
+                .select(existingSelect)
                 .in("dedupe_hash", hashChunk)
 
             if (existingError) {
@@ -592,7 +760,19 @@ export async function POST(req: NextRequest) {
 
         const nowIso = new Date().toISOString()
         const inserts: any[] = []
-        const updates: { id: string; repeat_count: number; source_tab_name: string | null; source_file_name: string | null; source_patient_name: string | null }[] = []
+        const updates: Array<{
+            id: string
+            repeat_count: number
+            source_tab_name: string | null
+            source_file_name: string | null
+            source_patient_name: string | null
+            matched_food_ids?: string[]
+            unknown_food_names?: string[]
+            unknown_count?: number
+            food_count?: number
+            day_name?: string | null
+            meal_name?: string | null
+        }> = []
 
         for (const [hash, item] of dedupeMap.entries()) {
             const found = existingByHash.get(hash)
@@ -603,12 +783,39 @@ export async function POST(req: NextRequest) {
                 for (const t of item.sourceTabs) existingTabs.add(t)
                 for (const f of item.sourceFiles) existingFiles.add(f)
                 for (const p of item.sourcePatients) existingPatients.add(p)
+
+                const mergedMatchedIds = hasMealPackageColumns
+                    ? dedupeStrings([
+                          ...(Array.isArray((found as any).matched_food_ids) ? (found as any).matched_food_ids : []),
+                          ...(Array.isArray(item.entry.matched_food_ids) ? item.entry.matched_food_ids : []),
+                      ])
+                    : []
+                const mergedUnknownNames = hasMealPackageColumns
+                    ? dedupeStrings([
+                          ...(Array.isArray((found as any).unknown_food_names) ? (found as any).unknown_food_names : []),
+                          ...(Array.isArray(item.entry.unknown_food_names) ? item.entry.unknown_food_names : []),
+                      ])
+                    : []
+
                 updates.push({
                     id: found.id,
                     repeat_count: Math.max(1, Number(found.repeat_count || 1)) + item.count,
                     source_tab_name: collapseLabelSet(existingTabs),
                     source_file_name: collapseLabelSet(existingFiles),
                     source_patient_name: collapseLabelSet(existingPatients),
+                    ...(hasMealPackageColumns
+                        ? {
+                              matched_food_ids: mergedMatchedIds,
+                              unknown_food_names: mergedUnknownNames,
+                              unknown_count: mergedUnknownNames.length,
+                              food_count: Math.max(
+                                  Number((found as any).food_count || 0),
+                                  Number(item.entry.food_count || 0)
+                              ),
+                              day_name: (found as any).day_name || item.entry.day_name,
+                              meal_name: (found as any).meal_name || item.entry.meal_name,
+                          }
+                        : {}),
                 })
                 continue
             }
@@ -672,15 +879,25 @@ export async function POST(req: NextRequest) {
         }
 
         for (const update of updates) {
+            const updatePayload: Record<string, unknown> = {
+                repeat_count: update.repeat_count,
+                source_tab_name: update.source_tab_name,
+                source_file_name: update.source_file_name,
+                source_patient_name: update.source_patient_name,
+                updated_at: nowIso,
+            }
+            if (hasMealPackageColumns) {
+                updatePayload.matched_food_ids = update.matched_food_ids || []
+                updatePayload.unknown_food_names = update.unknown_food_names || []
+                updatePayload.unknown_count = Number(update.unknown_count || 0)
+                updatePayload.food_count = Number(update.food_count || 0)
+                updatePayload.day_name = update.day_name || null
+                updatePayload.meal_name = update.meal_name || null
+            }
+
             const { error: updateError } = await supabaseAdmin
                 .from("menu_import_pool")
-                .update({
-                    repeat_count: update.repeat_count,
-                    source_tab_name: update.source_tab_name,
-                    source_file_name: update.source_file_name,
-                    source_patient_name: update.source_patient_name,
-                    updated_at: nowIso,
-                })
+                .update(updatePayload)
                 .eq("id", update.id)
             if (updateError) {
                 return NextResponse.json(
@@ -696,6 +913,14 @@ export async function POST(req: NextRequest) {
 
         const insertedUnique = inserts.length
         const repeatedPackages = Math.max(0, payloadMealPackages - insertedUnique)
+        const totalMatchedFoodIds = Array.from(dedupeMap.values()).reduce(
+            (sum, item) => sum + (Array.isArray(item.entry.matched_food_ids) ? item.entry.matched_food_ids.length : 0),
+            0
+        )
+        const totalUnknownFoods = Array.from(dedupeMap.values()).reduce(
+            (sum, item) => sum + (Array.isArray(item.entry.unknown_food_names) ? item.entry.unknown_food_names.length : 0),
+            0
+        )
 
         return NextResponse.json({
             success: true,
@@ -707,6 +932,8 @@ export async function POST(req: NextRequest) {
                 deduped: updates.length,
                 new_meal_packages: insertedUnique,
                 repeat_meal_packages: repeatedPackages,
+                matched_food_ids_total: totalMatchedFoodIds,
+                unknown_food_names_total: totalUnknownFoods,
                 skipped,
             },
         })
@@ -717,3 +944,4 @@ export async function POST(req: NextRequest) {
         )
     }
 }
+

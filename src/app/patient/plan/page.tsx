@@ -1,7 +1,7 @@
 ﻿"use client"
 
 import { useAuth } from "@/contexts/auth-context"
-import { useEffect, useState, useRef, useMemo } from "react"
+import { useEffect, useState, useRef, useMemo, type ReactNode } from "react"
 import { format } from "date-fns"
 import { tr } from "date-fns/locale"
 import { supabase } from "@/lib/supabase"
@@ -501,10 +501,10 @@ function MacroDashboard({ totals, targets, isVisible, onClose, days, patientInfo
                                         const event = new CustomEvent('trigger-weekly-flavor');
                                         window.dispatchEvent(event);
                                     }}
-                                    className="relative h-5 sm:h-4.5 px-2.5 rounded-md text-[10px] sm:text-xs font-bold transition-all flex justify-center items-center gap-1.5 shadow-[0_4px_20px_-2px_rgba(217,70,239,0.35)] hover:shadow-[0_6px_30px_-2px_rgba(217,70,239,0.55)] bg-gradient-to-br from-fuchsia-500 via-violet-500 to-purple-500 hover:from-fuchsia-600 hover:via-violet-600 hover:to-purple-600 text-white shrink-0 hover:scale-[1.02] active:scale-95"
+                                    className="relative h-5 sm:h-4.5 px-2.5 rounded-md text-[10px] sm:text-xs font-bold transition-all flex justify-center items-center gap-1.5 shadow-[0_4px_20px_-2px_rgba(249,115,22,0.35)] hover:shadow-[0_6px_30px_-2px_rgba(249,115,22,0.55)] bg-gradient-to-br from-amber-500 via-orange-500 to-red-500 hover:from-amber-600 hover:via-orange-600 hover:to-red-600 text-white shrink-0 hover:scale-[1.02] active:scale-95"
                                     title="Haftalık Lezzet Ayarı"
                                 >
-                                    <Sparkles size={12} />
+                                    <UtensilsCrossed size={12} />
                                     <span className="hidden sm:inline">LEZZET</span>
                                 </button>
                             )}
@@ -603,10 +603,10 @@ function MacroDashboard({ totals, targets, isVisible, onClose, days, patientInfo
                                         const event = new CustomEvent('trigger-daily-flavor');
                                         window.dispatchEvent(event);
                                     }}
-                                    className="relative h-5 sm:h-4.5 px-2.5 rounded-md text-[10px] sm:text-xs font-bold transition-all flex justify-center items-center gap-1.5 shadow-[0_4px_20px_-2px_rgba(217,70,239,0.35)] hover:shadow-[0_6px_30px_-2px_rgba(217,70,239,0.55)] bg-gradient-to-br from-fuchsia-500 via-violet-500 to-purple-500 hover:from-fuchsia-600 hover:via-violet-600 hover:to-purple-600 text-white shrink-0 hover:scale-[1.02] active:scale-95"
+                                    className="relative h-5 sm:h-4.5 px-2.5 rounded-md text-[10px] sm:text-xs font-bold transition-all flex justify-center items-center gap-1.5 shadow-[0_4px_20px_-2px_rgba(249,115,22,0.35)] hover:shadow-[0_6px_30px_-2px_rgba(249,115,22,0.55)] bg-gradient-to-br from-amber-500 via-orange-500 to-red-500 hover:from-amber-600 hover:via-orange-600 hover:to-red-600 text-white shrink-0 hover:scale-[1.02] active:scale-95"
                                     title="Günlük Lezzet Ayarı"
                                 >
-                                    <Sparkles size={12} />
+                                    <UtensilsCrossed size={12} />
                                     <span className="hidden sm:inline">LEZZET</span>
                                 </button>
                             )}
@@ -913,6 +913,13 @@ export default function PatientPlanPage() {
     const [editMeasurements, setEditMeasurements] = useState<Record<string, string>>({})
     const [isSavingMeasurements, setIsSavingMeasurements] = useState(false)
 
+    const capitalizeSentenceFirstTR = (value?: ReactNode) => {
+        if (typeof value !== 'string') return value ?? ''
+        const text = value.trim()
+        if (!text) return ''
+        return text.charAt(0).toLocaleUpperCase('tr-TR') + text.slice(1)
+    }
+
     const openWeightModal = async () => {
         // Resolve Display Weight
         const displayWeight = (activeWeek?.weight_log !== undefined && activeWeek.weight_log !== -1)
@@ -1171,6 +1178,7 @@ export default function PatientPlanPage() {
         changes: BalanceChange[];
         initialTotals: { calories: number; protein: number; fat: number; carbs: number; };
         targetMacros: { calories: number; protein: number; fat: number; carbs: number; };
+        macroDisplayDivisor: number;
         defaultSelectAll: boolean;
         resolve: ((approvedChanges: BalanceChange[] | null) => void) | null;
     }>({
@@ -1179,6 +1187,7 @@ export default function PatientPlanPage() {
         changes: [],
         initialTotals: { calories: 0, protein: 0, fat: 0, carbs: 0 },
         targetMacros: { calories: 0, protein: 0, fat: 0, carbs: 0 },
+        macroDisplayDivisor: 1,
         defaultSelectAll: false,
         resolve: null
     })
@@ -1188,7 +1197,7 @@ export default function PatientPlanPage() {
         changes: BalanceChange[],
         initialTotals: { calories: number; protein: number; fat: number; carbs: number; },
         targetMacros: { calories: number; protein: number; fat: number; carbs: number; },
-        options?: { defaultSelectAll?: boolean }
+        options?: { defaultSelectAll?: boolean; macroDisplayDivisor?: number }
     ): Promise<BalanceChange[] | null> => {
         return new Promise((resolve) => {
             setBalanceModal({
@@ -1197,6 +1206,7 @@ export default function PatientPlanPage() {
                 changes,
                 initialTotals,
                 targetMacros,
+                macroDisplayDivisor: Math.max(1, Number(options?.macroDisplayDivisor || 1)),
                 defaultSelectAll: Boolean(options?.defaultSelectAll),
                 resolve
             })
@@ -1212,6 +1222,16 @@ export default function PatientPlanPage() {
         plannerInitPromiseRef.current = null
         plannerKeyRef.current = ''
     }, [patientInfo?.id, user?.id, activePlan?.patient_id])
+
+    // Pre-warm planner in background to reduce first-click wait on auto-plan/balance flows.
+    useEffect(() => {
+        const pid = activePlan?.patient_id || patientInfo?.id
+        const uid = user?.id
+        if (!pid || !uid) return
+        getPlannerInstance(pid, uid).catch(() => {
+            // Keep UI responsive even if warm-up fails; normal flow will retry on demand.
+        })
+    }, [activePlan?.patient_id, patientInfo?.id, user?.id])
 
     async function getPlannerInstance(patientId: string, userId: string) {
         const cacheKey = `${patientId}:${userId}`
@@ -1241,6 +1261,11 @@ export default function PatientPlanPage() {
     const [inlineSearchOpen, setInlineSearchOpen] = useState<string | null>(null)
     const [isMealTemplateModalOpen, setIsMealTemplateModalOpen] = useState(false)
     const [isEditingWeek, setIsEditingWeek] = useState(false)
+    const macroPrioritiesCacheRef = useRef<{
+        patientId: string
+        fetchedAt: number
+        value: { protein: number; carb: number; fat: number }
+    } | null>(null)
 
     // Animation sequences
     const [highlightSequence, setHighlightSequence] = useState<{ activeIndex: number, isActive: boolean }>({ activeIndex: -1, isActive: false })
@@ -1372,7 +1397,7 @@ export default function PatientPlanPage() {
             if (!isBackgroundRefresh) setLoading(true)
 
             const targetId = profile?.id || user?.id
-            console.log("ğŸ” Looking for patient with ID:", targetId)
+            console.log("[PatientPlan] Looking for patient with ID:", targetId)
 
             if (!targetId) return
 
@@ -1401,7 +1426,7 @@ export default function PatientPlanPage() {
 
             if (legacyMatch) {
                 scopedPatientRecord = legacyMatch
-                console.log("ğŸ“‹ Found legacy patient via user_id:", scopedPatientRecord)
+                console.log("[PatientPlan] Found legacy patient via user_id:", scopedPatientRecord)
             } else {
                 // Fallback: try id match (new patients)
                 const { data: directMatch, error: directError } = await supabase
@@ -1420,10 +1445,10 @@ export default function PatientPlanPage() {
 
                 scopedPatientRecord = directMatch
                 patientError = directError
-                console.log("ğŸ“‹ Found patient via id:", scopedPatientRecord)
+                console.log("[PatientPlan] Found patient via id:", scopedPatientRecord)
             }
 
-            console.log("ğŸ“‹ Final patient record:", scopedPatientRecord, patientError)
+            console.log("[PatientPlan] Final patient record:", scopedPatientRecord, patientError)
 
             if (!scopedPatientRecord) {
                 console.error("Patient record not found:", patientError)
@@ -1739,8 +1764,8 @@ export default function PatientPlanPage() {
             if (duplicates.length === 1) {
                 uniqueWeeks.push(duplicates[0])
             } else {
-                console.warn(`âš ï¸ Duplicate Weeks Found for Week ${weekNum}:`, duplicates)
-                console.log("ğŸ” Duplicate Dump:", duplicates.map(d => ({
+                console.warn(`[PatientPlan] Duplicate weeks found for week ${weekNum}:`, duplicates)
+                console.log("[PatientPlan] Duplicate dump:", duplicates.map(d => ({
                     id: d.id,
                     created: d.created_at,
                     hasType: !!d.assigned_diet_type_id,
@@ -1764,7 +1789,7 @@ export default function PatientPlanPage() {
                 })
 
                 const bestWeek = duplicates[0]
-                console.log(`✅ Resolved Duplicate for Week ${weekNum}. Selected ID: ${bestWeek.id} (HasType: ${!!bestWeek.assigned_diet_type_id})`)
+                console.log(`[PatientPlan] Resolved duplicate week ${weekNum}. Selected ID: ${bestWeek.id} (hasType: ${!!bestWeek.assigned_diet_type_id})`)
                 uniqueWeeks.push(bestWeek)
             }
         })
@@ -1898,7 +1923,7 @@ export default function PatientPlanPage() {
                         }
                     }
                     if (progType) {
-                        console.log("âš™ï¸ Program Priority Match: Found via Template Rule", progType.name)
+                        console.log("[PatientPlan] Program priority match via template rule:", progType.name)
                         selectedType = progType
                     }
                 }
@@ -1913,14 +1938,14 @@ export default function PatientPlanPage() {
                 if (selectedType && !selectedType.patient_id) {
                     const override = pDietTypes.find((d: any) => d.parent_diet_type_id === selectedType.id)
                     if (override) {
-                        console.log("âš™ï¸ Auto-Override Applied: Replaced Global", selectedType.name, "with", override.name)
+                        console.log("[PatientPlan] Auto-override applied:", selectedType.name, "->", override.name)
                         selectedType = override
                     }
                 }
                 if (!selectedType && current.assigned_diet_type_id) {
                     const directPrivate = pDietTypes.find((d: any) => d.id === current.assigned_diet_type_id)
                     if (directPrivate) {
-                        console.log("âš™ï¸ Direct Private Match: Found via ID", directPrivate.name)
+                        console.log("[PatientPlan] Direct private diet type via ID:", directPrivate.name)
                         selectedType = directPrivate
                     }
                 }
@@ -1935,14 +1960,14 @@ export default function PatientPlanPage() {
                 // Use the first one as the patient's "default" diet type
                 selectedType = pDietTypes[0]
                 if (selectedType) {
-                    console.log("ğŸ½ï¸ Patient-Specific Diet Type Found:", selectedType.name)
+                    console.log("[PatientPlan] Patient-specific diet type found:", selectedType.name)
                 }
             }
 
             // 4. [FINAL FALLBACK] If still no type, use DEFAULT factors (Admin Logic Mirror)
             // Admin Panel uses: C:3.0, P:1.0, F:0.8 if no type is found.
             if (!selectedType) {
-                console.log("âš™ï¸ Default Fallback: No type found, using Standard Factors (Admin Mirror)")
+                console.log("[PatientPlan] Default diet type fallback applied")
                 selectedType = {
                     id: 'default-fallback',
                     name: 'Genel (Varsayılan)',
@@ -2071,19 +2096,10 @@ export default function PatientPlanPage() {
             .order('day_number', { ascending: true })
             .order('sort_order', { referencedTable: 'diet_meals', ascending: true })
 
-        console.log("ğŸ“… Days data:", days, daysError)
+        // DEBUG logs intentionally minimized for performance and clean console output
 
         // DEBUG: Check first meal of first day to see if foods are joined
-        if (days && days.length > 0 && days[0].diet_meals && days[0].diet_meals.length > 0) {
-            const firstMeal = days[0].diet_meals[0]
-            console.log("ğŸ› First Meal Debug:", {
-                id: firstMeal.id,
-                food_id: firstMeal.food_id,
-                foods: firstMeal.foods, // Check if this is null or populated
-                calories: firstMeal.calories,
-                protein: firstMeal.protein
-            })
-        }
+        // first meal debug log removed
 
         if (daysError) {
             console.error("Days error", daysError)
@@ -2096,7 +2112,7 @@ export default function PatientPlanPage() {
 
         // AUTO-REPAIR: If week exists but has no days (e.g. from a past interrupted creation), create them now
         if (currentDays && currentDays.length === 0) {
-            console.log("ğŸ› ï¸ Bozuk hafta tespit edildi (Günler yok). Otomatik onarılıyor...");
+            console.log("[PatientPlan] Week has no days. Starting auto-repair...")
             const weekRecord = allWeeks.find((w: any) => w.id === weekId);
             if (weekRecord?.start_date) {
                 const daysToInsert = [];
@@ -2114,7 +2130,7 @@ export default function PatientPlanPage() {
                         alert(`Günler oluşturulamadı: ${insertError.message}`);
                     } else if (newDays) {
                         // Re-fetch cleanly to get all relations (diet_meals arrays etc.)
-                        console.log("ğŸ› ï¸ Onarım tamamlandı, günler yeniden yükleniyor...");
+                        console.log("[PatientPlan] Auto-repair done. Reloading week days...")
                         await fetchWeekDays(weekId, customPatientInfo, customDietType, customMealTypes);
                         return; // Stop execution here, the recursive call handles the rest
                     }
@@ -2143,7 +2159,7 @@ export default function PatientPlanPage() {
 
             let foodMap = new Map<string, any>()
             if (missingFoodIds.size > 0) {
-                console.log("âš ï¸ Missing foods detected, fetching manually:", missingFoodIds.size)
+                console.log("[PatientPlan] Missing foods detected, fetching manually:", missingFoodIds.size)
                 const { data: manualFoods } = await supabase
                     .from('foods')
                     .select('id, name, calories, protein, carbs, fat, portion_unit, standard_amount, role, category, keto, lowcarb, vegan, vejeteryan, compatibility_tags, meal_types, min_quantity, max_quantity, step, portion_fixed, max_weekly_freq, priority_score, tags, season_start, season_end')
@@ -2870,7 +2886,7 @@ export default function PatientPlanPage() {
 
     const dailyTargets = (() => {
         if (patientInfo?.macro_target_mode === 'plan' && currentDay) {
-            console.log("ğŸ“Š PORTAL: Using PLAN mode targets for day:", currentDay.day_name)
+            console.log("[PatientPlan] Using PLAN mode targets for day:", currentDay.day_name)
             // FIX: Use target_* values (based on ORIGINAL foods) for targets, not current foods
             // This ensures swapped foods don't change the target
             const planTotals = currentDay.diet_meals.reduce((acc, m) => {
@@ -3074,7 +3090,7 @@ export default function PatientPlanPage() {
 
     async function handleAutoGenerate() {
         if (!user || !patientInfo) {
-            console.warn("âŒ [handleAutoGenerate] ERKEN CIKIS (Eksik user/hasta verisi).");
+            console.warn("[handleAutoGenerate] Early exit: missing user/patient context.");
             return;
         }
 
@@ -3091,7 +3107,7 @@ export default function PatientPlanPage() {
         }
 
         if (!activeWeek?.id || !activePlan?.patient_id) {
-            console.log("âš ï¸ Aktif hafta yok, oluşturuluyor...");
+            console.log("[PatientPlan] Active week missing, creating...");
             await handleCreatePlanAndWeek();
         }
 
@@ -3101,13 +3117,23 @@ export default function PatientPlanPage() {
 
     async function executeAutoGenerate() {
         if (!activeWeek?.id || !activePlan?.patient_id || !user || !patientInfo) return
+        const plannerPatientId = activePlan?.patient_id || patientInfo?.id
+        if (!plannerPatientId) return
 
-        console.log("✅ [executeAutoGenerate] BASLIYOR...");
+        const perfNow = () => (typeof performance !== 'undefined' ? performance.now() : Date.now())
+        const perfStartedAt = perfNow()
+        const perfSteps: Array<{ name: string; ms: number }> = []
+        const perfMark = (name: string, started: number) => {
+            perfSteps.push({ name, ms: perfNow() - started })
+        }
+
         setPlanningPhase('planning')
         setPlanningProgress(0)
         setIsGeneratingPlan(true)
         try {
-            const planner = await getPlannerInstance(activePlan.patient_id, user.id)
+            let t = perfNow()
+            const planner = await getPlannerInstance(plannerPatientId, user.id)
+            perfMark('planner_instance', t)
             setPlanningProgress(10)
 
             const startDate = activeWeek.start_date ? new Date(activeWeek.start_date) : new Date()
@@ -3126,34 +3152,40 @@ export default function PatientPlanPage() {
             let usedSettings: any = null
 
             // 1. Patient Settings
+            t = perfNow()
             const { data: patientSettings } = await supabase
                 .from('planner_settings')
                 .select('slot_config')
                 .eq('patient_id', activePlan.patient_id)
                 .maybeSingle()
+            perfMark('settings_patient_slot_config', t)
             if (patientSettings?.slot_config) usedSettings = patientSettings
 
             // 2. Program Settings
             if (!usedSettings) {
                 const progId = patientInfo?.program_template_id
                 if (progId) {
+                    t = perfNow()
                     const { data: programSettings } = await supabase
                         .from('planner_settings')
                         .select('slot_config')
                         .eq('scope', 'program')
                         .eq('program_template_id', progId)
                         .maybeSingle()
+                    perfMark('settings_program_slot_config', t)
                     if (programSettings?.slot_config) usedSettings = programSettings
                 }
             }
 
             // 3. Global Settings
             if (!usedSettings) {
+                t = perfNow()
                 const { data: globalSettings } = await supabase
                     .from('planner_settings')
                     .select('slot_config')
                     .eq('scope', 'global')
                     .maybeSingle()
+                perfMark('settings_global_slot_config', t)
                 if (globalSettings?.slot_config) usedSettings = globalSettings
             }
 
@@ -3203,10 +3235,17 @@ export default function PatientPlanPage() {
             }
 
             // HEAL STATE: Update DB to match dynamically resolved arrays
-            await supabase.from('diet_weeks').update({
-                meal_types: weekMealTypes,
-                assigned_diet_type_id: resolvedDietType?.id || null
-            }).eq('id', activeWeek?.id)
+            const nextAssignedDietTypeId = resolvedDietType?.id || null
+            const mealTypesChanged = JSON.stringify(activeWeek?.meal_types || []) !== JSON.stringify(weekMealTypes || [])
+            const assignedDietTypeChanged = (activeWeek?.assigned_diet_type_id || null) !== nextAssignedDietTypeId
+            if (mealTypesChanged || assignedDietTypeChanged) {
+                t = perfNow()
+                await supabase.from('diet_weeks').update({
+                    meal_types: weekMealTypes,
+                    assigned_diet_type_id: nextAssignedDietTypeId
+                }).eq('id', activeWeek?.id)
+                perfMark('update_week_settings', t)
+            }
             setPlanningProgress(30)
 
             // 4. Get factors from resolved diet type
@@ -3237,23 +3276,29 @@ export default function PatientPlanPage() {
             // â”€â”€ CROSS-WEEK ROTATION: Collect food usage from other weeks â”€â”€
             const historicalFoodCounts = new Map<string, number>()
             if (activeWeek?.id && activePlan?.id) {
+                t = perfNow()
                 const { data: otherWeeks } = await supabase
                     .from('diet_weeks')
                     .select('id')
                     .eq('diet_plan_id', activePlan.id)
                     .neq('id', activeWeek.id)
+                perfMark('history_fetch_other_weeks', t)
                 if (otherWeeks && otherWeeks.length > 0) {
                     const otherWeekIds = otherWeeks.map(w => w.id)
+                    t = perfNow()
                     const { data: otherDays } = await supabase
                         .from('diet_days')
                         .select('id')
                         .in('diet_week_id', otherWeekIds)
+                    perfMark('history_fetch_other_days', t)
                     if (otherDays && otherDays.length > 0) {
                         const otherDayIds = otherDays.map(d => d.id)
+                        t = perfNow()
                         const { data: otherMeals } = await supabase
                             .from('diet_meals')
                             .select('food_id')
                             .in('diet_day_id', otherDayIds)
+                        perfMark('history_fetch_other_meals', t)
                         if (otherMeals) {
                             for (const m of otherMeals) {
                                 if (m.food_id) {
@@ -3266,6 +3311,7 @@ export default function PatientPlanPage() {
             }
 
             // Generate
+            t = perfNow()
             const plan = await planner.generateWeeklyPlan(
                 startDate,
                 weekMealTypes,
@@ -3276,14 +3322,23 @@ export default function PatientPlanPage() {
                 historicalFoodCounts,
                 activeWeek?.week_number || 1 // Week number for scope_weeks filtering
             )
+            perfMark('planner_generate_weekly_plan', t)
 
             // Direct Apply for Patient
+            t = perfNow()
             await handleApplyAutoPlan(plan)
+            perfMark('apply_auto_plan', t)
 
         } catch (err: any) {
             console.error(err)
             alert("Plan oluşturma hatası: " + err.message)
         } finally {
+            const totalMs = perfNow() - perfStartedAt
+            const slowest = [...perfSteps].sort((a, b) => b.ms - a.ms).slice(0, 3)
+            console.info('[executeAutoGenerate] total_ms=', Math.round(totalMs))
+            if (slowest.length > 0) {
+                console.table(slowest.map((s) => ({ step: s.name, ms: Math.round(s.ms) })))
+            }
             setIsGeneratingPlan(false)
         }
     }
@@ -3322,22 +3377,32 @@ export default function PatientPlanPage() {
             }
 
             if (inserts.length > 0) {
-                // 1. SNAPSHOT (Backup)
-                const { data: currentDays } = await supabase
-                    .from('diet_days')
-                    .select('*, diet_meals(*)')
-                    .eq('diet_week_id', activeWeek.id)
+                const dayIds = days.map((d: any) => d.id)
 
-                if (currentDays && currentDays.some((d: any) => d.diet_meals.length > 0)) {
-                    await supabase.from('diet_snapshots').insert({
-                        diet_week_id: activeWeek.id,
-                        snapshot_data: currentDays,
-                        description: `Auto-Plan Overwrite - ${new Date().toLocaleString('tr-TR')}`
-                    })
+                // 1. SNAPSHOT (Backup) - only fetch heavy payload if week currently has meals.
+                if (dayIds.length > 0) {
+                    const { count: existingMealCount } = await supabase
+                        .from('diet_meals')
+                        .select('id', { count: 'exact', head: true })
+                        .in('diet_day_id', dayIds)
+
+                    if ((existingMealCount || 0) > 0) {
+                        const { data: currentDays } = await supabase
+                            .from('diet_days')
+                            .select('*, diet_meals(*)')
+                            .eq('diet_week_id', activeWeek.id)
+
+                        if (currentDays && currentDays.some((d: any) => d.diet_meals.length > 0)) {
+                            await supabase.from('diet_snapshots').insert({
+                                diet_week_id: activeWeek.id,
+                                snapshot_data: currentDays,
+                                description: `Auto-Plan Overwrite - ${new Date().toLocaleString('tr-TR')}`
+                            })
+                        }
+                    }
                 }
 
                 // 2. DELETE EXISTING
-                const dayIds = days.map((d: any) => d.id)
                 if (dayIds.length > 0) {
                     await supabase.from('diet_meals').delete().in('diet_day_id', dayIds)
                 }
@@ -3354,7 +3419,10 @@ export default function PatientPlanPage() {
                 // Log the activity to trace auto_plan limit
                 let clientIp = 'Bilinmiyor';
                 try {
-                    const ipRes = await fetch('https://api.ipify.org?format=json');
+                    const controller = new AbortController()
+                    const timeout = setTimeout(() => controller.abort(), 800)
+                    const ipRes = await fetch('https://api.ipify.org?format=json', { signal: controller.signal });
+                    clearTimeout(timeout)
                     const ipData = await ipRes.json();
                     clientIp = ipData.ip || 'Bilinmiyor';
                 } catch {
@@ -3954,39 +4022,20 @@ export default function PatientPlanPage() {
                     ? `${dayNameByNumber.get(targetDay) || 'Gün'} Lezzet Ayarı`
                     : 'Haftalık Lezzet Ayarı'
 
-                const modalInitialTotals = displayDivisor > 1
-                    ? {
-                        calories: initialTotals.calories / displayDivisor,
-                        protein: initialTotals.protein / displayDivisor,
-                        carbs: initialTotals.carbs / displayDivisor,
-                        fat: initialTotals.fat / displayDivisor,
-                    }
-                    : initialTotals
-
                 const modalTargetTotals = {
-                    calories: targetCals,
-                    protein: targetProt,
-                    carbs: targetCarbs,
-                    fat: targetFat,
+                    calories: isWeeklyFlavor ? (targetCals * dayCount) : targetCals,
+                    protein: isWeeklyFlavor ? (targetProt * dayCount) : targetProt,
+                    carbs: isWeeklyFlavor ? (targetCarbs * dayCount) : targetCarbs,
+                    fat: isWeeklyFlavor ? (targetFat * dayCount) : targetFat,
                 }
-
-                const modalFlavorChanges = displayDivisor > 1
-                    ? flavorChanges.map((c) => ({
-                        ...c,
-                        diffCals: c.diffCals / displayDivisor,
-                        diffProt: c.diffProt / displayDivisor,
-                        diffCarbs: c.diffCarbs / displayDivisor,
-                        diffFat: c.diffFat / displayDivisor,
-                    }))
-                    : flavorChanges
 
                 setIsTuneLoading(false)
                 const approvedFlavorChanges = await showBalanceModal(
                     flavorTitle,
-                    modalFlavorChanges,
-                    modalInitialTotals,
+                    flavorChanges,
+                    initialTotals,
                     modalTargetTotals,
-                    { defaultSelectAll: true }
+                    { defaultSelectAll: true, macroDisplayDivisor: displayDivisor }
                 )
 
                 if (!approvedFlavorChanges || approvedFlavorChanges.length === 0) return
@@ -4261,16 +4310,45 @@ export default function PatientPlanPage() {
         // Fetch macro priorities
         let macroPriorities = { protein: 5, carb: 5, fat: 5 }
         try {
-            let pSettings = null
-            if (patientInfo?.id) {
-                const { data } = await supabase.from('planner_settings').select('macro_priorities').eq('scope', 'patient').eq('patient_id', patientInfo.id).maybeSingle()
-                if (data?.macro_priorities) pSettings = data
+            const cache = macroPrioritiesCacheRef.current
+            const now = Date.now()
+            const isFresh = Boolean(
+                cache &&
+                patientInfo?.id &&
+                cache.patientId === patientInfo.id &&
+                (now - cache.fetchedAt) < (5 * 60 * 1000)
+            )
+
+            if (isFresh && cache) {
+                macroPriorities = cache.value
+            } else {
+                let pSettings = null
+                if (patientInfo?.id) {
+                    const { data } = await supabase
+                        .from('planner_settings')
+                        .select('macro_priorities')
+                        .eq('scope', 'patient')
+                        .eq('patient_id', patientInfo.id)
+                        .maybeSingle()
+                    if (data?.macro_priorities) pSettings = data
+                }
+                if (!pSettings) {
+                    const { data } = await supabase
+                        .from('planner_settings')
+                        .select('macro_priorities')
+                        .eq('scope', 'global')
+                        .maybeSingle()
+                    if (data?.macro_priorities) pSettings = data
+                }
+                if (pSettings?.macro_priorities) macroPriorities = pSettings.macro_priorities
+                if (patientInfo?.id) {
+                    macroPrioritiesCacheRef.current = {
+                        patientId: patientInfo.id,
+                        fetchedAt: now,
+                        value: macroPriorities
+                    }
+                }
             }
-            if (!pSettings) {
-                const { data } = await supabase.from('planner_settings').select('macro_priorities').eq('scope', 'global').maybeSingle()
-                if (data?.macro_priorities) pSettings = data
-            }
-            if (pSettings?.macro_priorities) macroPriorities = pSettings.macro_priorities
         } catch (e) { /* defaults */ }
 
         // 1. Gather editable foods
@@ -4468,7 +4546,9 @@ export default function PatientPlanPage() {
                 const availableSlots = Array.from(new Set(currentDay.diet_meals.map((m: any) => m.meal_time)))
                 const topUpSlot = (availableSlots.includes('ARA ÖĞÜN') ? 'ARA ÖĞÜN' : (availableSlots[availableSlots.length - 1] || 'AKŞAM')) as string
 
-                const planner = await getPlannerInstance(patientInfo.id, user.id);
+                const plannerPid = activePlan?.patient_id || patientInfo?.id
+                if (!plannerPid) throw new Error('Hasta ID bulunamadı')
+                const planner = await getPlannerInstance(plannerPid, user.id);
                 // Gather existing week foods for frequency checks
                 const existingFoods: any[] = []
                 if (activeWeek?.week_days) {
@@ -4686,7 +4766,7 @@ export default function PatientPlanPage() {
                 .order('created_at', { ascending: false })
                 .limit(1)
 
-            console.log('DEBUG: Patient handleUndo - Snapshots found:', snapshots?.length)
+            console.log('[PatientPlan] Undo snapshots found:', snapshots?.length)
 
             if (!snapshots || snapshots.length === 0) {
                 alert("Geri alınacak işlem bulunamadı.")
@@ -4695,7 +4775,7 @@ export default function PatientPlanPage() {
 
             const snapshot = snapshots[0]
             const snapshotData = snapshot.snapshot_data as any[]
-            console.log('DEBUG: Patient handleUndo - Snapshot Data:', snapshotData)
+            // detailed snapshot payload log removed
 
             // Delete current
             const { data: days } = await supabase.from('diet_days').select('id').eq('diet_week_id', activeWeek.id)
@@ -4729,7 +4809,7 @@ export default function PatientPlanPage() {
                 }
             }
 
-            console.log('DEBUG: Patient handleUndo - Inserts prepared:', inserts.length, inserts)
+            console.log('[PatientPlan] Undo inserts prepared:', inserts.length)
 
             if (inserts.length > 0) {
                 const { error } = await supabase.from('diet_meals').insert(inserts)
@@ -5424,9 +5504,9 @@ export default function PatientPlanPage() {
                                                                         return null
                                                                     })()}
 
-                                                                    <span
-                                                                        className={cn(
-                                                                            "font-medium text-sm transition-colors capitalize leading-tight whitespace-normal text-left",
+                                                                        <span
+                                                                            className={cn(
+                                                                            "font-medium text-sm transition-colors leading-tight whitespace-normal text-left",
                                                                             findRecipeMatch(food.food_name, manualMatches || [], bans || [], cards || [], !!(food.image_url || food.food_meta?.source === 'user_proposal' || food.is_custom)).length > 0
                                                                                 ? "text-gray-900 group-hover:text-green-700 cursor-pointer"
                                                                                 : "text-gray-900 group-hover:text-green-700"
@@ -5447,7 +5527,7 @@ export default function PatientPlanPage() {
                                                                         }}
                                                                     >
 
-                                                                        {getScaledFoodName(food.food_name, food.amount || 1, scalableUnits)}
+                                                                        {capitalizeSentenceFirstTR(getScaledFoodName(food.food_name, food.amount || 1, scalableUnits))}
                                                                     </span>
                                                                 </div>
                                                             </div>
@@ -5791,14 +5871,9 @@ export default function PatientPlanPage() {
                                     mainDishOfSlot={(() => {
                                         // Find potential main dish in the SAME meal slot
                                         // Looks for role "ana yemek"
-                                        // Check if foodToSwap.slotFoods is populated
                                         if (!foodToSwap.slotFoods || foodToSwap.slotFoods.length === 0) {
-                                            console.log("âš ï¸ No slotFoods available for main dish check")
                                             return null
                                         }
-
-                                        // Debug log to see what we have in slot
-                                        console.log("ğŸ” Checking for Main Dish in slot:", foodToSwap.slotFoods.map(f => `${f.food_name}(${f.role})`))
 
                                         const mainDish = foodToSwap.slotFoods.find(f => {
                                             const role = (f.role || "").toLowerCase()
@@ -6049,7 +6124,7 @@ export default function PatientPlanPage() {
                                 <div className="absolute inset-2 rounded-full border-4 border-slate-800 border-b-teal-400 animate-[spin_2s_linear_reverse_infinite] opacity-50"></div>
                                 <div className="absolute inset-0 flex items-center justify-center">
                                     {tuneLoadMode === 'flavor'
-                                        ? <Sparkles size={34} className="text-emerald-400 animate-pulse" />
+                                        ? <UtensilsCrossed size={34} className="text-emerald-400 animate-pulse" />
                                         : <Scale size={34} className="text-emerald-400 animate-pulse" />}
                                 </div>
                             </div>
@@ -6218,6 +6293,7 @@ export default function PatientPlanPage() {
                 changes={balanceModal.changes}
                 initialTotals={balanceModal.initialTotals}
                 targetMacros={balanceModal.targetMacros}
+                macroDisplayDivisor={balanceModal.macroDisplayDivisor}
                 defaultSelectAll={balanceModal.defaultSelectAll}
                 onClose={() => {
                     balanceModal.resolve?.(null)

@@ -1,4 +1,4 @@
-import {
+﻿import {
     Dialog,
     DialogContent,
     DialogHeader,
@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import React, { useMemo, useState, useEffect, useRef } from "react"
-import { Pencil, Check, Wand2, Lock, Unlock, Scale, ChevronUp, ChevronDown, RotateCcw, Sparkles } from "lucide-react"
+import { Pencil, Check, Wand2, Lock, Unlock, Scale, ChevronUp, ChevronDown, RotateCcw, UtensilsCrossed } from "lucide-react"
 import { FoodEditDialog } from "@/components/diet/food-sidebar"
 import { SettingsDialog } from "@/components/planner/settings-dialog"
 import { PatientRulesDialog } from "@/components/planner/patient-rules-dialog"
@@ -229,7 +229,7 @@ interface AutoPlanDialogProps {
     onConfirm: (plan: any) => void
     loading?: boolean
     mealTypes?: string[] // Optional for sorting
-    onRegenerate?: (macroAdjustments?: Record<string, number>) => void
+    onRegenerate?: (macroAdjustments?: Record<string, number>) => void | Promise<void>
     patientId?: string // Added patientId
     programTemplateId?: string | null // Program template for fallback
     activeWeekId?: string // Active week for slot config sync
@@ -270,12 +270,20 @@ export function AutoPlanDialog({ open, onOpenChange, plan, onConfirm, loading, m
     const [macroAdjustments, setMacroAdjustments] = useState<Record<string, number>>({ protein: 0, carb: 0, fat: 0 })
     const [isBalancing, setIsBalancing] = useState(false)
     const [isFlavorTuning, setIsFlavorTuning] = useState(false)
+    const [actionLoader, setActionLoader] = useState<{
+        type: 'regenerate' | 'balance' | 'flavor'
+        mode: 'weekly' | 'daily'
+        day?: number
+    } | null>(null)
+    const [actionLoaderProgress, setActionLoaderProgress] = useState(8)
+    const [regenerateLoadingSeen, setRegenerateLoadingSeen] = useState(false)
     const [flavorModal, setFlavorModal] = useState<{
         isOpen: boolean
         title: string
         changes: BalanceChange[]
         initialTotals: { calories: number; protein: number; fat: number; carbs: number }
         targetMacros: { calories: number; protein: number; fat: number; carbs: number }
+        macroDisplayDivisor: number
         resolve: ((approvedChanges: BalanceChange[] | null) => void) | null
     }>({
         isOpen: false,
@@ -283,6 +291,7 @@ export function AutoPlanDialog({ open, onOpenChange, plan, onConfirm, loading, m
         changes: [],
         initialTotals: { calories: 0, protein: 0, fat: 0, carbs: 0 },
         targetMacros: { calories: 0, protein: 0, fat: 0, carbs: 0 },
+        macroDisplayDivisor: 1,
         resolve: null
     })
     const [dialogSize, setDialogSize] = useState(getInitialDialogSize)
@@ -333,6 +342,13 @@ export function AutoPlanDialog({ open, onOpenChange, plan, onConfirm, loading, m
         const nextSize = getInitialDialogSize()
         setDialogSize(nextSize)
         setDialogPosition(getCenteredPosition(nextSize))
+    }, [open])
+
+    useEffect(() => {
+        if (open) return
+        setActionLoader(null)
+        setActionLoaderProgress(8)
+        setRegenerateLoadingSeen(false)
     }, [open])
 
     useEffect(() => {
@@ -466,6 +482,30 @@ export function AutoPlanDialog({ open, onOpenChange, plan, onConfirm, loading, m
     }
 
     const safeDialogPosition = clampPosition(dialogPosition)
+    
+    // CACHE PLANNER INSTANCE
+    const plannerRef = useRef<Planner | null>(null)
+    const initPromiseRef = useRef<Promise<Planner> | null>(null)
+
+    useEffect(() => {
+        plannerRef.current = null
+        initPromiseRef.current = null
+    }, [patientId, userId])
+
+    useEffect(() => {
+        if (!actionLoader) return
+
+        setActionLoaderProgress(8)
+        const tick = window.setInterval(() => {
+            setActionLoaderProgress(prev => {
+                if (prev >= 92) return 92
+                const delta = prev < 35 ? 7 : prev < 70 ? 4 : 2
+                return Math.min(92, prev + delta)
+            })
+        }, 380)
+
+        return () => window.clearInterval(tick)
+    }, [actionLoader])
 
     // Helper to calc total calories of Plan
     // MOVED DOWN AFTER NULL CHECK
@@ -508,31 +548,20 @@ export function AutoPlanDialog({ open, onOpenChange, plan, onConfirm, loading, m
         return { dayMacros, avg }
     }, [localPlan])
 
-    if (!localPlan) return null
-
     // Helper to calc total calories of Plan
-    const planTotal = localPlan.meals.reduce((acc: any, m: any) => ({
+    const planTotal = (safePlan.meals || []).reduce((acc: any, m: any) => ({
         calories: acc.calories + (m.calories || m.food.calories || 0) * (m.portion_multiplier || 1),
         protein: acc.protein + (m.protein || m.food.protein || 0) * (m.portion_multiplier || 1),
         carbs: acc.carbs + (m.carbs || m.food.carbs || 0) * (m.portion_multiplier || 1),
         fat: acc.fat + (m.fat || m.food.fat || 0) * (m.portion_multiplier || 1),
     }), { calories: 0, protein: 0, carbs: 0, fat: 0 })
 
-    const tolerances = localPlan.settings?.portion_settings?.macro_tolerances || {
+    const tolerances = safePlan.settings?.portion_settings?.macro_tolerances || {
         protein: { min: 80, max: 120 },
         carb: { min: 80, max: 120 },
         fat: { min: 80, max: 120 },
         calories: { min: 90, max: 110 }
     }
-
-    // CACHE PLANNER INSTANCE
-    const plannerRef = useRef<Planner | null>(null)
-    const initPromiseRef = useRef<Promise<Planner> | null>(null)
-
-    useEffect(() => {
-        plannerRef.current = null
-        initPromiseRef.current = null
-    }, [patientId, userId])
 
     async function getPlanner() {
         if (!patientId || !userId) throw new Error("Missing patientId or userId")
@@ -551,7 +580,8 @@ export function AutoPlanDialog({ open, onOpenChange, plan, onConfirm, loading, m
         title: string,
         changes: BalanceChange[],
         initialTotals: { calories: number; protein: number; fat: number; carbs: number },
-        targetMacros: { calories: number; protein: number; fat: number; carbs: number }
+        targetMacros: { calories: number; protein: number; fat: number; carbs: number },
+        macroDisplayDivisor: number = 1
     ): Promise<BalanceChange[] | null> => {
         return new Promise((resolve) => {
             setFlavorModal({
@@ -560,6 +590,7 @@ export function AutoPlanDialog({ open, onOpenChange, plan, onConfirm, loading, m
                 changes,
                 initialTotals,
                 targetMacros,
+                macroDisplayDivisor: Math.max(1, Math.round(macroDisplayDivisor || 1)),
                 resolve
             })
         })
@@ -573,6 +604,7 @@ export function AutoPlanDialog({ open, onOpenChange, plan, onConfirm, loading, m
         }
         if (isFlavorTuning) return
         setIsBalancing(true)
+        setActionLoader({ type: 'balance', mode, day: targetDay })
         try {
             const planner = await getPlanner()
             const { plan: balanced, changes } = await planner.balancePlan(localPlan, mode, targetDay)
@@ -587,22 +619,25 @@ export function AutoPlanDialog({ open, onOpenChange, plan, onConfirm, loading, m
             alert('Dengeleme sırasında hata oluştu.')
         } finally {
             setIsBalancing(false)
+            setActionLoaderProgress(100)
+            window.setTimeout(() => setActionLoader(null), 200)
         }
     }
 
     // FLAVOR TUNE (Gurme / Lezzet Ayari) using Planner engine
     async function handleFlavorTune(mode: 'weekly' | 'daily' = 'weekly', targetDay?: number) {
         if (!localPlan?.meals?.length || !patientId || !userId) {
-            alert('Lezzet ayari icin hasta ve kullanici bilgisi gerekli.')
+            alert('Lezzet ayarı için hasta ve kullanıcı bilgisi gerekli.')
             return
         }
         if (isBalancing) return
         setIsFlavorTuning(true)
+        setActionLoader({ type: 'flavor', mode, day: targetDay })
         try {
             const planner = await getPlanner()
             const { plan: tunedPlan, changes } = await planner.applyFlavorTune(localPlan, mode, targetDay)
             if (changes.length === 0) {
-                alert('Lezzet ayari icin uygun degisiklik bulunamadi.')
+                alert('Lezzet ayarı için uygun değişiklik bulunamadı.')
             } else {
                 const inScope = (m: any) => (mode === 'daily' && targetDay ? m.day === targetDay : true)
                 const sourceMeals = (localPlan.meals || []).filter(inScope)
@@ -634,6 +669,73 @@ export function AutoPlanDialog({ open, onOpenChange, plan, onConfirm, loading, m
                 const allKeys = new Set<string>([...Array.from(byOriginal.keys()), ...Array.from(byNext.keys())])
                 const modalChanges: BalanceChange[] = []
                 let i = 0
+                const getSourceMeta = (meal: any) => {
+                    const src = meal?.source || {}
+                    const ruleId = (src.lock_rule_id || src.rule_id || null) as string | null
+                    const ruleName = (src.lock_rule || src.rule || null) as string | null
+                    const sourceType = (src.type || null) as string | null
+                    const reason = src.flavor_reason
+                    const weighted = reason?.weighted || {}
+                    const weightedBase = reason?.weighted_base || {}
+                    const patternSource = reason?.pattern_source
+                    const patternReason = typeof reason?.pattern_reason === 'string' ? reason.pattern_reason.trim() : ''
+                    const reasonBits: string[] = []
+                    const originalFoodName = typeof reason?.original_food_name === 'string' ? reason.original_food_name.trim() : ''
+                    const candidateFoodName = typeof reason?.candidate_food_name === 'string' ? reason.candidate_food_name.trim() : ''
+
+                    const formatDeltaLine = (label: string, candidateVal: unknown, baseVal: unknown) => {
+                        if (typeof candidateVal !== 'number') return null
+                        const candidateNum = Number(candidateVal)
+                        const baseNum = typeof baseVal === 'number' ? Number(baseVal) : 0
+                        const delta = candidateNum - baseNum
+                        return `${label} ${baseNum >= 0 ? '+' : ''}${baseNum.toFixed(2)} → ${candidateNum >= 0 ? '+' : ''}${candidateNum.toFixed(2)} (${delta >= 0 ? '+' : ''}${delta.toFixed(2)})`
+                    }
+
+                    if (originalFoodName || candidateFoodName) {
+                        if (originalFoodName) reasonBits.push(`Orijinal yemek: ${originalFoodName}`)
+                        if (candidateFoodName) reasonBits.push(`Aday yemek: ${candidateFoodName}`)
+                    }
+                    const macroLine = formatDeltaLine('Makro', weighted?.macro, weightedBase?.macro)
+                    const flavorLine = formatDeltaLine('Lezzet', weighted?.flavor, weightedBase?.flavor)
+                    const compatibilityLine = formatDeltaLine('Uyum', weighted?.compatibility, weightedBase?.compatibility)
+                    const diversityLine = formatDeltaLine('Çeşitlilik', weighted?.diversity, weightedBase?.diversity)
+                    const patternLine = formatDeltaLine('Örüntü', weighted?.pattern, weightedBase?.pattern)
+                    if (macroLine) reasonBits.push(macroLine)
+                    if (flavorLine) reasonBits.push(flavorLine)
+                    if (compatibilityLine) reasonBits.push(compatibilityLine)
+                    if (diversityLine) reasonBits.push(diversityLine)
+                    if (patternLine) reasonBits.push(patternLine)
+
+                    if (patternSource && typeof patternSource === 'object') {
+                        const lhs = patternSource.lhs_food_name || patternSource.lhs_food_id || 'Bilinmeyen'
+                        const rhs = patternSource.rhs_food_name || patternSource.rhs_food_id || 'Bilinmeyen'
+                        reasonBits.push(`Örüntü kaynağı: ${lhs} → ${rhs} (conf ${Number(patternSource.confidence || 0).toFixed(2)}, lift ${Number(patternSource.lift || 0).toFixed(2)}, support ${Number(patternSource.support_count || 0)})`)
+                    } else if (patternReason && !/katk[iı]\s*bulundu/i.test(patternReason)) {
+                        reasonBits.push(`Örüntü notu: ${patternReason}`)
+                    } else if (typeof weighted.pattern === 'number' && Math.abs(Number(weighted.pattern)) < 0.0001) {
+                        reasonBits.push('Örüntü notu: Slotta eşleşen örüntü yok veya eşik altı')
+                    }
+
+                    if (!reasonBits.length && sourceType) {
+                        reasonBits.push(`Kaynak tip: ${String(sourceType)}`)
+                    }
+
+                    const safeNum = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
+                    const totalScore =
+                        safeNum(weighted?.macro) +
+                        safeNum(weighted?.flavor) +
+                        safeNum(weighted?.compatibility) +
+                        safeNum(weighted?.diversity) +
+                        safeNum(weighted?.pattern)
+
+                    return {
+                        sourceRuleId: ruleId || undefined,
+                        sourceRuleName: ruleName || undefined,
+                        sourceReference: reasonBits.join(' | ') || undefined,
+                        sourceTotalScore: Number(totalScore.toFixed(4)),
+                        sourceFlavorScore: safeNum(weighted?.flavor)
+                    }
+                }
                 for (const key of allKeys) {
                     const originals = [...(byOriginal.get(key) || [])]
                     const tuned = [...(byNext.get(key) || [])]
@@ -657,6 +759,7 @@ export function AutoPlanDialog({ open, onOpenChange, plan, onConfirm, loading, m
                         const newMult = Number(tunedMeal.portion_multiplier) || 1
                         if (Math.abs(newMult - oldMult) <= 0.01) continue
                         const dMult = newMult - oldMult
+                        const sourceMeta = getSourceMeta(tunedMeal || exact)
                         modalChanges.push({
                             id: `flavor_portion_${i++}`,
                             type: 'portion',
@@ -670,7 +773,8 @@ export function AutoPlanDialog({ open, onOpenChange, plan, onConfirm, loading, m
                             diffCals: (Number(exact.food?.calories) || 0) * dMult,
                             diffProt: (Number(exact.food?.protein) || 0) * dMult,
                             diffFat: (Number(exact.food?.fat) || 0) * dMult,
-                            diffCarbs: (Number(exact.food?.carbs) || 0) * dMult
+                            diffCarbs: (Number(exact.food?.carbs) || 0) * dMult,
+                            ...sourceMeta
                         })
                     }
 
@@ -682,6 +786,7 @@ export function AutoPlanDialog({ open, onOpenChange, plan, onConfirm, loading, m
                         const original = originalPool[idx >= 0 ? idx : 0]
                         if (!original) {
                             const mult = Number(tunedMeal.portion_multiplier) || 1
+                            const sourceMeta = getSourceMeta(tunedMeal)
                             modalChanges.push({
                                 id: `flavor_add_${i++}`,
                                 type: 'add',
@@ -695,13 +800,15 @@ export function AutoPlanDialog({ open, onOpenChange, plan, onConfirm, loading, m
                                 diffCals: (Number(tunedMeal.food?.calories) || 0) * mult,
                                 diffProt: (Number(tunedMeal.food?.protein) || 0) * mult,
                                 diffFat: (Number(tunedMeal.food?.fat) || 0) * mult,
-                                diffCarbs: (Number(tunedMeal.food?.carbs) || 0) * mult
+                                diffCarbs: (Number(tunedMeal.food?.carbs) || 0) * mult,
+                                ...sourceMeta
                             })
                             continue
                         }
                         originalPool.splice(idx >= 0 ? idx : 0, 1)
                         const oldMult = Number(original.portion_multiplier) || 1
                         const newMult = Number(tunedMeal.portion_multiplier) || 1
+                        const sourceMeta = getSourceMeta(tunedMeal || original)
                         modalChanges.push({
                             id: `flavor_swap_${i++}`,
                             type: 'swap',
@@ -716,11 +823,13 @@ export function AutoPlanDialog({ open, onOpenChange, plan, onConfirm, loading, m
                             diffCals: ((Number(tunedMeal.food?.calories) || 0) * newMult) - ((Number(original.food?.calories) || 0) * oldMult),
                             diffProt: ((Number(tunedMeal.food?.protein) || 0) * newMult) - ((Number(original.food?.protein) || 0) * oldMult),
                             diffFat: ((Number(tunedMeal.food?.fat) || 0) * newMult) - ((Number(original.food?.fat) || 0) * oldMult),
-                            diffCarbs: ((Number(tunedMeal.food?.carbs) || 0) * newMult) - ((Number(original.food?.carbs) || 0) * oldMult)
+                            diffCarbs: ((Number(tunedMeal.food?.carbs) || 0) * newMult) - ((Number(original.food?.carbs) || 0) * oldMult),
+                            ...sourceMeta
                         })
                     }
                     originalPool.forEach((original: any) => {
                         const oldMult = Number(original.portion_multiplier) || 1
+                        const sourceMeta = getSourceMeta(original)
                         modalChanges.push({
                             id: `flavor_remove_${i++}`,
                             type: 'remove',
@@ -733,17 +842,21 @@ export function AutoPlanDialog({ open, onOpenChange, plan, onConfirm, loading, m
                             diffCals: -((Number(original.food?.calories) || 0) * oldMult),
                             diffProt: -((Number(original.food?.protein) || 0) * oldMult),
                             diffFat: -((Number(original.food?.fat) || 0) * oldMult),
-                            diffCarbs: -((Number(original.food?.carbs) || 0) * oldMult)
+                            diffCarbs: -((Number(original.food?.carbs) || 0) * oldMult),
+                            ...sourceMeta
                         })
                     })
                 }
 
                 if (modalChanges.length === 0) {
-                    alert('Lezzet ayari icin uygulanabilir degisiklik bulunamadi.')
+                    alert('Lezzet ayarı için uygulanabilir değişiklik bulunamadı.')
                     return
                 }
 
                 const dayCount = mode === 'weekly' ? 7 : 1
+                const displayDayCount = mode === 'weekly'
+                    ? Math.max(1, new Set(sourceMeals.map((m: any) => Number(m?.day || 0))).size)
+                    : 1
                 const approved = await showFlavorModal(
                     mode === 'weekly' ? 'Haftalık Lezzet Ayarı' : `Gün ${targetDay || ''} Lezzet Ayarı`,
                     modalChanges,
@@ -753,7 +866,8 @@ export function AutoPlanDialog({ open, onOpenChange, plan, onConfirm, loading, m
                         protein: target.protein * dayCount,
                         carbs: target.carbs * dayCount,
                         fat: target.fat * dayCount
-                    }
+                    },
+                    displayDayCount
                 )
 
                 if (!approved || approved.length === 0) return
@@ -796,9 +910,11 @@ export function AutoPlanDialog({ open, onOpenChange, plan, onConfirm, loading, m
             }
         } catch (err) {
             console.error('[FlavorTune] Error:', err)
-            alert('Lezzet ayari sirasinda hata olustu.')
+            alert('Lezzet ayarı sırasında hata oluştu.')
         } finally {
             setIsFlavorTuning(false)
+            setActionLoaderProgress(100)
+            window.setTimeout(() => setActionLoader(null), 200)
         }
     }
 
@@ -824,13 +940,74 @@ export function AutoPlanDialog({ open, onOpenChange, plan, onConfirm, loading, m
     adjustedTarget.calories = adjustedTarget.protein * 4 + adjustedTarget.carbs * 4 + adjustedTarget.fat * 9
 
     function handleRegenerateWithAdjustments() {
-        if (onRegenerate) {
-            const adjustments: Record<string, number> = {}
-            if (macroAdjustments.protein) adjustments.protein = 1 + macroAdjustments.protein * 0.1
-            if (macroAdjustments.carb) adjustments.carb = 1 + macroAdjustments.carb * 0.1
-            if (macroAdjustments.fat) adjustments.fat = 1 + macroAdjustments.fat * 0.1
-            onRegenerate(Object.keys(adjustments).length > 0 ? adjustments : undefined)
+        if (!onRegenerate) return
+        const adjustments: Record<string, number> = {}
+        if (macroAdjustments.protein) adjustments.protein = 1 + macroAdjustments.protein * 0.1
+        if (macroAdjustments.carb) adjustments.carb = 1 + macroAdjustments.carb * 0.1
+        if (macroAdjustments.fat) adjustments.fat = 1 + macroAdjustments.fat * 0.1
+
+        setRegenerateLoadingSeen(false)
+        setActionLoader({ type: 'regenerate', mode: 'weekly' })
+        Promise.resolve(onRegenerate(Object.keys(adjustments).length > 0 ? adjustments : undefined))
+            .catch((err) => {
+                console.error('[AutoPlanDialog] Regenerate error:', err)
+                setActionLoaderProgress(100)
+                window.setTimeout(() => setActionLoader(null), 250)
+            })
+    }
+
+    useEffect(() => {
+        if (actionLoader?.type !== 'regenerate') return
+        if (loading) {
+            if (!regenerateLoadingSeen) setRegenerateLoadingSeen(true)
+            return
         }
+        if (!regenerateLoadingSeen) return
+        setActionLoaderProgress(100)
+        const t = window.setTimeout(() => setActionLoader(null), 250)
+        return () => window.clearTimeout(t)
+    }, [loading, actionLoader?.type, regenerateLoadingSeen])
+
+    const actionLoaderMeta = useMemo(() => {
+        if (!actionLoader) return null
+        const scopeLabel = actionLoader.mode === 'daily' ? `Gün ${actionLoader.day || ''}` : 'Haftalık'
+        if (actionLoader.type === 'balance') {
+            return {
+                title: 'Makro Dengeleme Yapılıyor...',
+                subtitle: `${scopeLabel} dengeleme önerileri hesaplanıyor`,
+                icon: Scale,
+                accent: 'from-emerald-500 to-teal-400'
+            }
+        }
+        if (actionLoader.type === 'flavor') {
+            return {
+                title: 'Lezzet Önerileri Hazırlanıyor...',
+                subtitle: `${scopeLabel} lezzet değişimleri analiz ediliyor`,
+                icon: UtensilsCrossed,
+                accent: 'from-orange-500 to-amber-400'
+            }
+        }
+        return {
+            title: 'Plan Yeniden Oluşturuluyor...',
+            subtitle: 'Hedef makrolar ve kurallar yeniden hesaplanıyor',
+            icon: RotateCcw,
+            accent: 'from-violet-500 to-fuchsia-400'
+        }
+    }, [actionLoader])
+
+    const getLogEventLabel = (event?: string) => {
+        if (event === 'select') return 'Uygulandı'
+        if (event === 'reject') return 'Atlandı'
+        if (event === 'error') return 'Hata'
+        if (event === 'info') return 'Bilgi'
+        return event || 'Kayıt'
+    }
+
+    const getLogEventClass = (event?: string) => {
+        if (event === 'error') return 'bg-red-50 text-red-800'
+        if (event === 'reject') return 'text-orange-600'
+        if (event === 'select') return 'text-green-700'
+        return 'text-slate-600'
     }
 
     return (
@@ -904,7 +1081,7 @@ export function AutoPlanDialog({ open, onOpenChange, plan, onConfirm, loading, m
                                 </div>
 
                                 {/* Weekly Balance Button */}
-                                <Button variant="outline" size="sm" onClick={() => handleSmartBalance('weekly')} disabled={isBalancing || isFlavorTuning} className="h-8 gap-1 text-xs" title="Haftalık Akıllı Dengele">
+                                <Button variant="outline" size="sm" onClick={() => handleSmartBalance('weekly')} disabled={isBalancing || isFlavorTuning || !!actionLoader} className="h-8 gap-1 text-xs" title="Haftalık Akıllı Dengele">
                                     <Scale size={14} className={isBalancing ? 'animate-spin text-slate-400' : 'text-emerald-600'} />
                                     {isBalancing ? 'Dengeleniyor...' : 'Dengele'}
                                 </Button>
@@ -912,11 +1089,11 @@ export function AutoPlanDialog({ open, onOpenChange, plan, onConfirm, loading, m
                                     variant="outline"
                                     size="sm"
                                     onClick={() => handleFlavorTune('weekly')}
-                                    disabled={isBalancing || isFlavorTuning}
+                                    disabled={isBalancing || isFlavorTuning || !!actionLoader}
                                     className="h-8 gap-1 text-xs"
                                     title="Haftalik Lezzet Ayari"
                                 >
-                                    <Sparkles size={14} className={isFlavorTuning ? 'animate-spin text-slate-400' : 'text-violet-600'} />
+                                    <UtensilsCrossed size={14} className={isFlavorTuning ? 'animate-spin text-slate-400' : 'text-orange-600'} />
                                     {isFlavorTuning ? 'Lezzetleniyor...' : 'Lezzet Ayari'}
                                 </Button>
 
@@ -926,7 +1103,7 @@ export function AutoPlanDialog({ open, onOpenChange, plan, onConfirm, loading, m
                                         variant="outline"
                                         size="sm"
                                         onClick={handleRegenerateWithAdjustments}
-                                        disabled={loading}
+                                        disabled={loading || !!actionLoader}
                                         className="h-8 gap-2"
                                     >
                                         <Wand2 size={14} className={loading ? "animate-spin" : "text-purple-600"} />
@@ -974,7 +1151,7 @@ export function AutoPlanDialog({ open, onOpenChange, plan, onConfirm, loading, m
                                                 <span className="text-slate-400">P:{dayActual.protein}g K:{dayActual.carbs}g Y:{dayActual.fat}g</span>
                                                 <button
                                                     onClick={() => handleSmartBalance('daily', dayNum)}
-                                                    disabled={isBalancing || isFlavorTuning}
+                                                    disabled={isBalancing || isFlavorTuning || !!actionLoader}
                                                     className="p-0.5 rounded hover:bg-emerald-100 text-emerald-600 transition-colors disabled:opacity-50"
                                                     title={`Gün ${dayNum} Dengele`}
                                                 >
@@ -982,11 +1159,11 @@ export function AutoPlanDialog({ open, onOpenChange, plan, onConfirm, loading, m
                                                 </button>
                                                 <button
                                                     onClick={() => handleFlavorTune('daily', dayNum)}
-                                                    disabled={isBalancing || isFlavorTuning}
-                                                    className="p-0.5 rounded hover:bg-violet-100 text-violet-600 transition-colors disabled:opacity-50"
+                                                    disabled={isBalancing || isFlavorTuning || !!actionLoader}
+                                                    className="p-0.5 rounded hover:bg-orange-100 text-orange-600 transition-colors disabled:opacity-50"
                                                     title={`Gun ${dayNum} Lezzet Ayari`}
                                                 >
-                                                    <Sparkles size={12} className={isFlavorTuning ? 'animate-spin' : ''} />
+                                                    <UtensilsCrossed size={12} className={isFlavorTuning ? 'animate-spin' : ''} />
                                                 </button>
                                             </div>
                                         </div>
@@ -1190,15 +1367,12 @@ export function AutoPlanDialog({ open, onOpenChange, plan, onConfirm, loading, m
                                 {plan?.logs && plan.logs.length > 0 ? (
                                     <div className="space-y-1 font-mono text-xs">
                                         {plan.logs.map((log: any, idx: number) => (
-                                            <div key={idx} className={`flex gap - 2 py - 1 border - b border - slate - 100 ${log.event === 'error' ? 'bg-red-50 text-red-800' :
-                                                log.event === 'reject' ? 'text-orange-600' :
-                                                    log.event === 'select' ? 'text-green-700' : 'text-slate-600'
-                                                } `}>
+                                            <div key={idx} className={`flex gap-2 py-1 border-b border-slate-100 ${getLogEventClass(log.event)}`}>
                                                 <span className="w-24 shrink-0 font-semibold text-slate-400">
                                                     {log.day === 0 ? 'GENEL' : `G${log.day} ${log.slot?.substring(0, 3)} `}
                                                 </span>
                                                 <span className="uppercase font-bold shrink-0 w-16 text-[10px] pt-0.5">
-                                                    {log.event}
+                                                    {getLogEventLabel(log.event)}
                                                 </span>
                                                 <div className="flex-1 break-words">
                                                     <span>{log.reason}</span>
@@ -1229,7 +1403,7 @@ export function AutoPlanDialog({ open, onOpenChange, plan, onConfirm, loading, m
                                 onClick={recenterDialog}
                                 className="text-xs text-slate-500 hover:text-slate-700 flex items-center gap-1 hover:bg-slate-100 px-2 py-1 rounded transition-colors hidden sm:flex"
                             >
-                                ⤢ Ortala
+                                â¤¢ Ortala
                             </button>
                             {patientId && (
                                 <button
@@ -1246,11 +1420,33 @@ export function AutoPlanDialog({ open, onOpenChange, plan, onConfirm, loading, m
                         </div>
                         <div className="flex gap-2">
                             <Button variant="outline" onClick={() => onOpenChange(false)}>İptal</Button>
-                            <Button onClick={() => onConfirm(localPlan)} disabled={loading} className="bg-green-600 hover:bg-green-700">
+                            <Button onClick={() => onConfirm(localPlan)} disabled={loading || !!actionLoader} className="bg-green-600 hover:bg-green-700">
                                 {loading ? 'Kaydediliyor...' : 'Planı Uygula'}
                             </Button>
                         </div>
                     </DialogFooter>
+
+                    {actionLoader && actionLoaderMeta && (
+                        <div className="absolute inset-0 z-40 flex items-center justify-center bg-slate-900/45 backdrop-blur-[1.5px]">
+                            <div className="w-[92%] max-w-sm rounded-2xl border border-slate-700/40 bg-gradient-to-b from-[#041730] to-[#03223d] p-6 shadow-2xl">
+                                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-white/10 bg-white/5">
+                                    <actionLoaderMeta.icon className={`h-8 w-8 text-white ${actionLoader.type === 'regenerate' ? 'animate-spin' : ''}`} />
+                                </div>
+                                <h4 className="text-center text-xl font-bold text-white">{actionLoaderMeta.title}</h4>
+                                <p className="mt-2 text-center text-sm text-cyan-200">{actionLoaderMeta.subtitle}</p>
+                                <div className="mt-4 flex items-center justify-between text-xs text-white/70">
+                                    <span>Yaklaşık ilerleme</span>
+                                    <span>{Math.round(actionLoaderProgress)}%</span>
+                                </div>
+                                <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-white/10">
+                                    <div
+                                        className={`h-full rounded-full bg-gradient-to-r ${actionLoaderMeta.accent} transition-all duration-500`}
+                                        style={{ width: `${Math.max(8, Math.min(100, actionLoaderProgress))}%` }}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Bottom-right resize handle (mouse drag) */}
                     <div
@@ -1379,6 +1575,7 @@ export function AutoPlanDialog({ open, onOpenChange, plan, onConfirm, loading, m
                 changes={flavorModal.changes}
                 initialTotals={flavorModal.initialTotals}
                 targetMacros={flavorModal.targetMacros}
+                macroDisplayDivisor={flavorModal.macroDisplayDivisor}
                 defaultSelectAll={true}
                 onClose={() => {
                     flavorModal.resolve?.(null)
@@ -1392,4 +1589,6 @@ export function AutoPlanDialog({ open, onOpenChange, plan, onConfirm, loading, m
         </>
     )
 }
+
+
 

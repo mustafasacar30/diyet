@@ -105,6 +105,13 @@ const DEFAULT_FLAVOR_TUNING: FlavorTuningSettings = {
     compatibility_weight: 0.1,
 }
 
+const FOODS_CACHE_TTL_MS = 5 * 60 * 1000
+const SETTINGS_CACHE_TTL_MS = 2 * 60 * 1000
+
+let foodsCache: { value: any[]; fetchedAt: number } | null = null
+let foodsInFlight: Promise<any[] | null> | null = null
+const settingsCache = new Map<string, { value: FilterPrefs; fetchedAt: number }>()
+
 function clampFlavorWeight(value: unknown, fallback: number, min: number, max: number) {
     const numeric = Number(value)
     if (!Number.isFinite(numeric)) return fallback
@@ -213,11 +220,61 @@ export function FoodAlternativeDialog({ isOpen, onClose, originalFood, onSelect,
     const activeMacroPreference = macroPreference ?? 0
 
     useEffect(() => {
-        if (isOpen) {
+        if (!isOpen) return
+        const now = Date.now()
+        const settingsKey = patientId ? `food_alternative_prefs_${patientId}` : 'food_alternative_prefs'
+
+        const cachedSettings = settingsCache.get(settingsKey)
+        if (cachedSettings && (now - cachedSettings.fetchedAt) < SETTINGS_CACHE_TTL_MS) {
+            setPrefs(cachedSettings.value)
+        } else {
             loadSettings()
-            fetchFoods()
+        }
+
+        if (foodsCache && (now - foodsCache.fetchedAt) < FOODS_CACHE_TTL_MS) {
+            setFoods(foodsCache.value)
+        } else if (foodsInFlight) {
+            foodsInFlight.then((data) => {
+                if (data && isOpen) setFoods(data)
+            })
+        } else {
+            fetchFoodsFast()
         }
     }, [isOpen, patientId])
+
+    useEffect(() => {
+        if (!isOpen) return
+        const settingsKey = patientId ? `food_alternative_prefs_${patientId}` : 'food_alternative_prefs'
+        settingsCache.set(settingsKey, { value: prefs, fetchedAt: Date.now() })
+    }, [prefs, patientId, isOpen])
+
+    useEffect(() => {
+        if (!foods || foods.length === 0) return
+        foodsCache = { value: foods, fetchedAt: Date.now() }
+    }, [foods])
+
+    async function fetchFoodsFast() {
+        setLoading(true)
+        try {
+            if (!foodsInFlight) {
+                foodsInFlight = Promise.resolve(supabase.from('foods').select('*')).then(({ data, error }) => {
+                    if (error) {
+                        console.error("Failed to fetch foods:", error)
+                        return null
+                    }
+                    return data || []
+                })
+            }
+            const data = await foodsInFlight
+            if (data) {
+                setFoods(data)
+                foodsCache = { value: data, fetchedAt: Date.now() }
+            }
+        } finally {
+            foodsInFlight = null
+            setLoading(false)
+        }
+    }
 
     async function loadSettings(isPolling = false) {
         try {
@@ -1284,7 +1341,7 @@ export function FoodAlternativeDialog({ isOpen, onClose, originalFood, onSelect,
                     isOpen={!!editingFood}
                     onClose={() => setEditingFood(null)}
                     food={editingFood || {}}
-                    onUpdate={async () => { await fetchFoods(); setEditingFood(null) }}
+                    onUpdate={async () => { await fetchFoodsFast(); setEditingFood(null) }}
                 />
             </DialogContent>
         </Dialog>

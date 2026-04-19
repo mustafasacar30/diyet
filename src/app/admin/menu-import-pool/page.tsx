@@ -1,7 +1,23 @@
-"use client"
+﻿"use client"
 
 import { Fragment, useEffect, useMemo, useState } from "react"
-import { Loader2, RefreshCw, ChevronDown, ChevronUp, ArrowDown, ArrowUp, ArrowUpDown, PlusCircle, Trash2 } from "lucide-react"
+import {
+    Loader2,
+    RefreshCw,
+    Search,
+    ChevronDown,
+    ChevronUp,
+    ArrowDown,
+    ArrowUp,
+    ArrowUpDown,
+    PlusCircle,
+    Trash2,
+    FolderOpen,
+    FileSpreadsheet,
+    LogIn,
+    KeyRound,
+    ArrowLeft
+} from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -16,6 +32,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { FOOD_CATEGORIES } from "@/lib/constants/food-categories"
 import { FOOD_ROLES } from "@/lib/constants/food-roles"
 import { FoodEditDialog } from "@/components/diet/food-sidebar"
+import { useGapi } from "@/hooks/use-gapi"
 
 type PoolFoodRow = {
     label: string
@@ -96,6 +113,270 @@ type NewFoodDraft = {
     compatibility_tags: string
 }
 
+type DriveItem = {
+    id: string
+    name: string
+    mimeType: string
+    modifiedTime?: string
+}
+
+type DriveFolderCrumb = {
+    id: string
+    name: string
+}
+
+type DriveSortField = "name" | "modified"
+type DriveSortDir = "asc" | "desc"
+const DRIVE_IMPORT_VIEW_STATE_KEY = "drive_import_view_state_v1"
+
+type ParsedPoolFood = {
+    foodName: string
+    originalText: string
+    calories: number
+    carbs: number
+    protein: number
+    fat: number
+    status: "unknown"
+}
+
+type ParsedPoolDay = {
+    dayName: string
+    meals: {
+        mealName: string
+        foods: ParsedPoolFood[]
+    }[]
+}
+
+type DriveImportEntry = {
+    source_type: string
+    source_file_id: string
+    source_file_name: string
+    source_tab_name: string
+    source_patient_name: string | null
+    week_number: number
+    raw_text: string
+    parsed_days: ParsedPoolDay[]
+}
+
+function getExactWeekNumberFromTab(tabName: string): number | null {
+    const normalized = String(tabName || "")
+        .trim()
+        .toLocaleLowerCase("tr-TR")
+        .replace(/\s+/g, " ")
+    if (!normalized) return null
+    if (/(pdf|gdf|kopya|copy|yedek|backup|arsiv|archive)/i.test(normalized)) return null
+
+    const direct = normalized.match(/^(\d+)\.?\s*hafta$/i)
+    if (direct?.[1]) {
+        const n = Number(direct[1])
+        return Number.isFinite(n) ? n : null
+    }
+    const reverse = normalized.match(/^hafta\s*(\d+)\.?$/i)
+    if (reverse?.[1]) {
+        const n = Number(reverse[1])
+        return Number.isFinite(n) ? n : null
+    }
+    return null
+}
+
+function rowsToRawText(rows: any[][]) {
+    if (!Array.isArray(rows)) return ""
+    return rows
+        .filter(row => Array.isArray(row) && row.some(cell => String(cell ?? "").trim().length > 0))
+        .map(row => row.map(cell => String(cell ?? "").trim()).join("\t"))
+        .join("\n")
+}
+
+const DAY_PATTERNS: Array<{ canonical: string; variants: string[] }> = [
+    { canonical: "PAZARTESI", variants: ["PAZARTESI", "PAZARTESÄ°"] },
+    { canonical: "SALI", variants: ["SALI"] },
+    { canonical: "CARSAMBA", variants: ["CARSAMBA", "Ã‡ARÅAMBA"] },
+    { canonical: "PERSEMBE", variants: ["PERSEMBE", "PERÅEMBE"] },
+    { canonical: "CUMA", variants: ["CUMA"] },
+    { canonical: "CUMARTESI", variants: ["CUMARTESI", "CUMARTESÄ°"] },
+    { canonical: "PAZAR", variants: ["PAZAR"] },
+]
+
+const MEAL_PATTERNS: Array<{ canonical: string; variants: string[] }> = [
+    { canonical: "KAHVALTI", variants: ["KAHVALTI"] },
+    { canonical: "OGLEN", variants: ["OGLE", "OGLEN", "Ã–ÄLE", "Ã–ÄLEN"] },
+    { canonical: "AKSAM", variants: ["AKSAM", "AKÅAM"] },
+    { canonical: "ARA OGUN", variants: ["ARA OGUN", "ARA Ã–ÄÃœN"] },
+    { canonical: "KUSLUK", variants: ["KUSLUK", "KUÅLUK"] },
+    { canonical: "GEC GECE", variants: ["GEC GECE", "GEÃ‡ GECE"] },
+]
+
+function normalizeForParse(value: string) {
+    return String(value || "")
+        .toLocaleUpperCase("tr-TR")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/Ä°/g, "I")
+        .trim()
+}
+
+function parseMacroCell(value: string): number | null {
+    if (!value) return null
+    const cleaned = String(value).replace(",", ".").replace(/[^0-9.-]/g, "")
+    if (!cleaned) return null
+    const parsed = Number(cleaned)
+    return Number.isFinite(parsed) ? parsed : null
+}
+
+function extractTrailingMacros(text: string): { calories: number; carbs: number; protein: number; fat: number } | null {
+    const strict = text.match(/(\d+(?:[.,]\d+)?)\s+(\d+(?:[.,]\d+)?)\s+(\d+(?:[.,]\d+)?)\s+(\d+(?:[.,]\d+)?)\s*$/)
+    if (strict) {
+        return {
+            calories: parseMacroCell(strict[1]) ?? 0,
+            carbs: parseMacroCell(strict[2]) ?? 0,
+            protein: parseMacroCell(strict[3]) ?? 0,
+            fat: parseMacroCell(strict[4]) ?? 0,
+        }
+    }
+    const numbers = [...String(text).matchAll(/-?\d+(?:[.,]\d+)?/g)]
+        .map(m => parseMacroCell(m[0]))
+        .filter((n): n is number => n !== null)
+    if (numbers.length < 4) return null
+    const lastFour = numbers.slice(-4)
+    return {
+        calories: lastFour[0] ?? 0,
+        carbs: lastFour[1] ?? 0,
+        protein: lastFour[2] ?? 0,
+        fat: lastFour[3] ?? 0,
+    }
+}
+
+function detectDay(text: string): string | null {
+    const normalized = normalizeForParse(text)
+    for (const day of DAY_PATTERNS) {
+        const matched = day.variants.some(variant => {
+            const v = normalizeForParse(variant)
+            return new RegExp(`(^|\\s)${v}([:\\s]|$)`, "i").test(normalized)
+        })
+        if (matched) return day.canonical
+    }
+    return null
+}
+
+function detectMeal(text: string): string | null {
+    const normalized = normalizeForParse(text)
+    for (const meal of MEAL_PATTERNS) {
+        const matched = meal.variants.some(variant => {
+            const v = normalizeForParse(variant)
+            return new RegExp(`(^|\\s)${v}([:\\s]|$)`, "i").test(normalized)
+        })
+        if (matched) return meal.canonical
+    }
+    return null
+}
+
+function extractFoodFromRow(row: string[]): { foodName: string; calories: number; carbs: number; protein: number; fat: number } | null {
+    const cells = row.map(c => String(c ?? "").trim())
+    const firstIdx = cells.findIndex(Boolean)
+    if (firstIdx < 0) return null
+    // İlk sütun boşsa (gün sonu toplam satırı gibi) yemeğe dönüştürme.
+    if (firstIdx !== 0) return null
+
+    const rawName = String(cells[firstIdx] || "")
+        .replace(/^['"â€¢\-\*â¤>]+\s*/, "")
+        .trim()
+    if (!rawName || rawName.length < 2) return null
+
+    const normalizedName = normalizeForParse(rawName)
+    // Açıklama/not satırlarını ihmal et.
+    if (
+        /^(\*|-|•)/.test(rawName) ||
+        /(GUNLUK|ORTALAMA|ONERILIR|DEGISTIREBILIRSINIZ|TERCIHEN SAAT)/i.test(normalizedName)
+    ) {
+        return null
+    }
+    if (DAY_PATTERNS.some(d => d.variants.some(v => normalizeForParse(v) === normalizedName))) return null
+    if (MEAL_PATTERNS.some(m => m.variants.some(v => normalizeForParse(v) === normalizedName))) return null
+
+    const macroFromCells = cells
+        .slice(firstIdx + 1)
+        .map(parseMacroCell)
+        .filter((n): n is number => n !== null)
+
+    let macros: { calories: number; carbs: number; protein: number; fat: number } | null = null
+    if (macroFromCells.length >= 4) {
+        macros = {
+            calories: macroFromCells[0] ?? 0,
+            carbs: macroFromCells[1] ?? 0,
+            protein: macroFromCells[2] ?? 0,
+            fat: macroFromCells[3] ?? 0,
+        }
+    } else {
+        const fullText = cells.join(" ").trim()
+        const trailing = extractTrailingMacros(fullText)
+        if (trailing) macros = trailing
+    }
+
+    // Makro yoksa yemek satırı değildir.
+    if (!macros) return null
+
+    const cleanedName = rawName.replace(/(\d+(?:[.,]\d+)?\s+){3}\d+(?:[.,]\d+)?\s*$/, "").trim()
+    if (!cleanedName) return null
+
+    return {
+        foodName: cleanedName,
+        calories: macros.calories,
+        carbs: macros.carbs,
+        protein: macros.protein,
+        fat: macros.fat,
+    }
+}
+
+function parseRowsToParsedDays(tabName: string, rows: any[][]): ParsedPoolDay[] {
+    const parsedDays: ParsedPoolDay[] = []
+    let currentDay: ParsedPoolDay | null = null
+    let currentMeal: { mealName: string; foods: ParsedPoolFood[] } | null = null
+
+    for (const row of rows || []) {
+        if (!Array.isArray(row)) continue
+        const cells = row.map(c => String(c ?? "").trim())
+        const fullLine = cells.join(" ").replace(/\s+/g, " ").trim()
+        if (!fullLine) continue
+
+        const detectedDay = detectDay(fullLine)
+        if (detectedDay) {
+            currentDay = { dayName: detectedDay, meals: [] }
+            parsedDays.push(currentDay)
+            currentMeal = null
+            continue
+        }
+
+        const detectedMeal = detectMeal(fullLine)
+        if (detectedMeal) {
+            if (!currentDay) continue
+            currentMeal = { mealName: detectedMeal, foods: [] }
+            currentDay.meals.push(currentMeal)
+            continue
+        }
+
+        if (!currentDay || !currentMeal) continue
+        const extracted = extractFoodFromRow(cells)
+        if (!extracted) continue
+
+        currentMeal.foods.push({
+            originalText: fullLine,
+            foodName: extracted.foodName,
+            calories: extracted.calories,
+            carbs: extracted.carbs,
+            protein: extracted.protein,
+            fat: extracted.fat,
+            status: "unknown",
+        })
+    }
+
+    return parsedDays
+        .map(day => ({
+            ...day,
+            meals: day.meals.filter(meal => meal.foods.length > 0),
+        }))
+        .filter(day => day.meals.length > 0)
+}
+
 function normalizeText(value: string) {
     return String(value || "").trim().toLocaleLowerCase("tr-TR")
 }
@@ -145,6 +426,35 @@ function formatDay(value: string | null | undefined) {
         .replace("PERSEMBE", "PERSEMBE")
         .replace("CUMARTESI", "CUMARTESI")
         .replace("PAZAR", "PAZAR")
+}
+
+function isFolder(item: DriveItem) {
+    return item.mimeType === "application/vnd.google-apps.folder"
+}
+
+function isSpreadsheet(item: DriveItem) {
+    return item.mimeType === "application/vnd.google-apps.spreadsheet"
+}
+
+function guessPatientNameFromFileName(fileName: string) {
+    const base = String(fileName || "")
+        .replace(/\.(xlsx?|csv|txt)$/i, "")
+        .replace(/\s+/g, " ")
+        .trim()
+    if (!base) return null
+    const cleaned = base
+        .replace(/\b\d+\.?\s*hafta\b/gi, "")
+        .replace(/\bhafta\s*\d+\.?\b/gi, "")
+        .replace(/\b(plan|program|liste)\b/gi, "")
+        .replace(/\s{2,}/g, " ")
+        .trim()
+    return cleaned || base
+}
+
+function isExcludedByName(fileName: string) {
+    const n = normalizeText(fileName)
+    if (!n) return false
+    return n.includes("program sonrasi devam") || n.includes("program sonrasÄ± devam")
 }
 
 function MultiSelectDropdown({
@@ -243,6 +553,45 @@ export default function MenuImportPoolPage() {
     const [selectedRowIds, setSelectedRowIds] = useState<string[]>([])
     const [isDeletingSelected, setIsDeletingSelected] = useState(false)
 
+    const {
+        isReady: isGapiReady,
+        isInitializing: isGapiInitializing,
+        isInitialized: isGapiInitialized,
+        initClient: initGapiClient,
+        login: gapiLogin,
+        isAuthenticated: isGapiAuthenticated,
+        error: gapiError,
+        gapi,
+    } = useGapi(true)
+    const [gApiKey, setGApiKey] = useState("")
+    const [gClientId, setGClientId] = useState("")
+    const [driveBusy, setDriveBusy] = useState(false)
+    const [driveItems, setDriveItems] = useState<DriveItem[]>([])
+    const [driveSearch, setDriveSearch] = useState("")
+    const [currentFolderId, setCurrentFolderId] = useState<string | null>(null)
+    const [currentFolderName, setCurrentFolderName] = useState<string>("Kok")
+    const [folderStack, setFolderStack] = useState<DriveFolderCrumb[]>([])
+    const [selectedSheetIds, setSelectedSheetIds] = useState<string[]>([])
+    const [selectedSheetMeta, setSelectedSheetMeta] = useState<Record<string, DriveItem>>({})
+    const [importedFileIds, setImportedFileIds] = useState<Set<string>>(new Set())
+    const [hideImportedFiles, setHideImportedFiles] = useState(true)
+    const [driveSortField, setDriveSortField] = useState<DriveSortField>("modified")
+    const [driveSortDir, setDriveSortDir] = useState<DriveSortDir>("desc")
+    const [importingSheets, setImportingSheets] = useState(false)
+    const [importLog, setImportLog] = useState<string>("")
+    const [importStats, setImportStats] = useState<{
+        files: number
+        tabs: number
+        entries: number
+        matchedFoodIds: number
+        unknownFoods: number
+    } | null>(null)
+    const [resumeAuthOnMount, setResumeAuthOnMount] = useState(false)
+    const [previewOpen, setPreviewOpen] = useState(false)
+    const [previewEntries, setPreviewEntries] = useState<DriveImportEntry[]>([])
+    const [previewFilesCount, setPreviewFilesCount] = useState(0)
+    const [previewTabsCount, setPreviewTabsCount] = useState(0)
+
     const roleOptions = useMemo(
         () =>
             Array.from(new Set(rows.flatMap(row => row.roles).map(v => v.trim()).filter(Boolean))).sort((a, b) =>
@@ -250,6 +599,39 @@ export default function MenuImportPoolPage() {
             ),
         [rows]
     )
+    const displayedDriveItems = useMemo(() => {
+        const q = normalizeText(driveSearch)
+        let items = [...driveItems]
+        if (q) {
+            items = items.filter(item => normalizeText(item.name).includes(q))
+        }
+        if (hideImportedFiles) {
+            items = items.filter(item => !isSpreadsheet(item) || !importedFileIds.has(item.id))
+        }
+        items.sort((a, b) => {
+            if (isFolder(a) && !isFolder(b)) return -1
+            if (!isFolder(a) && isFolder(b)) return 1
+            if (driveSortField === "modified") {
+                const ta = a.modifiedTime ? new Date(a.modifiedTime).getTime() : 0
+                const tb = b.modifiedTime ? new Date(b.modifiedTime).getTime() : 0
+                if (ta !== tb) {
+                    return driveSortDir === "asc" ? ta - tb : tb - ta
+                }
+            }
+            return driveSortDir === "asc"
+                ? a.name.localeCompare(b.name, "tr")
+                : b.name.localeCompare(a.name, "tr")
+        })
+        return items
+    }, [driveItems, driveSearch, hideImportedFiles, importedFileIds, driveSortField, driveSortDir])
+
+    const selectedSheets = useMemo(() => {
+        const map = new Map(driveItems.map(item => [item.id, item]))
+        return selectedSheetIds
+            .map(id => map.get(id) || selectedSheetMeta[id])
+            .filter((v): v is DriveItem => Boolean(v))
+    }, [driveItems, selectedSheetIds, selectedSheetMeta])
+    const visibleSheetIds = useMemo(() => displayedDriveItems.filter(isSpreadsheet).map(item => item.id), [displayedDriveItems])
     const categoryOptions = useMemo(
         () =>
             Array.from(new Set(rows.flatMap(row => row.categories).map(v => v.trim()).filter(Boolean))).sort((a, b) =>
@@ -292,6 +674,346 @@ export default function MenuImportPoolPage() {
     const visibleSelectionState: boolean | "indeterminate" =
         selectedVisibleCount === 0 ? false : allVisibleSelected ? true : "indeterminate"
 
+    useEffect(() => {
+        if (typeof window === "undefined") return
+        const storedKey = window.localStorage.getItem("diyet_google_api_key") || ""
+        const storedClient = window.localStorage.getItem("diyet_google_client_id") || ""
+        setGApiKey(storedKey)
+        setGClientId(storedClient)
+
+        try {
+            const raw = window.sessionStorage.getItem(DRIVE_IMPORT_VIEW_STATE_KEY)
+            if (!raw) return
+            const parsed = JSON.parse(raw) as any
+            if (Array.isArray(parsed?.driveItems)) setDriveItems(parsed.driveItems)
+            if (typeof parsed?.driveSearch === "string") setDriveSearch(parsed.driveSearch)
+            if (typeof parsed?.currentFolderId === "string" || parsed?.currentFolderId === null) setCurrentFolderId(parsed.currentFolderId)
+            if (typeof parsed?.currentFolderName === "string") setCurrentFolderName(parsed.currentFolderName)
+            if (Array.isArray(parsed?.folderStack)) setFolderStack(parsed.folderStack)
+            if (Array.isArray(parsed?.selectedSheetIds)) setSelectedSheetIds(parsed.selectedSheetIds)
+            if (parsed?.selectedSheetMeta && typeof parsed.selectedSheetMeta === "object") setSelectedSheetMeta(parsed.selectedSheetMeta)
+            if (Array.isArray(parsed?.importedFileIds)) setImportedFileIds(new Set(parsed.importedFileIds))
+            if (typeof parsed?.hideImportedFiles === "boolean") setHideImportedFiles(parsed.hideImportedFiles)
+            if (parsed?.resumeAuthOnMount === true) setResumeAuthOnMount(true)
+        } catch {
+            // ignore corrupt session payload
+        }
+    }, [])
+
+    useEffect(() => {
+        if (typeof window === "undefined") return
+        const payload = {
+            driveItems,
+            driveSearch,
+            currentFolderId,
+            currentFolderName,
+            folderStack,
+            selectedSheetIds,
+            selectedSheetMeta,
+            importedFileIds: Array.from(importedFileIds),
+            hideImportedFiles,
+            resumeAuthOnMount: isGapiAuthenticated || resumeAuthOnMount,
+        }
+        window.sessionStorage.setItem(DRIVE_IMPORT_VIEW_STATE_KEY, JSON.stringify(payload))
+    }, [
+        driveItems,
+        driveSearch,
+        currentFolderId,
+        currentFolderName,
+        folderStack,
+        selectedSheetIds,
+        selectedSheetMeta,
+        importedFileIds,
+        hideImportedFiles,
+        isGapiAuthenticated,
+        resumeAuthOnMount,
+    ])
+
+    useEffect(() => {
+        if (!resumeAuthOnMount) return
+        if (!isGapiReady || isGapiInitializing) return
+        if (isGapiAuthenticated) return
+        if (isGapiInitialized) return
+        if (!gApiKey.trim() || !gClientId.trim()) return
+        ;(async () => {
+            await initGapiClient(gApiKey.trim(), gClientId.trim())
+        })()
+    }, [resumeAuthOnMount, isGapiReady, isGapiInitializing, isGapiAuthenticated, isGapiInitialized, gApiKey, gClientId, initGapiClient])
+
+    const saveDriveCredentials = async () => {
+        if (!gApiKey.trim() || !gClientId.trim()) {
+            alert("API key ve Client ID zorunlu.")
+            return
+        }
+        if (typeof window !== "undefined") {
+            window.localStorage.setItem("diyet_google_api_key", gApiKey.trim())
+            window.localStorage.setItem("diyet_google_client_id", gClientId.trim())
+        }
+        await initGapiClient(gApiKey.trim(), gClientId.trim())
+    }
+
+    const refreshImportedFileIds = async () => {
+        try {
+            const response = await fetch("/api/admin/menu-import-pool/list?limit=5000&offset=0&source_type=google_sheets", {
+                method: "GET",
+                cache: "no-store",
+            })
+            const json = (await response.json().catch(() => ({}))) as any
+            if (!response.ok) return
+            const ids = new Set<string>()
+            for (const row of json?.rows || []) {
+                const id = String(row?.source_file_id || "").trim()
+                if (id) ids.add(id)
+            }
+            setImportedFileIds(ids)
+        } catch {
+            // non-blocking
+        }
+    }
+
+    const listDriveItems = async (folderId: string | null, queryText: string) => {
+        if (!gapi) return
+        setDriveBusy(true)
+        setImportLog("")
+        try {
+            const escapedQuery = queryText.trim().replace(/'/g, "\\'")
+            const parent = folderId ? `'${folderId}' in parents` : `'root' in parents`
+            const nameFilter = escapedQuery ? ` and name contains '${escapedQuery}'` : ""
+            const q = `${parent} and trashed=false and (mimeType='application/vnd.google-apps.folder' or mimeType='application/vnd.google-apps.spreadsheet')${nameFilter}`
+            const response = await gapi.client.drive.files.list({
+                q,
+                fields: "files(id,name,mimeType,modifiedTime)",
+                pageSize: 200,
+                orderBy: "folder,name_natural",
+            })
+            const files = (response?.result?.files || []) as DriveItem[]
+            const normalized = files
+                .map(file => ({
+                    id: String(file.id || ""),
+                    name: String(file.name || ""),
+                    mimeType: String(file.mimeType || ""),
+                    modifiedTime: file.modifiedTime,
+                }))
+                .filter(file => file.id && file.name)
+                .filter(file => !isSpreadsheet(file) || !isExcludedByName(file.name))
+                .sort((a, b) => {
+                    if (isFolder(a) && !isFolder(b)) return -1
+                    if (!isFolder(a) && isFolder(b)) return 1
+                    return a.name.localeCompare(b.name, "tr")
+                })
+            setDriveItems(normalized)
+            setSelectedSheetIds(prev => prev.filter(id => normalized.some(item => item.id === id)))
+        } catch (e: any) {
+            alert(`Drive listeleme hatasi: ${e?.result?.error?.message || e?.message || "Bilinmeyen hata"}`)
+        } finally {
+            setDriveBusy(false)
+        }
+    }
+
+    const openDriveFolder = async (folder: DriveItem) => {
+        setFolderStack(prev => [...prev, { id: folder.id, name: folder.name }])
+        setCurrentFolderId(folder.id)
+        setCurrentFolderName(folder.name)
+        await listDriveItems(folder.id, "")
+        setDriveSearch("")
+    }
+
+    const goToDriveCrumb = async (crumbIndex: number) => {
+        const targetStack = folderStack.slice(0, crumbIndex + 1)
+        const target = targetStack[targetStack.length - 1] || null
+        setFolderStack(targetStack)
+        setCurrentFolderId(target?.id || null)
+        setCurrentFolderName(target?.name || "Kok")
+        setDriveSearch("")
+        await listDriveItems(target?.id || null, "")
+    }
+
+    const goDriveRoot = async () => {
+        setFolderStack([])
+        setCurrentFolderId(null)
+        setCurrentFolderName("Kok")
+        setDriveSearch("")
+        await listDriveItems(null, "")
+    }
+
+    const toggleSheetSelection = (sheet: DriveItem) => {
+        setSelectedSheetIds(prev => (prev.includes(sheet.id) ? prev.filter(id => id !== sheet.id) : [...prev, sheet.id]))
+        setSelectedSheetMeta(prev => {
+            if (prev[sheet.id]) return prev
+            return { ...prev, [sheet.id]: sheet }
+        })
+    }
+
+    const toggleSelectAllVisibleSheets = (checked: boolean) => {
+        const visibleSheets = displayedDriveItems.filter(isSpreadsheet)
+        const visibleSheetIds = visibleSheets.map(item => item.id)
+        if (!checked) {
+            setSelectedSheetIds(prev => prev.filter(id => !visibleSheetIds.includes(id)))
+            return
+        }
+        setSelectedSheetMeta(prev => {
+            const next = { ...prev }
+            for (const sheet of visibleSheets) next[sheet.id] = sheet
+            return next
+        })
+        setSelectedSheetIds(prev => Array.from(new Set([...prev, ...visibleSheetIds])))
+    }
+
+    const importSelectedDriveSheets = async () => {
+        if (!gapi) return
+        const selectedVisibleSheets = displayedDriveItems
+            .filter(isSpreadsheet)
+            .filter(item => selectedSheetIds.includes(item.id))
+            .filter(item => !isExcludedByName(item.name))
+            .filter(item => !importedFileIds.has(item.id))
+        if (selectedVisibleSheets.length === 0) {
+            alert("Aktarim icin bu listede secili dosya bulunamadi.")
+            return
+        }
+
+        const retryGapi = async <T,>(fn: () => Promise<T>, maxTry = 4): Promise<T> => {
+            let attempt = 0
+            let lastError: any = null
+            while (attempt < maxTry) {
+                try {
+                    return await fn()
+                } catch (e: any) {
+                    lastError = e
+                    const message = String(e?.result?.error?.message || e?.message || "")
+                    const status = Number(e?.status || e?.result?.error?.code || 0)
+                    const isRateLimit = status === 429 || /rate|quota|too many/i.test(message)
+                    if (!isRateLimit || attempt === maxTry - 1) {
+                        throw e
+                    }
+                    const waitMs = 400 * Math.pow(2, attempt)
+                    await new Promise(resolve => setTimeout(resolve, waitMs))
+                }
+                attempt += 1
+            }
+            throw lastError
+        }
+
+        setImportingSheets(true)
+        setDriveBusy(true)
+        setImportLog("Dosyalar ayristiriliyor...")
+        setImportStats(null)
+        try {
+            const entries: DriveImportEntry[] = []
+            let processedTabs = 0
+
+            for (let fileIdx = 0; fileIdx < selectedVisibleSheets.length; fileIdx++) {
+                const file = selectedVisibleSheets[fileIdx]
+                setImportLog(`Dosya ${fileIdx + 1}/${selectedVisibleSheets.length}: ${file.name}`)
+                const spreadsheet = await retryGapi<any>(() => gapi.client.sheets.spreadsheets.get({
+                    spreadsheetId: file.id,
+                    fields: "sheets.properties.title",
+                }))
+                const tabs: string[] = (spreadsheet?.result?.sheets || [])
+                    .map((s: any) => String(s?.properties?.title || ""))
+                    .filter(Boolean)
+                const weekTabs = tabs
+                    .map(tabName => ({ tabName, week: getExactWeekNumberFromTab(tabName) }))
+                    .filter(t => Number.isFinite(t.week))
+                    .sort((a, b) => Number(a.week) - Number(b.week))
+
+                if (weekTabs.length === 0) {
+                    continue
+                }
+
+                for (const weekTab of weekTabs) {
+                    processedTabs += 1
+                    setImportLog(`Tab cekiliyor: ${file.name} / ${weekTab.tabName}`)
+                    const range = `'${weekTab.tabName.replace(/'/g, "''")}'!A:AZ`
+                    const valuesResp = await retryGapi<any>(() => gapi.client.sheets.spreadsheets.values.get({
+                        spreadsheetId: file.id,
+                        range,
+                    }))
+                    const rows = valuesResp?.result?.values || []
+                    if (!Array.isArray(rows) || rows.length === 0) continue
+
+                    const rawText = rowsToRawText(rows)
+                    if (!rawText.trim()) continue
+
+                    const parsedDays = parseRowsToParsedDays(weekTab.tabName, rows)
+                    const totalFoods = parsedDays.reduce(
+                        (sum, day) => sum + day.meals.reduce((mealSum, meal) => mealSum + meal.foods.length, 0),
+                        0
+                    )
+                    if (totalFoods === 0) continue
+
+                    entries.push({
+                        source_type: "google_sheets",
+                        source_file_id: file.id,
+                        source_file_name: file.name,
+                        source_tab_name: weekTab.tabName,
+                        source_patient_name: guessPatientNameFromFileName(file.name),
+                        week_number: Number(weekTab.week),
+                        raw_text: rawText,
+                        parsed_days: parsedDays,
+                    })
+                }
+            }
+
+            if (entries.length === 0) {
+                setImportLog("Uygun tab bulunamadi. Sadece tam hafta tablari (1. hafta, 2. hafta...) aktarilir.")
+                return
+            }
+
+            setPreviewEntries(entries)
+            setPreviewFilesCount(selectedVisibleSheets.length)
+            setPreviewTabsCount(processedTabs)
+            setPreviewOpen(true)
+            setImportLog(`Ayristirma tamamlandi. Dosya: ${selectedVisibleSheets.length}, Tab: ${processedTabs}, Paket: ${entries.length}. Onizleme hazir.`)
+        } catch (e: any) {
+            setImportLog(`Hata: ${e?.message || "Bilinmeyen hata"}`)
+            alert(`Toplu aktarim hatasi: ${e?.message || "Bilinmeyen hata"}`)
+        } finally {
+            setImportingSheets(false)
+            setDriveBusy(false)
+        }
+    }
+
+    const confirmImportPreview = async () => {
+        if (previewEntries.length === 0) return
+        setImportingSheets(true)
+        setDriveBusy(true)
+        setImportLog(`Ingest baslatiliyor... (${previewEntries.length} paket)`)
+        try {
+            const response = await fetch("/api/admin/menu-import-pool/ingest", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ entries: previewEntries }),
+            })
+            const json = await response.json().catch(() => ({}))
+            if (!response.ok) {
+                throw new Error(json?.error || "Ingest hatasi")
+            }
+
+            const summary = json?.summary || {}
+            setImportStats({
+                files: previewFilesCount,
+                tabs: previewTabsCount,
+                entries: Number(summary?.inserted ?? previewEntries.length),
+                matchedFoodIds: Number(summary?.matched_food_ids_total ?? 0),
+                unknownFoods: Number(summary?.unknown_food_names_total ?? 0),
+            })
+            setImportLog(
+                `Aktarim tamamlandi. Dosya: ${previewFilesCount}, Tab: ${previewTabsCount}, Paket: ${Number(summary?.inserted ?? previewEntries.length)}`
+            )
+            setPreviewOpen(false)
+            setPreviewEntries([])
+            await refreshImportedFileIds()
+            await fetchRows()
+            alert("Drive toplu iceri aktarma tamamlandi.")
+        } catch (e: any) {
+            setImportLog(`Hata: ${e?.message || "Bilinmeyen hata"}`)
+            alert(`Toplu aktarim hatasi: ${e?.message || "Bilinmeyen hata"}`)
+        } finally {
+            setImportingSheets(false)
+            setDriveBusy(false)
+        }
+    }
+
     const fetchRows = async () => {
         setLoading(true)
         setError(null)
@@ -333,6 +1055,13 @@ export default function MenuImportPoolPage() {
         fetchRows()
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [offset, limit, sortBy, sortDir])
+
+    useEffect(() => {
+        if (!isGapiAuthenticated) return
+        refreshImportedFileIds()
+        listDriveItems(currentFolderId, "")
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isGapiAuthenticated])
 
     const toggleSort = (field: SortField) => {
         if (sortBy !== field) {
@@ -467,6 +1196,330 @@ export default function MenuImportPoolPage() {
 
     return (
         <div className="space-y-4">
+            <Card>
+                <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center gap-2">
+                        <FileSpreadsheet className="h-5 w-5 text-emerald-600" />
+                        Drive Ise Aktar (Global)
+                    </CardTitle>
+                    <CardDescription>
+                        Google Drive klasorlerini gezin, dosyalari secin ve sadece net hafta tablarini (1. hafta, 2. hafta...)
+                        toplu olarak Menu Havuzu'na aktarÄ±n.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    <div className="grid gap-3 md:grid-cols-2">
+                        <div>
+                            <Label>Google API Key</Label>
+                            <Input
+                                value={gApiKey}
+                                onChange={e => setGApiKey(e.target.value)}
+                                placeholder="AIzaSy..."
+                                className="font-mono text-xs"
+                            />
+                        </div>
+                        <div>
+                            <Label>Google Client ID</Label>
+                            <Input
+                                value={gClientId}
+                                onChange={e => setGClientId(e.target.value)}
+                                placeholder="....apps.googleusercontent.com"
+                                className="font-mono text-xs"
+                            />
+                        </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                            variant="outline"
+                            onClick={saveDriveCredentials}
+                            disabled={isGapiInitializing || !gApiKey.trim() || !gClientId.trim()}
+                        >
+                            <KeyRound className="mr-2 h-4 w-4" />
+                            {isGapiInitialized ? "Anahtarlar Kayitli" : "Anahtarlari Kaydet ve Baslat"}
+                        </Button>
+                        <Button
+                            onClick={() => gapiLogin(true)}
+                            disabled={!isGapiReady || isGapiInitializing || !isGapiInitialized || isGapiAuthenticated}
+                        >
+                            <LogIn className="mr-2 h-4 w-4" />
+                            {isGapiAuthenticated ? "Bagli" : "Google ile Giris"}
+                        </Button>
+                        <Badge variant={isGapiAuthenticated ? "default" : "secondary"}>
+                            {isGapiAuthenticated ? "Baglanti Aktif" : "Baglanti Bekleniyor"}
+                        </Badge>
+                        {gapiError && <Badge variant="destructive" className="max-w-full truncate">{gapiError}</Badge>}
+                    </div>
+
+                    {isGapiAuthenticated && (
+                        <div className="rounded-lg border bg-slate-50 p-3 space-y-3">
+                            <div className="flex flex-wrap items-center gap-2">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={goDriveRoot}
+                                    disabled={driveBusy}
+                                >
+                                    Kok
+                                </Button>
+                                {folderStack.map((crumb, idx) => (
+                                    <button
+                                        key={`${crumb.id}-${idx}`}
+                                        type="button"
+                                        className="inline-flex items-center gap-1 rounded border bg-white px-2 py-1 text-xs hover:bg-slate-100"
+                                        onClick={() => goToDriveCrumb(idx)}
+                                        disabled={driveBusy}
+                                    >
+                                        <ArrowLeft className="h-3 w-3" />
+                                        {crumb.name}
+                                    </button>
+                                ))}
+                                <span className="ml-auto text-xs text-slate-500">Klasor: {currentFolderName}</span>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2">
+                                <div className="relative w-full max-w-md">
+                                    <Search className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
+                                    <Input
+                                        value={driveSearch}
+                                        onChange={e => setDriveSearch(e.target.value)}
+                                        onKeyDown={async e => {
+                                            if (e.key === "Enter") {
+                                                await listDriveItems(currentFolderId, "")
+                                            }
+                                        }}
+                                        className="pl-8"
+                                        placeholder="Bu klasorde dosya/klasor ara..."
+                                    />
+                                </div>
+                                <Select value={driveSortField} onValueChange={value => setDriveSortField(value as DriveSortField)}>
+                                    <SelectTrigger className="w-[160px]">
+                                        <SelectValue placeholder="Siralama alani" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="name">Ada gore</SelectItem>
+                                        <SelectItem value="modified">Tarihe gore</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                                <Select value={driveSortDir} onValueChange={value => setDriveSortDir(value as DriveSortDir)}>
+                                    <SelectTrigger className="w-[130px]">
+                                        <SelectValue placeholder="Yon" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="asc">Artan</SelectItem>
+                                        <SelectItem value="desc">Azalan</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={() => listDriveItems(currentFolderId, "")}
+                                    disabled={driveBusy}
+                                >
+                                    <Search className="mr-2 h-4 w-4" />
+                                    Ara
+                                </Button>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={() => listDriveItems(currentFolderId, "")}
+                                    disabled={driveBusy}
+                                >
+                                    <RefreshCw className="mr-2 h-4 w-4" />
+                                    Yenile
+                                </Button>
+                            </div>
+
+                            <div className="rounded-md border bg-white">
+                                <div className="flex items-center justify-between border-b px-3 py-2">
+                                    <label className="inline-flex items-center gap-2 text-sm">
+                                        <Checkbox
+                                            checked={
+                                                visibleSheetIds.length > 0 &&
+                                                visibleSheetIds.every(id => selectedSheetIds.includes(id))
+                                            }
+                                            onCheckedChange={checked => toggleSelectAllVisibleSheets(checked === true)}
+                                        />
+                                        Gorunen tum sheet dosyalarini sec
+                                    </label>
+                                    <label className="inline-flex items-center gap-2 text-xs text-slate-600">
+                                        <Checkbox
+                                            checked={hideImportedFiles}
+                                            onCheckedChange={checked => setHideImportedFiles(checked === true)}
+                                        />
+                                        Onceki aktarilanlari gizle
+                                    </label>
+                                    <Badge variant="outline">Secili dosya: {selectedSheetIds.filter(id => visibleSheetIds.includes(id)).length}</Badge>
+                                </div>
+                                <ScrollArea className="h-[300px]">
+                                    <div className="divide-y">
+                                        {displayedDriveItems.map(item => (
+                                            <div key={item.id} className="flex items-center gap-2 px-3 py-2">
+                                                {isSpreadsheet(item) ? (
+                                                    <Checkbox
+                                                        checked={selectedSheetIds.includes(item.id)}
+                                                        onCheckedChange={() => toggleSheetSelection(item)}
+                                                    />
+                                                ) : (
+                                                    <span className="w-5" />
+                                                )}
+
+                                                {isFolder(item) ? (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => openDriveFolder(item)}
+                                                        className="inline-flex items-center gap-2 text-left text-sm font-medium text-slate-700 hover:text-emerald-700"
+                                                    >
+                                                        <FolderOpen className="h-4 w-4 text-amber-600" />
+                                                        {item.name}
+                                                    </button>
+                                                ) : (
+                                                    <span className="inline-flex items-center gap-2 text-sm text-slate-700">
+                                                        <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
+                                                        {item.name}
+                                                        <Badge
+                                                            variant={importedFileIds.has(item.id) ? "secondary" : "outline"}
+                                                            className={
+                                                                importedFileIds.has(item.id)
+                                                                    ? "border-emerald-200 bg-emerald-100 text-emerald-700"
+                                                                    : "border-slate-200 text-slate-600"
+                                                            }
+                                                        >
+                                                            {importedFileIds.has(item.id) ? "Aktarildi" : "Yeni"}
+                                                        </Badge>
+                                                    </span>
+                                                )}
+                                                <span className="ml-auto text-xs text-slate-400">
+                                                    {item.modifiedTime ? fmtDateTime(item.modifiedTime) : "-"}
+                                                </span>
+                                            </div>
+                                        ))}
+                                        {displayedDriveItems.length === 0 && (
+                                            <div className="px-3 py-8 text-center text-sm text-slate-400">
+                                                {driveBusy ? "Drive liste yukleniyor..." : "Filtreye uygun oge bulunamadi."}
+                                            </div>
+                                        )}
+                                    </div>
+                                </ScrollArea>
+                            </div>
+
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div className="text-xs text-slate-600">
+                                    Secili dosyalarin sadece net hafta tablari aktarilir. Ornek: <b>1. hafta</b>, <b>2. hafta</b>.
+                                    <span className="ml-1">"1. hafta gdf", "pdf" gibi tablar atlanir.</span>
+                                </div>
+                                <Button
+                                    type="button"
+                                    onClick={importSelectedDriveSheets}
+                                    disabled={importingSheets || selectedSheetIds.filter(id => visibleSheetIds.includes(id)).length === 0 || driveBusy}
+                                >
+                                    {importingSheets ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                                    Ayristir ve Onizle
+                                </Button>
+                            </div>
+
+                            {(importLog || importStats) && (
+                                <div className="rounded-md border bg-white px-3 py-2 text-sm">
+                                    {importLog && <p className="text-slate-700">{importLog}</p>}
+                                    {importStats && (
+                                        <p className="mt-1 text-xs text-slate-500">
+                                            Dosya: {importStats.files} | Taranan tab: {importStats.tabs} | Ingest kaydi: {importStats.entries} | Eslesen ID: {importStats.matchedFoodIds} | Eslesmeyen: {importStats.unknownFoods}
+                                        </p>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </CardContent>
+            </Card>
+            <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+                <DialogContent className="max-w-5xl">
+                    <DialogHeader>
+                        <DialogTitle>Drive Ayristirma Onizleme</DialogTitle>
+                        <DialogDescription>
+                            Hasta tarafindaki akis gibi: once ayristirilan paketleri kontrol edin, sonra onayla havuza aktarin.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="grid gap-2 md:grid-cols-4">
+                        <div className="rounded border p-2 text-sm">
+                            <div className="text-xs text-slate-500">Dosya</div>
+                            <div className="font-semibold">{previewFilesCount}</div>
+                        </div>
+                        <div className="rounded border p-2 text-sm">
+                            <div className="text-xs text-slate-500">Tab</div>
+                            <div className="font-semibold">{previewTabsCount}</div>
+                        </div>
+                        <div className="rounded border p-2 text-sm">
+                            <div className="text-xs text-slate-500">Paket</div>
+                            <div className="font-semibold">{previewEntries.length}</div>
+                        </div>
+                        <div className="rounded border p-2 text-sm">
+                            <div className="text-xs text-slate-500">Toplam Yemek</div>
+                            <div className="font-semibold">
+                                {previewEntries.reduce(
+                                    (total, entry) =>
+                                        total + entry.parsed_days.reduce((sum, day) => sum + day.meals.reduce((m, meal) => m + meal.foods.length, 0), 0),
+                                    0
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                    <ScrollArea className="h-[420px] rounded border">
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead>Dosya</TableHead>
+                                    <TableHead>Tab</TableHead>
+                                    <TableHead className="text-right">Hafta</TableHead>
+                                    <TableHead className="text-right">Gun</TableHead>
+                                    <TableHead className="text-right">Ogun</TableHead>
+                                    <TableHead className="text-right">Yemek</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {previewEntries.map((entry, idx) => {
+                                    const dayCount = entry.parsed_days.length
+                                    const mealCount = entry.parsed_days.reduce((sum, day) => sum + day.meals.length, 0)
+                                    const foodCount = entry.parsed_days.reduce(
+                                        (sum, day) => sum + day.meals.reduce((mealSum, meal) => mealSum + meal.foods.length, 0),
+                                        0
+                                    )
+                                    return (
+                                        <TableRow key={`${entry.source_file_id}-${entry.source_tab_name}-${idx}`}>
+                                            <TableCell className="max-w-[280px] truncate">{entry.source_file_name}</TableCell>
+                                            <TableCell>{entry.source_tab_name}</TableCell>
+                                            <TableCell className="text-right">{entry.week_number}</TableCell>
+                                            <TableCell className="text-right">{dayCount}</TableCell>
+                                            <TableCell className="text-right">{mealCount}</TableCell>
+                                            <TableCell className="text-right font-medium">{foodCount}</TableCell>
+                                        </TableRow>
+                                    )
+                                })}
+                            </TableBody>
+                        </Table>
+                    </ScrollArea>
+                    <DialogFooter>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setPreviewOpen(false)}
+                            disabled={importingSheets}
+                        >
+                            Vazgec
+                        </Button>
+                        <Button
+                            type="button"
+                            onClick={confirmImportPreview}
+                            disabled={importingSheets || previewEntries.length === 0}
+                        >
+                            {importingSheets ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                            Onayla ve Ise Aktar
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
             <Card>
                 <CardHeader className="pb-3">
                     <CardTitle>Menu Havuzu</CardTitle>
@@ -1004,14 +2057,14 @@ export default function MenuImportPoolPage() {
             <Dialog open={false} onOpenChange={open => !open && setDraft(null)}>
                 <DialogContent className="max-w-2xl">
                     <DialogHeader>
-                        <DialogTitle>Bilinmeyen Yemeği Veritabanına Ekle</DialogTitle>
-                        <DialogDescription>Bu kayıt havuz satırına otomatik işlenecek ve bilinmeyen listeden düşecek.</DialogDescription>
+                        <DialogTitle>Bilinmeyen YemeÄŸi VeritabanÄ±na Ekle</DialogTitle>
+                        <DialogDescription>Bu kayÄ±t havuz satÄ±rÄ±na otomatik iÅŸlenecek ve bilinmeyen listeden dÃ¼ÅŸecek.</DialogDescription>
                     </DialogHeader>
                     {draft && (
                         <div className="space-y-3">
                             <div className="grid grid-cols-2 gap-3">
                                 <div className="col-span-2">
-                                    <Label>Yemek Adı</Label>
+                                    <Label>Yemek AdÄ±</Label>
                                     <Input value={draft?.name ?? ""} onChange={e => setDraft(prev => (prev ? { ...prev, name: e.target.value } : prev))} />
                                 </div>
                                 <div>
@@ -1046,7 +2099,7 @@ export default function MenuImportPoolPage() {
                         </div>
                     )}
                     <DialogFooter>
-                        <Button variant="outline" onClick={() => setDraft(null)} disabled={savingDraft}>Vazgeç</Button>
+                        <Button variant="outline" onClick={() => setDraft(null)} disabled={savingDraft}>VazgeÃ§</Button>
                         <Button onClick={saveDraft} disabled={savingDraft || !draft}>
                             {savingDraft ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                             Kaydet ve Havuzu Guncelle
@@ -1058,3 +2111,4 @@ export default function MenuImportPoolPage() {
         </div>
     )
 }
+

@@ -1,0 +1,73 @@
+=== LINES 3320-3370 (return + Dialog + DndContext start) ===
+3320: 
+3321:     return (
+3322:         <>
+3323:             <Dialog open={blockedFoodDialog.open} onOpenChange={(open) => setBlockedFoodDialog(prev => ({ ...prev, open }))}>
+3324:                 <DialogContent className="max-w-md bg-white p-0 border-0 shadow-2xl rounded-2xl overflow-hidden">
+3325:                     <div className="bg-red-50 p-6 text-center border-b border-red-100 flex flex-col items-center">
+3326:                         <div className="bg-red-100 w-16 h-16 rounded-full flex items-center justify-center mb-4 shadow-sm">
+3327:                             <AlertTriangle className="text-red-600 w-8 h-8" />
+3328:                         </div>
+3329:                         <DialogTitle className="text-xl font-black text-red-700 uppercase tracking-wider">
+3330:                             Bu Yemek Engellendi!
+3331:                         </DialogTitle>
+3332:                     </div>
+3333:                     <div className="p-6">
+3334:                         <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-center">
+3335:                             <p className="text-[14px] text-gray-700 font-medium leading-relaxed">
+3336:                                 {blockedFoodDialog.reason}
+3337:                             </p>
+3338:                         </div>
+3339:                     </div>
+3340:                     <div className="px-6 pb-6 flex gap-3">
+3341:                         <Button
+3342:                             variant="outline"
+3343:                             className="flex-1 h-12 rounded-xl text-gray-700 hover:bg-gray-50 border-gray-300 transition-colors"
+3344:                             onClick={() => setBlockedFoodDialog({ open: false, food: null, dropData: null, reason: null })}
+3345:                         >
+3346:                             <X className="w-4 h-4 mr-2 opacity-70" />
+3347:                             İptal
+3348:                         </Button>
+3349:                         <Button
+3350:                             variant="destructive"
+3351:                             className="flex-1 h-12 rounded-xl shadow-md hover:shadow-lg transition-all"
+3352:                             onClick={async () => {
+3353:                                 await insertMealToDB(blockedFoodDialog.food, blockedFoodDialog.dropData);
+3354:                                 setBlockedFoodDialog({ open: false, food: null, dropData: null, reason: null });
+3355:                             }}
+3356:                         >
+3357:                             <Check className="w-5 h-5 mr-2 opacity-90" />
+3358:                             Yine de Ekle
+3359:                         </Button>
+3360:                     </div>
+3361:                 </DialogContent>
+3362:             </Dialog>
+3363: 
+3364:         <DndContext onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+3365:             <SidebarActionsPortal />
+3366:             <div className="flex h-full overflow-hidden" onMouseMove={handleResizeMove} onMouseUp={handleResizeUp}>
+3367:                 {/* Resizable Sidebar - Only show for non-patients */}
+3368:                 {/* Resizable Sidebar - Only show for non-patients */}
+3369:                 {!isPatient && isFoodSidebarVisible && (
+3370:                     <>
+
+=== LINES 3930-3945 (around DndContext close / error area) ===
+3930:                         open={notesSheetOpen}
+3931:                         onOpenChange={setNotesSheetOpen}
+3932:                         patientId={patient.id}
+3933:                         patientName={patient.full_name}
+3934:                     />
+3935:                 )
+3936:             }
+3937:         </DndContext >
+3938:         </>
+3939:     )
+3940: }
+3941: 
+3942: // ================== WEEK EDIT FORM ==================
+3943: // ================== WEEK EDIT FORM ==================
+3944: function WeekEditForm({ week, resolvedDietTypeId, hasActiveProgram, dietTypes, patientDefaults, onSave, onDelete, onCancel }: {
+3945:     week: DietWeek,
+
+
+Total lines: 6386

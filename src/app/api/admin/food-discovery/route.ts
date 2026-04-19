@@ -29,6 +29,151 @@ function extractMacrosFromUSDA(food: any) {
     }
 }
 
+function normalizeSearchToken(token: string): string {
+    return token
+        .toLocaleLowerCase('tr-TR')
+        .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+        .trim()
+}
+
+function foldTurkishChars(input: string): string {
+    return normalizeSearchToken(input)
+        .replace(/\u0131/g, 'i')
+        .replace(/\u011F/g, 'g')
+        .replace(/\u00FC/g, 'u')
+        .replace(/\u015F/g, 's')
+        .replace(/\u00F6/g, 'o')
+        .replace(/\u00E7/g, 'c')
+}
+
+function addStemTerms(term: string, target: Set<string>) {
+    const clean = term.trim()
+    if (clean.length >= 4) target.add(clean.slice(0, 4))
+    if (clean.length >= 5) target.add(clean.slice(0, 5))
+    if (clean.length >= 6) target.add(clean.slice(0, 6))
+}
+
+function buildNameSearchTerms(input: string): string[] {
+    const normalized = normalizeSearchToken(input)
+    if (!normalized) return []
+    const foldedNormalized = foldTurkishChars(input)
+    const parts = normalized.split(/\s+/).filter(Boolean)
+    const terms = new Set<string>()
+
+    if (normalized.length >= 3) {
+        terms.add(normalized)
+        addStemTerms(normalized, terms)
+    }
+    if (foldedNormalized.length >= 3) {
+        terms.add(foldedNormalized)
+        addStemTerms(foldedNormalized, terms)
+    }
+
+    for (const p of parts) {
+        if (p.length >= 3) {
+            terms.add(p)
+            addStemTerms(p, terms)
+            const folded = foldTurkishChars(p)
+            if (folded.length >= 3) {
+                terms.add(folded)
+                addStemTerms(folded, terms)
+            }
+        }
+    }
+
+    // Keep phrase-like 2-word segments for better exact-ish matching.
+    for (let i = 0; i < parts.length - 1; i++) {
+        const pair = `${parts[i]} ${parts[i + 1]}`.trim()
+        if (pair.length >= 5) {
+            terms.add(pair)
+            const foldedPair = foldTurkishChars(pair)
+            if (foldedPair.length >= 5) terms.add(foldedPair)
+        }
+    }
+
+    return Array.from(terms).slice(0, 40)
+}
+
+function scoreFoodNameMatch(foodName: string, prompt: string, generatedNames: string[]) {
+    const foodNorm = normalizeSearchToken(foodName)
+    const promptNorm = normalizeSearchToken(prompt)
+    const generatedNorm = generatedNames.map((n) => normalizeSearchToken(n)).filter(Boolean)
+    const foodFold = foldTurkishChars(foodName)
+    const promptFold = foldTurkishChars(prompt)
+    const generatedFold = generatedNames.map((n) => foldTurkishChars(n)).filter(Boolean)
+
+    let score = 0
+    let matchType: 'exact' | 'similar' = 'similar'
+    let matchSource: 'prompt' | 'ai_suggestion' = 'prompt'
+
+    const exactAgainstPrompt = promptNorm && foodNorm === promptNorm
+    const exactAgainstAi = generatedNorm.some((n) => n === foodNorm)
+    const exactAgainstPromptFold = promptFold && foodFold === promptFold
+    const exactAgainstAiFold = generatedFold.some((n) => n === foodFold)
+    if (exactAgainstPrompt || exactAgainstAi || exactAgainstPromptFold || exactAgainstAiFold) {
+        score += 100
+        matchType = 'exact'
+        matchSource = exactAgainstAi || exactAgainstAiFold ? 'ai_suggestion' : 'prompt'
+    }
+
+    if (
+        (promptNorm && (foodNorm.includes(promptNorm) || promptNorm.includes(foodNorm))) ||
+        (promptFold && (foodFold.includes(promptFold) || promptFold.includes(foodFold)))
+    ) {
+        score += 30
+        matchSource = 'prompt'
+    }
+
+    for (const g of generatedNorm) {
+        if (foodNorm.includes(g) || g.includes(foodNorm)) {
+            score += 20
+            matchSource = 'ai_suggestion'
+        }
+    }
+    for (const g of generatedFold) {
+        if (foodFold.includes(g) || g.includes(foodFold)) {
+            score += 20
+            matchSource = 'ai_suggestion'
+        }
+    }
+
+    const promptTokens = new Set(extractSearchTokens(prompt))
+    const foodTokens = normalizeSearchToken(foodName).split(/\s+/).filter((t) => t.length >= 3)
+    const overlap = foodTokens.filter((t) => promptTokens.has(t)).length
+    score += Math.min(overlap, 5) * 3
+
+    const promptTokensFold = new Set(extractSearchTokens(prompt).map((t) => foldTurkishChars(t)))
+    const foodTokensFold = foldTurkishChars(foodName).split(/\s+/).filter((t) => t.length >= 3)
+    const overlapFold = foodTokensFold.filter((t) => promptTokensFold.has(t)).length
+    score += Math.min(overlapFold, 5) * 3
+
+    return { score, matchType, matchSource }
+}
+
+function mergeBaseFoodWithOverride(baseFood: any, override: any) {
+    if (!override) return baseFood
+    const merged = { ...baseFood }
+    const fields = ['name', 'calories', 'protein', 'carbs', 'fat', 'portion_unit', 'tags', 'compatibility_tags', 'ingredients', 'recipe_text']
+    for (const field of fields) {
+        if (override[field] !== null && override[field] !== undefined) {
+            merged[field] = override[field]
+        }
+    }
+    return merged
+}
+
+function extractSearchTokens(prompt: string): string[] {
+    const stopWords = new Set([
+        've', 'ile', 'icin', 'gibi', 'olan', 'olsun', 'uygun', 'gore', 'ama', 'veya',
+        'bir', 'iki', 'uc', 'dort', 'bes', 'yedi', 'sekiz', 'dokuz', 'on', 'adet', 'gram',
+        'ogun', 'kahvalti', 'ogle', 'aksam', 'ara', 'diyet', 'tarif', 'tarifi', 'yemek', 'yemekler',
+        'isterim', 'istiyorum'
+    ])
+    const tokens = foldTurkishChars(prompt)
+        .split(/\s+/)
+        .filter((t) => t.length >= 3 && !stopWords.has(t))
+    return Array.from(new Set(tokens)).slice(0, 8)
+}
 async function searchUSDA(query: string, apiKey: string): Promise<any | null> {
     try {
         const url = `https://api.nal.usda.gov/fdc/v1/foods/search?api_key=${encodeURIComponent(apiKey)}&query=${encodeURIComponent(query)}&pageSize=5&dataType=Foundation,SR%20Legacy`
@@ -207,6 +352,7 @@ export async function POST(req: Request) {
 
         // Fetch existing food names to prevent duplicates
         let excludeMessage = ""
+        let existingFoodsFromDb: any[] = []
         try {
             const { data: existingFoods } = await supabaseAdmin
                 .from('foods')
@@ -218,6 +364,23 @@ export async function POST(req: Request) {
             }
         } catch (e) {
             console.warn('Could not fetch existing foods for dedup:', e)
+        }
+
+        try {
+            const promptTokens = extractSearchTokens(prompt)
+            if (promptTokens.length > 0) {
+                const orFilter = promptTokens
+                    .map((token) => `name.ilike.%${token.replace(/[%_]/g, '')}%`)
+                    .join(',')
+                const { data: matchedFoods } = await supabaseAdmin
+                    .from('foods')
+                    .select('id,name,calories,protein,carbs,fat,portion_unit,image_url,recipe_text,tags,compatibility_tags')
+                    .or(orFilter)
+                    .limit(12)
+                existingFoodsFromDb = matchedFoods || []
+            }
+        } catch (e) {
+            console.warn('Could not fetch existing foods by prompt:', e)
         }
 
         const selectedModel = promptData.model || "gemini-1.5-flash"
@@ -246,6 +409,143 @@ export async function POST(req: Request) {
 
         if (!newFoods || !Array.isArray(newFoods) || newFoods.length === 0) {
             throw new Error("Geçerli bir yemek listesi üretilemedi")
+        }
+
+        // Improve "we already have this" cards by matching prompt + AI suggested names together.
+        try {
+            const generatedNames = newFoods
+                .map((f: any) => String(f?.suggested_name || '').trim())
+                .filter(Boolean)
+
+            const mergedTerms = new Set<string>([
+                ...extractSearchTokens(prompt),
+                ...buildNameSearchTerms(prompt),
+                ...generatedNames.flatMap((n) => buildNameSearchTerms(n)),
+            ])
+
+            const queryTerms = Array.from(mergedTerms)
+                .map((t) => t.replace(/[%_]/g, '').trim())
+                .filter((t) => t.length >= 3)
+                .slice(0, 24)
+
+            if (queryTerms.length > 0) {
+                const orFilter = queryTerms.map((term) => `name.ilike.%${term}%`).join(',')
+                const { data: matchedFoodsByNames } = await supabaseAdmin
+                    .from('foods')
+                    .select('id,name,calories,protein,carbs,fat,portion_unit,image_url,recipe_text,tags,compatibility_tags')
+                    .or(orFilter)
+                    .limit(60)
+
+                let mergedFoodsBySource: any[] = matchedFoodsByNames || []
+                const ownerForTeamScope = teamOwnerId || userId || null
+
+                if (ownerForTeamScope) {
+                    const { data: matchedOverrides } = await supabaseAdmin
+                        .from('team_food_overrides')
+                        .select('base_food_id,name,calories,protein,carbs,fat,portion_unit,tags,compatibility_tags,ingredients,recipe_text')
+                        .eq('team_owner_id', ownerForTeamScope)
+                        .or(orFilter)
+                        .limit(120)
+
+                    const overrideRows = matchedOverrides || []
+                    const overrideBaseIds = Array.from(new Set(overrideRows.map((r: any) => r.base_food_id).filter(Boolean)))
+
+                    if (overrideBaseIds.length > 0) {
+                        const { data: baseFoodsForOverrides } = await supabaseAdmin
+                            .from('foods')
+                            .select('id,name,calories,protein,carbs,fat,portion_unit,image_url,recipe_text,tags,compatibility_tags')
+                            .in('id', overrideBaseIds)
+                            .limit(200)
+
+                        const overrideMap = new Map<string, any>()
+                        for (const row of overrideRows) {
+                            if (row?.base_food_id) overrideMap.set(row.base_food_id, row)
+                        }
+
+                        const mergedOverrideFoods = (baseFoodsForOverrides || []).map((baseFood: any) =>
+                            mergeBaseFoodWithOverride(baseFood, overrideMap.get(baseFood.id))
+                        )
+
+                        mergedFoodsBySource = [...mergedFoodsBySource, ...mergedOverrideFoods]
+                    }
+                }
+
+                const baseList = Array.isArray(existingFoodsFromDb) ? existingFoodsFromDb : []
+                const mergedById = new Map<string, any>()
+
+                for (const f of baseList) {
+                    if (f?.id) mergedById.set(f.id, f)
+                }
+                for (const f of mergedFoodsBySource || []) {
+                    if (f?.id) mergedById.set(f.id, f)
+                }
+
+                const ranked = Array.from(mergedById.values())
+                    .map((food: any) => {
+                        const match = scoreFoodNameMatch(food.name || '', prompt, generatedNames)
+                        return {
+                            ...food,
+                            match_type: match.matchType,
+                            match_source: match.matchSource,
+                            match_score: match.score,
+                        }
+                    })
+                    .sort((a, b) => b.match_score - a.match_score)
+                    .slice(0, 12)
+
+                existingFoodsFromDb = ranked
+            }
+
+            // Safety fallback: if SQL ilike/or misses Turkish-character variants,
+            // do an in-memory fuzzy pass on a wider food slice.
+            if (!existingFoodsFromDb?.length) {
+                const { data: wideFoods } = await supabaseAdmin
+                    .from('foods')
+                    .select('id,name,calories,protein,carbs,fat,portion_unit,image_url,recipe_text,tags,compatibility_tags')
+                    .not('name', 'is', null)
+                    .limit(2000)
+
+                const ownerForTeamScope = teamOwnerId || userId || null
+                let wideMergedFoods = wideFoods || []
+
+                if (ownerForTeamScope) {
+                    const { data: wideOverrides } = await supabaseAdmin
+                        .from('team_food_overrides')
+                        .select('base_food_id,name,calories,protein,carbs,fat,portion_unit,tags,compatibility_tags,ingredients,recipe_text')
+                        .eq('team_owner_id', ownerForTeamScope)
+                        .not('name', 'is', null)
+                        .limit(2000)
+
+                    if (wideOverrides?.length) {
+                        const overrideMap = new Map<string, any>()
+                        for (const row of wideOverrides) {
+                            if (row?.base_food_id) overrideMap.set(row.base_food_id, row)
+                        }
+
+                        wideMergedFoods = (wideFoods || []).map((baseFood: any) =>
+                            mergeBaseFoodWithOverride(baseFood, overrideMap.get(baseFood.id))
+                        )
+                    }
+                }
+
+                const rankedWide = (wideMergedFoods || [])
+                    .map((food: any) => {
+                        const match = scoreFoodNameMatch(food.name || '', prompt, generatedNames)
+                        return {
+                            ...food,
+                            match_type: match.matchType,
+                            match_source: match.matchSource,
+                            match_score: match.score,
+                        }
+                    })
+                    .filter((food: any) => food.match_score > 0)
+                    .sort((a: any, b: any) => b.match_score - a.match_score)
+                    .slice(0, 12)
+
+                existingFoodsFromDb = rankedWide
+            }
+        } catch (e) {
+            console.warn('Could not improve existing food matches:', e)
         }
 
         // USDA Verification: If USDA key is available, verify macros for each food
@@ -346,7 +646,12 @@ export async function POST(req: Request) {
             throw new Error("Veritabanına kaydedilemedi: " + error.message)
         }
 
-        return NextResponse.json({ success: true, count: data.length, proposals: data })
+        return NextResponse.json({
+            success: true,
+            count: data.length,
+            proposals: data,
+            existingFoods: existingFoodsFromDb,
+        })
     } catch (error: any) {
         console.error('Food Discovery AI Error:', error)
         return NextResponse.json({ error: error.message || 'Üretim sırasında bir hata oluştu' }, { status: 500 })

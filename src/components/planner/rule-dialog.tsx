@@ -37,13 +37,14 @@ interface RuleDialogProps {
     open: boolean
     onOpenChange: (open: boolean) => void
     initialData: PlanningRule | null
+    prefillData?: PlanningRule | null
     onSuccess: () => void
     patientId?: string // For patient-scoped rules
     programTemplateId?: string | null
     teamOwnerId?: string | null
 }
 
-export function RuleDialog({ open, onOpenChange, initialData, onSuccess, patientId, programTemplateId, teamOwnerId }: RuleDialogProps) {
+export function RuleDialog({ open, onOpenChange, initialData, prefillData, onSuccess, patientId, programTemplateId, teamOwnerId }: RuleDialogProps) {
     const { categories, roles, loading: metadataLoading } = usePlannerMetadata()
     const [mealTypes, setMealTypes] = useState<string[]>([])
     const [definition, setDefinition] = useState<RuleDefinition | null>(null)
@@ -75,6 +76,8 @@ export function RuleDialog({ open, onOpenChange, initialData, onSuccess, patient
     })
 
     const watchedType = form.watch("rule_type") as RuleType
+    const isEditingExistingRule = Boolean(initialData?.id)
+    const effectivePrefillData = !isEditingExistingRule ? (prefillData || null) : null
 
     useEffect(() => {
         if (open) {
@@ -87,6 +90,15 @@ export function RuleDialog({ open, onOpenChange, initialData, onSuccess, patient
                     is_active: initialData.is_active,
                 })
                 setDefinition(initialData.definition)
+            } else if (effectivePrefillData) {
+                form.reset({
+                    name: effectivePrefillData.name || "",
+                    description: effectivePrefillData.description || "",
+                    rule_type: effectivePrefillData.rule_type || "frequency",
+                    priority: effectivePrefillData.priority ?? 50,
+                    is_active: effectivePrefillData.is_active ?? true,
+                })
+                setDefinition(effectivePrefillData.definition || null)
             } else {
                 form.reset({
                     name: "",
@@ -107,7 +119,7 @@ export function RuleDialog({ open, onOpenChange, initialData, onSuccess, patient
                 })
             }
         }
-    }, [open, initialData, form])
+    }, [open, initialData, effectivePrefillData, form])
 
     // Switch definition structure when type changes
     useEffect(() => {
@@ -183,7 +195,6 @@ export function RuleDialog({ open, onOpenChange, initialData, onSuccess, patient
 
         setLoading(true)
         try {
-            const isEditingExistingRule = Boolean(initialData?.id)
             const editingRuleId = initialData?.id || null
             const resolvedScope: 'global' | 'team' | 'program' | 'patient' =
                 patientId ? 'patient'
@@ -202,7 +213,9 @@ export function RuleDialog({ open, onOpenChange, initialData, onSuccess, patient
                     team_owner_id: (resolvedScope === 'team' || resolvedScope === 'program' || resolvedScope === 'patient')
                         ? (teamOwnerId || null)
                         : null,
-                    source_rule_id: initialData?.source_rule_id || null,
+                    source_rule_id: effectivePrefillData
+                        ? (effectivePrefillData.source_rule_id || effectivePrefillData.id || null)
+                        : null,
                     pending_global_approval: false,
                 } : {})
             }
@@ -234,7 +247,7 @@ export function RuleDialog({ open, onOpenChange, initialData, onSuccess, patient
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto resize-x">
                 <DialogHeader>
-                    <DialogTitle>{initialData ? "Kuralı Düzenle" : "Yeni Planlama Kuralı"}</DialogTitle>
+                    <DialogTitle>{isEditingExistingRule ? "Kuralı Düzenle" : "Yeni Planlama Kuralı"}</DialogTitle>
                     <DialogDescription>
                         Otomatik planlayıcı için bir davranış kuralı tanımlayın.
                     </DialogDescription>
@@ -283,7 +296,7 @@ export function RuleDialog({ open, onOpenChange, initialData, onSuccess, patient
                                     <Select
                                         onValueChange={field.onChange}
                                         defaultValue={field.value}
-                                        disabled={!!initialData} // Cannot change type after creation for safety
+                                        disabled={isEditingExistingRule} // Cannot change type after creation for safety
                                     >
                                         <FormControl>
                                             <SelectTrigger>
@@ -407,7 +420,7 @@ export function RuleDialog({ open, onOpenChange, initialData, onSuccess, patient
                             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>İptal</Button>
                             <Button type="submit" disabled={loading}>
                                 {loading && "Kaydediliyor..."}
-                                {!loading && (initialData ? "Güncelle" : "Oluştur")}
+                                {!loading && (isEditingExistingRule ? "Güncelle" : "Oluştur")}
                             </Button>
                         </DialogFooter>
                     </form>

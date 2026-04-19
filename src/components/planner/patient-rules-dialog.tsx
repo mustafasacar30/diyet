@@ -1,6 +1,6 @@
-"use client"
+﻿"use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { supabase } from "@/lib/supabase"
 import {
     Dialog,
@@ -10,11 +10,18 @@ import {
     DialogHeader,
     DialogTitle
 } from "@/components/ui/dialog"
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Switch } from "@/components/ui/switch"
 // import { ScrollArea } from "@/components/ui/scroll-area" 
-import { Loader2, Plus, Trash2, Pencil, RotateCcw, Upload, Download, AlertCircle, GripVertical } from "lucide-react"
+import { Loader2, Plus, Trash2, Pencil, RotateCcw, Upload, Download, AlertCircle, GripVertical, Copy } from "lucide-react"
 import { RuleDialog } from "./rule-dialog"
 import { PlanningRule } from "@/types/planner"
 import {
@@ -38,6 +45,37 @@ import { resolveTeamScopeContextFromAuth } from "@/lib/team-scope"
 
 // Sentinel rule name used to signal "use global rules, skip program/team inheritance"
 const USE_GLOBAL_SENTINEL = '__use_global__'
+type RuleScopeKey = 'global' | 'team' | 'program' | 'patient'
+
+const RULE_TYPE_LABELS: Record<string, string> = {
+    frequency: 'Sıklık / Limit',
+    affinity: 'Uyum / Eşleşme',
+    consistency: 'Tutarlılık / Kilit',
+    fixed_meal: 'Sabit Öğün',
+    nutritional: 'Makro Kuralı',
+    rotation: 'Rotasyon',
+    or_group: 'VEYA Grubu',
+    preference: 'Tercih'
+}
+
+function getRuleTypeLabel(type?: string | null) {
+    if (!type) return 'Kural'
+    return RULE_TYPE_LABELS[type] || type
+}
+
+function getScopeLabel(scope: RuleScopeKey) {
+    if (scope === 'patient') return 'Hasta'
+    if (scope === 'program') return 'Program'
+    if (scope === 'team') return 'Takım'
+    return 'Global'
+}
+
+function getScopeBadgeClass(scope: RuleScopeKey) {
+    if (scope === 'patient') return 'bg-amber-50 text-amber-700 border-amber-200'
+    if (scope === 'program') return 'bg-indigo-50 text-indigo-700 border-indigo-200'
+    if (scope === 'team') return 'bg-violet-50 text-violet-700 border-violet-200'
+    return 'bg-blue-50 text-blue-700 border-blue-200'
+}
 
 interface PatientRulesDialogProps {
     open: boolean
@@ -50,6 +88,52 @@ interface PatientRulesDialogProps {
 }
 
 export function PatientRulesDialog({ open, onOpenChange, patientId, programTemplateId, focusRuleId, focusRuleName, onRulesChanged }: PatientRulesDialogProps) {
+    const DIALOG_MARGIN = 12
+    const OPEN_VERTICAL_OFFSET = 24
+    const MIN_DIALOG_WIDTH = 760
+    const MIN_DIALOG_HEIGHT = 560
+    const DEFAULT_DIALOG_WIDTH = 1100
+    const DEFAULT_DIALOG_HEIGHT = 880
+
+    const clampDialogSize = useCallback((size: { width: number, height: number }) => {
+        if (typeof window === 'undefined') return size
+        const maxWidth = Math.max(360, window.innerWidth - (DIALOG_MARGIN * 2))
+        const maxHeight = Math.max(360, window.innerHeight - (DIALOG_MARGIN * 2))
+        const minWidth = Math.min(MIN_DIALOG_WIDTH, maxWidth)
+        const minHeight = Math.min(MIN_DIALOG_HEIGHT, maxHeight)
+        return {
+            width: Math.max(minWidth, Math.min(maxWidth, size.width)),
+            height: Math.max(minHeight, Math.min(maxHeight, size.height))
+        }
+    }, [])
+
+    const getPositionBounds = useCallback((size: { width: number, height: number }) => {
+        if (typeof window === 'undefined') {
+            return { minX: DIALOG_MARGIN, maxX: DIALOG_MARGIN, minY: DIALOG_MARGIN, maxY: DIALOG_MARGIN }
+        }
+        return {
+            minX: DIALOG_MARGIN,
+            maxX: Math.max(DIALOG_MARGIN, window.innerWidth - size.width - DIALOG_MARGIN),
+            minY: DIALOG_MARGIN,
+            maxY: Math.max(DIALOG_MARGIN, window.innerHeight - size.height - DIALOG_MARGIN)
+        }
+    }, [])
+
+    const clampPosition = useCallback((position: { x: number, y: number }, size: { width: number, height: number }) => {
+        const bounds = getPositionBounds(size)
+        return {
+            x: Math.max(bounds.minX, Math.min(position.x, bounds.maxX)),
+            y: Math.max(bounds.minY, Math.min(position.y, bounds.maxY))
+        }
+    }, [getPositionBounds])
+
+    const getCenteredPosition = useCallback((size: { width: number, height: number }) => {
+        if (typeof window === 'undefined') return { x: DIALOG_MARGIN, y: DIALOG_MARGIN }
+        const centerX = Math.round((window.innerWidth - size.width) / 2)
+        const centerY = Math.round((window.innerHeight - size.height) / 2) + OPEN_VERTICAL_OFFSET
+        return clampPosition({ x: centerX, y: centerY }, size)
+    }, [clampPosition])
+
     const normalizeRuleName = (value?: string | null) => (value || '')
         .toLocaleLowerCase('tr-TR')
         .replace(/[^a-z0-9ğıüşöçİĞÜŞÖÇ]+/g, ' ')
@@ -83,9 +167,28 @@ export function PatientRulesDialog({ open, onOpenChange, patientId, programTempl
     const [hasGlobalSentinel, setHasGlobalSentinel] = useState(false)
     const [ruleDialogOpen, setRuleDialogOpen] = useState(false)
     const [editingRule, setEditingRule] = useState<PlanningRule | null>(null)
+    const [prefillRule, setPrefillRule] = useState<PlanningRule | null>(null)
     const [lastFocusKey, setLastFocusKey] = useState<string | null>(null)
     const [teamOwnerId, setTeamOwnerId] = useState<string | null>(null)
     const [isTeamScopedContext, setIsTeamScopedContext] = useState(false)
+    const [patientDisplayName, setPatientDisplayName] = useState<string>('hasta')
+    const importInputRef = useRef<HTMLInputElement | null>(null)
+    const [importModeDialogOpen, setImportModeDialogOpen] = useState(false)
+    const [pendingImportedRules, setPendingImportedRules] = useState<any[] | null>(null)
+    const [pendingImportFileName, setPendingImportFileName] = useState('')
+    const [copyDialogOpen, setCopyDialogOpen] = useState(false)
+    const [copyTargetPatientId, setCopyTargetPatientId] = useState<string>('')
+    const [copyTargetPatients, setCopyTargetPatients] = useState<Array<{ id: string, full_name: string }>>([])
+    const [copyTargetsLoading, setCopyTargetsLoading] = useState(false)
+    const [dialogSize, setDialogSize] = useState<{ width: number, height: number }>({
+        width: DEFAULT_DIALOG_WIDTH,
+        height: DEFAULT_DIALOG_HEIGHT
+    })
+    const [dialogPosition, setDialogPosition] = useState({ x: DIALOG_MARGIN, y: DIALOG_MARGIN })
+    const [isDraggingDialog, setIsDraggingDialog] = useState(false)
+    const [isResizingDialog, setIsResizingDialog] = useState(false)
+    const dragStartRef = useRef<{ x: number, y: number, startPositionX: number, startPositionY: number } | null>(null)
+    const resizeStartRef = useRef<{ x: number, y: number, width: number, height: number } | null>(null)
 
     const applyCurrentTeamFilter = useCallback((query: any) => {
         if (isTeamScopedContext && teamOwnerId) {
@@ -183,6 +286,144 @@ export function PatientRulesDialog({ open, onOpenChange, patientId, programTempl
             fetchRules()
         }
     }, [open, patientId, fetchRules])
+
+    const safeDialogPosition = clampPosition(dialogPosition, dialogSize)
+
+    useEffect(() => {
+        if (!open || typeof window === 'undefined') return
+        const nextSize = clampDialogSize({ width: DEFAULT_DIALOG_WIDTH, height: DEFAULT_DIALOG_HEIGHT })
+        setDialogSize(nextSize)
+        setDialogPosition(getCenteredPosition(nextSize))
+    }, [open, clampDialogSize, getCenteredPosition])
+
+    useEffect(() => {
+        if (!open || typeof window === 'undefined') return
+        const handleWindowResize = () => {
+            setDialogSize((prevSize) => {
+                const nextSize = clampDialogSize(prevSize)
+                setDialogPosition((prevPosition) => clampPosition(prevPosition, nextSize))
+                return nextSize
+            })
+        }
+        window.addEventListener('resize', handleWindowResize)
+        return () => window.removeEventListener('resize', handleWindowResize)
+    }, [open, clampDialogSize, clampPosition])
+
+    useEffect(() => {
+        if (!isDraggingDialog || typeof window === 'undefined') return
+
+        const handleMove = (event: MouseEvent) => {
+            if (!dragStartRef.current) return
+            const rawX = dragStartRef.current.startPositionX + (event.clientX - dragStartRef.current.x)
+            const rawY = dragStartRef.current.startPositionY + (event.clientY - dragStartRef.current.y)
+            setDialogPosition(clampPosition({ x: rawX, y: rawY }, dialogSize))
+        }
+
+        const handleUp = () => {
+            setIsDraggingDialog(false)
+            dragStartRef.current = null
+            document.body.style.userSelect = ''
+            document.body.style.cursor = ''
+        }
+
+        document.body.style.userSelect = 'none'
+        document.body.style.cursor = 'move'
+        window.addEventListener('mousemove', handleMove)
+        window.addEventListener('mouseup', handleUp)
+        return () => {
+            window.removeEventListener('mousemove', handleMove)
+            window.removeEventListener('mouseup', handleUp)
+            document.body.style.userSelect = ''
+            document.body.style.cursor = ''
+        }
+    }, [isDraggingDialog, clampPosition, dialogSize])
+
+    useEffect(() => {
+        if (!isResizingDialog || typeof window === 'undefined') return
+
+        const handleMove = (event: MouseEvent) => {
+            if (!resizeStartRef.current) return
+            const dx = event.clientX - resizeStartRef.current.x
+            const dy = event.clientY - resizeStartRef.current.y
+            const nextSize = clampDialogSize({
+                width: resizeStartRef.current.width + dx,
+                height: resizeStartRef.current.height + dy
+            })
+            setDialogSize(nextSize)
+            setDialogPosition((prev) => clampPosition(prev, nextSize))
+        }
+
+        const handleUp = () => {
+            setIsResizingDialog(false)
+            resizeStartRef.current = null
+            document.body.style.userSelect = ''
+            document.body.style.cursor = ''
+        }
+
+        document.body.style.userSelect = 'none'
+        document.body.style.cursor = 'se-resize'
+        window.addEventListener('mousemove', handleMove)
+        window.addEventListener('mouseup', handleUp)
+        return () => {
+            window.removeEventListener('mousemove', handleMove)
+            window.removeEventListener('mouseup', handleUp)
+            document.body.style.userSelect = ''
+            document.body.style.cursor = ''
+        }
+    }, [isResizingDialog, clampDialogSize, clampPosition])
+
+    function handleDialogDragStart(event: any) {
+        if (isResizingDialog) return
+        const target = event.target as HTMLElement | null
+        if (target?.closest('button, input, select, textarea, a, [data-no-drag="true"]')) return
+        event.preventDefault()
+        dragStartRef.current = {
+            x: event.clientX,
+            y: event.clientY,
+            startPositionX: safeDialogPosition.x,
+            startPositionY: safeDialogPosition.y
+        }
+        setIsDraggingDialog(true)
+    }
+
+    function handleDialogResizeStart(event: any) {
+        event.preventDefault()
+        event.stopPropagation()
+        resizeStartRef.current = {
+            x: event.clientX,
+            y: event.clientY,
+            width: dialogSize.width,
+            height: dialogSize.height
+        }
+        setIsResizingDialog(true)
+    }
+
+    useEffect(() => {
+        if (!open || !patientId) return
+
+        let cancelled = false
+        ;(async () => {
+            try {
+                const { data: patientRow } = await supabase
+                    .from('patients')
+                    .select('first_name,last_name')
+                    .eq('id', patientId)
+                    .maybeSingle()
+
+                if (cancelled) return
+                const first = String(patientRow?.first_name || '').trim()
+                const last = String(patientRow?.last_name || '').trim()
+                const full = `${first} ${last}`.trim()
+                setPatientDisplayName(full || 'hasta')
+            } catch {
+                if (!cancelled) setPatientDisplayName('hasta')
+            }
+        })()
+
+        return () => {
+            cancelled = true
+        }
+    }, [open, patientId])
 
     useEffect(() => {
         if (!open) {
@@ -383,6 +624,7 @@ export function PatientRulesDialog({ open, onOpenChange, patientId, programTempl
 
                 if (cancelled || !editableRule) return
 
+                setPrefillRule(null)
                 setEditingRule(editableRule)
                 setRuleDialogOpen(true)
                 setLastFocusKey(focusKey)
@@ -413,6 +655,25 @@ export function PatientRulesDialog({ open, onOpenChange, patientId, programTempl
     const inheritedLabel = isProgramInherited ? 'Program' : isTeamInherited ? 'Takım' : 'Global'
     const hasExplicitProgramRules = programRules.length > 0
     const hasExplicitTeamRules = teamRules.length > 0
+
+    const getActiveScopeForRule = useCallback((rule: PlanningRule): RuleScopeKey => {
+        const rawScope = ((rule as any).scope_source || (rule as any).scope || '') as string
+        if (rawScope === 'patient' || rawScope === 'program' || rawScope === 'team' || rawScope === 'global') {
+            return rawScope
+        }
+        if (!hasPatientRules && isProgramInherited) return 'program'
+        if (!hasPatientRules && isTeamInherited) return 'team'
+        return 'global'
+    }, [hasPatientRules, isProgramInherited, isTeamInherited])
+
+    const getSourceScopeForRule = useCallback((rule: PlanningRule): RuleScopeKey | null => {
+        const sourceRuleId = (rule as any).source_rule_id as string | null | undefined
+        if (!sourceRuleId) return null
+        if (programRules.some(r => r.id === sourceRuleId)) return 'program'
+        if (teamRules.some(r => r.id === sourceRuleId)) return 'team'
+        if (globalRules.some(r => r.id === sourceRuleId)) return 'global'
+        return null
+    }, [programRules, teamRules, globalRules])
 
     // Find new base rules that patient doesn't have
     const newInheritedRules = baseRules.filter(g => {
@@ -709,6 +970,32 @@ export function PatientRulesDialog({ open, onOpenChange, patientId, programTempl
         setLoading(false)
     }
 
+    function handlePrefillAndAddRule(baseRule: PlanningRule) {
+        setEditingRule(null)
+        setPrefillRule(baseRule)
+        setRuleDialogOpen(true)
+    }
+
+    function openRuleDialogForNew(prefill?: PlanningRule | null) {
+        setEditingRule(null)
+        setPrefillRule(prefill || null)
+        setRuleDialogOpen(true)
+    }
+
+    function openRuleDialogForEdit(rule: PlanningRule) {
+        setPrefillRule(null)
+        setEditingRule(rule)
+        setRuleDialogOpen(true)
+    }
+
+    function handleRuleDialogOpenChange(nextOpen: boolean) {
+        setRuleDialogOpen(nextOpen)
+        if (!nextOpen) {
+            setEditingRule(null)
+            setPrefillRule(null)
+        }
+    }
+
     // Add all new base rules
     async function handleAddAllNewGlobalRules() {
         setLoading(true)
@@ -828,38 +1115,404 @@ export function PatientRulesDialog({ open, onOpenChange, patientId, programTempl
             ? patientRules.filter(r => !r.is_ignored)
             : baseRules
 
+    function buildSafeFileNamePart(value: string) {
+        return (value || 'hasta')
+            .toLocaleLowerCase('tr-TR')
+            .replace(/[^\p{L}\p{N}\s_-]/gu, '')
+            .trim()
+            .replace(/\s+/g, '_')
+            .replace(/_+/g, '_')
+            .replace(/^_+|_+$/g, '') || 'hasta'
+    }
+
+    function formatDateForFileName(date: Date) {
+        const y = date.getFullYear()
+        const m = String(date.getMonth() + 1).padStart(2, '0')
+        const d = String(date.getDate()).padStart(2, '0')
+        return `${y}-${m}-${d}`
+    }
+
+    function handleExportPatientRules() {
+        const exportRules = patientRules.filter((r) => r.name !== USE_GLOBAL_SENTINEL && !r.is_ignored)
+        if (exportRules.length === 0) {
+            alert("Bu hastada dışa aktarılacak bireysel kural bulunmuyor.")
+            return
+        }
+
+        const today = formatDateForFileName(new Date())
+        const safePatientName = buildSafeFileNamePart(patientDisplayName)
+        const payload = {
+            exported_at: new Date().toISOString(),
+            patient_id: patientId,
+            patient_name: patientDisplayName,
+            scope: "patient",
+            rules_count: exportRules.length,
+            rules: exportRules,
+        }
+
+        const json = JSON.stringify(payload, null, 2)
+        const blob = new Blob([json], { type: 'application/json' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `${safePatientName}_${today}_bireysel_kurallar.json`
+        a.click()
+        URL.revokeObjectURL(url)
+    }
+
+    function handleImportButtonClick() {
+        importInputRef.current?.click()
+    }
+
+    const stableStringifyRule = useCallback((value: any): string => {
+        if (value === null || typeof value !== 'object') return JSON.stringify(value)
+        if (Array.isArray(value)) return `[${value.map(stableStringifyRule).join(',')}]`
+        const keys = Object.keys(value).sort()
+        return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringifyRule(value[k])}`).join(',')}}`
+    }, [])
+
+    const buildRuleUniqueKey = useCallback((rule: any) => {
+        const name = String(rule?.name || '').trim().toLocaleLowerCase('tr-TR')
+        const type = String(rule?.rule_type || 'frequency').trim().toLocaleLowerCase('tr-TR')
+        const def = stableStringifyRule(rule?.definition || { type: 'frequency', data: {} })
+        return `${name}|${type}|${def}`
+    }, [stableStringifyRule])
+
+    async function applyPendingPatientImport(importMode: 'replace' | 'merge') {
+        if (!pendingImportedRules || pendingImportedRules.length === 0) return
+        setImportModeDialogOpen(false)
+        setLoading(true)
+        try {
+            let insertedCount = 0
+
+            if (importMode === 'replace') {
+                const { error: deleteError } = await supabase
+                    .from('planning_rules')
+                    .delete()
+                    .eq('scope', 'patient')
+                    .eq('patient_id', patientId)
+
+                if (deleteError) throw deleteError
+
+                const replacePayload = pendingImportedRules.map((r: any, i: number) => ({ ...r, sort_order: i }))
+                const { error: insertError } = await supabase
+                    .from('planning_rules')
+                    .insert(replacePayload)
+
+                if (insertError) throw insertError
+                insertedCount = replacePayload.length
+            } else {
+                await supabase
+                    .from('planning_rules')
+                    .delete()
+                    .eq('scope', 'patient')
+                    .eq('patient_id', patientId)
+                    .eq('name', USE_GLOBAL_SENTINEL)
+
+                const { data: existingRows, error: existingError } = await applyCurrentTeamFilter(
+                    supabase
+                        .from('planning_rules')
+                        .select('id,name,rule_type,definition,sort_order')
+                        .eq('scope', 'patient')
+                        .eq('patient_id', patientId)
+                )
+                if (existingError) throw existingError
+
+                const existing = existingRows || []
+                const existingKeys = new Set(
+                    existing
+                        .filter((r: any) => r?.name !== USE_GLOBAL_SENTINEL)
+                        .map((r: any) => buildRuleUniqueKey(r))
+                )
+                const currentMaxSort = existing.reduce((max: number, r: any) => {
+                    const v = Number(r?.sort_order)
+                    return Number.isFinite(v) ? Math.max(max, v) : max
+                }, -1)
+
+                const mergePayload = pendingImportedRules
+                    .filter((r: any) => !existingKeys.has(buildRuleUniqueKey(r)))
+                    .map((r: any, i: number) => ({ ...r, sort_order: currentMaxSort + i + 1 }))
+
+                if (mergePayload.length > 0) {
+                    const { error: insertError } = await supabase
+                        .from('planning_rules')
+                        .insert(mergePayload)
+                    if (insertError) throw insertError
+                }
+                insertedCount = mergePayload.length
+            }
+
+            await fetchRules()
+            onRulesChanged?.()
+            if (importMode === 'replace') {
+                alert(`${insertedCount} kural başarıyla içe aktarıldı (değiştir modu).`)
+            } else {
+                alert(`${insertedCount} yeni/farklı kural eklendi (birleştir modu).`)
+            }
+        } catch (error: any) {
+            console.error("Patient rules import error:", error)
+            alert("Kural içe aktarma hatası: " + (error?.message || "Geçersiz JSON dosyası"))
+        } finally {
+            setLoading(false)
+            setPendingImportedRules(null)
+            setPendingImportFileName('')
+        }
+    }
+
+    async function handleImportPatientRulesFromFile(event: React.ChangeEvent<HTMLInputElement>) {
+        const file = event.target.files?.[0]
+        if (!file) return
+
+        try {
+            const raw = await file.text()
+            const parsed = JSON.parse(raw)
+            const importedRules = Array.isArray(parsed?.rules) ? parsed.rules : (Array.isArray(parsed) ? parsed : [])
+
+            if (!Array.isArray(importedRules) || importedRules.length === 0) {
+                alert("Geçerli bir kural listesi bulunamadı.")
+                return
+            }
+
+            const cleanedRules = importedRules
+                .filter((rule: any) => rule && rule.name !== USE_GLOBAL_SENTINEL)
+                .map((rule: any, index: number) => ({
+                    name: String(rule.name || `İçe Aktarılan Kural ${index + 1}`),
+                    description: rule.description ?? null,
+                    rule_type: rule.rule_type || 'frequency',
+                    priority: Number.isFinite(Number(rule.priority)) ? Number(rule.priority) : 0,
+                    is_active: rule.is_active !== false,
+                    is_ignored: rule.is_ignored === true,
+                    definition: rule.definition || { type: 'frequency', data: {} },
+                    sort_order: Number.isFinite(Number(rule.sort_order)) ? Number(rule.sort_order) : index,
+                    scope: 'patient' as const,
+                    patient_id: patientId,
+                    team_owner_id: isTeamScopedContext ? teamOwnerId : null,
+                    source_rule_id: null,
+                    pending_global_approval: false,
+                }))
+
+            const uniqueMap = new Map<string, any>()
+            cleanedRules.forEach((rule: any) => {
+                const key = buildRuleUniqueKey(rule)
+                if (!uniqueMap.has(key)) uniqueMap.set(key, rule)
+            })
+            const dedupedImportedRules = Array.from(uniqueMap.values())
+
+            if (dedupedImportedRules.length === 0) {
+                alert("İçe aktarılacak geçerli bireysel kural bulunamadı.")
+                return
+            }
+
+            setPendingImportedRules(dedupedImportedRules)
+            setPendingImportFileName(file.name || 'rules.json')
+            setImportModeDialogOpen(true)
+        } catch (error: any) {
+            console.error("Patient rules import error:", error)
+            alert("Kural içe aktarma hatası: " + (error?.message || "Geçersiz JSON dosyası"))
+        } finally {
+            if (event.target) event.target.value = ''
+        }
+    }
+
+    async function handleOpenCopyDialog() {
+        const exportRules = patientRules.filter((r) => r.name !== USE_GLOBAL_SENTINEL && !r.is_ignored)
+        if (exportRules.length === 0) {
+            alert("Kopyalanacak bireysel kural bulunmuyor.")
+            return
+        }
+        setCopyTargetsLoading(true)
+        try {
+            let query = supabase
+                .from('patients')
+                .select('id,full_name')
+                .neq('id', patientId)
+                .order('full_name', { ascending: true })
+
+            const { data, error } = await query
+            if (error) throw error
+            const patients = (data || []) as Array<{ id: string, full_name: string }>
+            setCopyTargetPatients(patients)
+            setCopyTargetPatientId(patients[0]?.id || '')
+            setCopyDialogOpen(true)
+        } catch (error: any) {
+            console.error("Copy target patients fetch error:", error)
+            alert("Hedef hastalar yüklenemedi: " + (error?.message || 'Bilinmeyen hata'))
+        } finally {
+            setCopyTargetsLoading(false)
+        }
+    }
+
+    async function applyCopyToPatient(copyMode: 'replace' | 'merge') {
+        const targetPatientId = copyTargetPatientId
+        if (!targetPatientId) {
+            alert("Lütfen hedef hasta seçin.")
+            return
+        }
+
+        const sourceRules = patientRules
+            .filter((r) => r.name !== USE_GLOBAL_SENTINEL && !r.is_ignored)
+            .map((rule, index) => ({
+                name: String(rule.name || `Kopyalanan Kural ${index + 1}`),
+                description: rule.description ?? null,
+                rule_type: rule.rule_type || 'frequency',
+                priority: Number.isFinite(Number(rule.priority)) ? Number(rule.priority) : 0,
+                is_active: rule.is_active !== false,
+                is_ignored: rule.is_ignored === true,
+                definition: rule.definition || { type: 'frequency', data: {} },
+                sort_order: Number.isFinite(Number(rule.sort_order)) ? Number(rule.sort_order) : index,
+                scope: 'patient' as const,
+                patient_id: targetPatientId,
+                team_owner_id: isTeamScopedContext ? teamOwnerId : null,
+                source_rule_id: null,
+                pending_global_approval: false,
+            }))
+
+        if (sourceRules.length === 0) {
+            alert("Kopyalanacak bireysel kural bulunmuyor.")
+            return
+        }
+
+        setCopyDialogOpen(false)
+        setLoading(true)
+        try {
+            let insertedCount = 0
+
+            if (copyMode === 'replace') {
+                const { error: deleteError } = await supabase
+                    .from('planning_rules')
+                    .delete()
+                    .eq('scope', 'patient')
+                    .eq('patient_id', targetPatientId)
+                if (deleteError) throw deleteError
+
+                const replacePayload = sourceRules.map((r, i) => ({ ...r, sort_order: i }))
+                const { error: insertError } = await supabase
+                    .from('planning_rules')
+                    .insert(replacePayload)
+                if (insertError) throw insertError
+                insertedCount = replacePayload.length
+            } else {
+                const { data: existingRows, error: existingError } = await applyCurrentTeamFilter(
+                    supabase
+                        .from('planning_rules')
+                        .select('id,name,rule_type,definition,sort_order')
+                        .eq('scope', 'patient')
+                        .eq('patient_id', targetPatientId)
+                )
+                if (existingError) throw existingError
+
+                const existing = existingRows || []
+                const existingKeys = new Set(existing.map((r: any) => buildRuleUniqueKey(r)))
+                const currentMaxSort = existing.reduce((max: number, r: any) => {
+                    const v = Number(r?.sort_order)
+                    return Number.isFinite(v) ? Math.max(max, v) : max
+                }, -1)
+
+                const mergePayload = sourceRules
+                    .filter((r) => !existingKeys.has(buildRuleUniqueKey(r)))
+                    .map((r, i) => ({ ...r, sort_order: currentMaxSort + i + 1 }))
+
+                if (mergePayload.length > 0) {
+                    const { error: insertError } = await supabase
+                        .from('planning_rules')
+                        .insert(mergePayload)
+                    if (insertError) throw insertError
+                }
+                insertedCount = mergePayload.length
+            }
+
+            alert(
+                copyMode === 'replace'
+                    ? `${insertedCount} kural hedef hastaya kopyalandı (değiştir modu).`
+                    : `${insertedCount} yeni/farklı kural hedef hastaya eklendi (birleştir modu).`
+            )
+        } catch (error: any) {
+            console.error("Patient rules copy error:", error)
+            alert("Kural kopyalama hatası: " + (error?.message || "Bilinmeyen hata"))
+        } finally {
+            setLoading(false)
+        }
+    }
+
     return (
         <>
 
             <Dialog open={open} onOpenChange={onOpenChange}>
-                <DialogContent className="!max-w-[800px] !w-full !h-[85vh] !flex !flex-col !p-0 !gap-0 overflow-hidden outline-none">
-                    <DialogHeader className="px-6 py-4 border-b bg-white shrink-0 z-10">
-                        <DialogTitle className="flex items-center gap-2">
-                            Planlama Kuralları
-                            {hasGlobalSentinel ? (
-                                <Badge variant="default" className="bg-orange-600">Global (Manuel)</Badge>
-                            ) : hasPatientRules ? (
-                                <Badge variant="default" className="bg-blue-600">Kişiselleştirildi</Badge>
-                            ) : isProgramInherited ? (
-                                <Badge variant="default" className="bg-purple-600">Program Kuralları</Badge>
-                            ) : isTeamInherited ? (
-                                <Badge variant="default" className="bg-violet-600">Takım Kuralları</Badge>
-                            ) : (
-                                <Badge variant="secondary">Global</Badge>
-                            )}
-                        </DialogTitle>
-                        <DialogDescription>
-                            {hasGlobalSentinel
-                                ? "Bu hasta global kuralları kullanıyor (program/takım kuralları atlanıyor)."
-                                : hasPatientRules
-                                    ? "Bu hastaya özel kurallar aktif. Değişiklikler sadece bu hastayı etkiler."
-                                    : isProgramInherited
-                                        ? "Programdan devralınan kurallar aktif. Değişiklik yaparsanız kurallar otomatik olarak kişiselleştirilir."
-                                        : isTeamInherited
-                                            ? "Takımdan devralınan kurallar aktif. Değişiklik yaparsanız kurallar otomatik olarak kişiselleştirilir."
-                                            : "Tüm hastalar için geçerli global kurallar görüntüleniyor."
-                            }
-                        </DialogDescription>
+                <DialogContent
+                    className="!max-w-none !translate-x-0 !translate-y-0 !flex !flex-col !p-0 !gap-0 overflow-hidden outline-none"
+                    style={{
+                        width: `${dialogSize.width}px`,
+                        height: `${dialogSize.height}px`,
+                        left: `${safeDialogPosition.x}px`,
+                        top: `${safeDialogPosition.y}px`,
+                        transform: 'none',
+                        maxWidth: 'calc(100vw - 24px)',
+                        maxHeight: 'calc(100vh - 24px)'
+                    }}
+                >
+                    <DialogHeader onMouseDown={handleDialogDragStart} className="px-6 py-4 border-b bg-white shrink-0 z-10 cursor-move">
+                        <div className="flex items-start justify-between gap-3">
+                            <div>
+                                <DialogTitle className="flex items-center gap-2">
+                                    Planlama Kuralları
+                                    {hasGlobalSentinel ? (
+                                        <Badge variant="default" className="bg-orange-600">Global (Manuel)</Badge>
+                                    ) : hasPatientRules ? (
+                                        <Badge variant="default" className="bg-blue-600">Kişiselleştirildi</Badge>
+                                    ) : isProgramInherited ? (
+                                        <Badge variant="default" className="bg-purple-600">Program Kuralları</Badge>
+                                    ) : isTeamInherited ? (
+                                        <Badge variant="default" className="bg-violet-600">Takım Kuralları</Badge>
+                                    ) : (
+                                        <Badge variant="secondary">Global</Badge>
+                                    )}
+                                </DialogTitle>
+                                <DialogDescription>
+                                    {hasGlobalSentinel
+                                        ? "Bu hasta global kuralları kullanıyor (program/takım kuralları atlanıyor)."
+                                        : hasPatientRules
+                                            ? "Bu hastaya özel kurallar aktif. Değişiklikler sadece bu hastayı etkiler."
+                                            : isProgramInherited
+                                                ? "Programdan devralınan kurallar aktif. Değişiklik yaparsanız kurallar otomatik olarak kişiselleştirilir."
+                                                : isTeamInherited
+                                                    ? "Takımdan devralınan kurallar aktif. Değişiklik yaparsanız kurallar otomatik olarak kişiselleştirilir."
+                                                    : "Tüm hastalar için geçerli global kurallar görüntüleniyor."
+                                    }
+                                </DialogDescription>
+                            </div>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-8 text-xs shrink-0"
+                                onClick={handleImportButtonClick}
+                                title="JSON dosyasından bireysel kural yükle"
+                            >
+                                <Upload size={12} className="mr-1" />
+                                Kuralları Yükle
+                            </Button>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-8 text-xs shrink-0"
+                                onClick={handleExportPatientRules}
+                                disabled={patientRules.filter((r) => r.name !== USE_GLOBAL_SENTINEL && !r.is_ignored).length === 0}
+                                title="Bu hastaya özel kuralları JSON olarak indir"
+                            >
+                                <Download size={12} className="mr-1" />
+                                Kuralları Dışa Aktar
+                            </Button>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-8 text-xs shrink-0"
+                                onClick={handleOpenCopyDialog}
+                                disabled={copyTargetsLoading || patientRules.filter((r) => r.name !== USE_GLOBAL_SENTINEL && !r.is_ignored).length === 0}
+                                title="Bu hastanın bireysel kurallarını başka bir hastaya kopyala"
+                            >
+                                <Copy size={12} className="mr-1" />
+                                Başka Hastaya Kopyala
+                            </Button>
+                        </div>
                     </DialogHeader>
 
                     {/* Content Area - Scrollable */}
@@ -883,11 +1536,33 @@ export function PatientRulesDialog({ open, onOpenChange, patientId, programTempl
                                             <div className="flex flex-col flex-1 min-w-0 mr-4">
                                                 <div className="flex items-center gap-2">
                                                     <span className="text-sm font-medium text-slate-800 truncate">{rule.name}</span>
-                                                    <Badge variant="outline" className="text-[10px] bg-slate-50 text-slate-500 font-normal border-slate-200">{inheritedLabel}</Badge>
+                                                    <Badge variant="outline" className={`text-[10px] font-normal ${getScopeBadgeClass(getActiveScopeForRule(rule))}`}>
+                                                        {getScopeLabel(getActiveScopeForRule(rule))}
+                                                    </Badge>
+                                                    <Badge variant="outline" className="text-[10px] font-normal">
+                                                        {getRuleTypeLabel(rule.rule_type)}
+                                                    </Badge>
+                                                    {getSourceScopeForRule(rule) && (
+                                                        <Badge variant="outline" className={`text-[10px] font-normal ${getScopeBadgeClass(getSourceScopeForRule(rule)!)} opacity-80`}>
+                                                            Kaynak: {getScopeLabel(getSourceScopeForRule(rule)!)}
+                                                        </Badge>
+                                                    )}
                                                 </div>
                                                 <span className="text-xs text-slate-500 mt-0.5 truncate">{rule.description || "Açıklama yok"}</span>
+                                                <span className="text-[11px] text-slate-400 mt-1">
+                                                    Öncelik {rule.priority ?? 0}
+                                                </span>
                                             </div>
                                             <div className="flex items-center gap-2 shrink-0">
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    className="h-8 px-2 text-xs border-blue-200 text-blue-700 hover:bg-blue-100"
+                                                    onClick={() => handlePrefillAndAddRule(rule)}
+                                                    title="Eklemeden önce düzenle"
+                                                >
+                                                    <Pencil size={12} className="mr-1" /> Düzenle
+                                                </Button>
                                                 <Button
                                                     size="sm"
                                                     variant="ghost"
@@ -952,6 +1627,8 @@ export function PatientRulesDialog({ open, onOpenChange, patientId, programTempl
                                                 index={index}
                                                 loading={loading}
                                                 canMutate={canMutateRules}
+                                                activeScope={getActiveScopeForRule(rule)}
+                                                sourceScope={getSourceScopeForRule(rule)}
                                                 onToggleActive={handleToggleActive}
                                                 onEdit={async (r) => {
                                                     if (!hasPatientRules) {
@@ -962,16 +1639,14 @@ export function PatientRulesDialog({ open, onOpenChange, patientId, programTempl
                                                             await fetchRules()
                                                             onRulesChanged?.()
                                                             if (clonedRule) {
-                                                                setEditingRule(clonedRule)
-                                                                setRuleDialogOpen(true)
+                                                                openRuleDialogForEdit(clonedRule)
                                                             }
                                                         } catch (e) {
                                                             console.error(e)
                                                         }
                                                         setLoading(false)
                                                     } else {
-                                                        setEditingRule(r)
-                                                        setRuleDialogOpen(true)
+                                                        openRuleDialogForEdit(r)
                                                     }
                                                 }}
                                                 onDelete={handleDeleteRule}
@@ -1001,10 +1676,7 @@ export function PatientRulesDialog({ open, onOpenChange, patientId, programTempl
                                     </Button>
                                     <Button
                                         variant="outline"
-                                        onClick={() => {
-                                            setEditingRule(null)
-                                            setRuleDialogOpen(true)
-                                        }}
+                                        onClick={() => openRuleDialogForNew()}
                                     >
                                         <Plus size={14} className="mr-2" />
                                         Yeni Kural
@@ -1053,10 +1725,7 @@ export function PatientRulesDialog({ open, onOpenChange, patientId, programTempl
                                     </Button>
                                     <Button
                                         variant="outline"
-                                        onClick={() => {
-                                            setEditingRule(null)
-                                            setRuleDialogOpen(true)
-                                        }}
+                                        onClick={() => openRuleDialogForNew()}
                                     >
                                         <Plus size={14} className="mr-2" />
                                         Yeni Kural
@@ -1066,21 +1735,185 @@ export function PatientRulesDialog({ open, onOpenChange, patientId, programTempl
                         </div>
                         <Button variant="secondary" onClick={() => onOpenChange(false)}>Kapat</Button>
                     </DialogFooter>
+
+                    {/* Bottom-right resize handle */}
+                    <div
+                        onMouseDown={handleDialogResizeStart}
+                        className="absolute right-0 bottom-0 h-5 w-5 cursor-se-resize z-30 group hidden sm:block"
+                        title="Boyutlandır"
+                    >
+                        <div className="absolute right-1 bottom-1 h-3 w-3 border-r-2 border-b-2 border-slate-300 group-hover:border-slate-500" />
+                    </div>
                 </DialogContent>
             </Dialog>
 
             {/* Rule Edit/Create Dialog */}
-            <RuleDialog
-                open={ruleDialogOpen}
-                onOpenChange={setRuleDialogOpen}
-                initialData={editingRule}
+                <RuleDialog
+                    open={ruleDialogOpen}
+                    onOpenChange={handleRuleDialogOpenChange}
+                    initialData={editingRule}
+                prefillData={prefillRule}
                 onSuccess={() => {
                     fetchRules()
                     onRulesChanged?.()
                 }}
                 patientId={patientId}
-                teamOwnerId={isTeamScopedContext ? teamOwnerId : null}
-            />
+                    teamOwnerId={isTeamScopedContext ? teamOwnerId : null}
+                />
+
+                <input
+                    ref={importInputRef}
+                    type="file"
+                    accept="application/json,.json"
+                    className="hidden"
+                    onChange={handleImportPatientRulesFromFile}
+                />
+
+                <Dialog open={importModeDialogOpen} onOpenChange={setImportModeDialogOpen}>
+                    <DialogContent className="max-w-md">
+                        <DialogHeader>
+                            <DialogTitle>Kural Yükleme Modu</DialogTitle>
+                            <DialogDescription>
+                                {`"${pendingImportFileName}" dosyası için yükleme şeklini seçin.`}
+                            </DialogDescription>
+                        </DialogHeader>
+                        <div className="space-y-3 pt-1">
+                            <div className="flex items-center gap-2">
+                                <Badge className="bg-violet-100 text-violet-700 border border-violet-200">JSON Import</Badge>
+                                <Badge variant="outline" className="text-slate-600">Hasta Kuralları</Badge>
+                            </div>
+                            <button
+                                type="button"
+                                className="w-full rounded-xl border border-orange-200 bg-gradient-to-br from-orange-50 to-white px-4 py-3 text-left hover:from-orange-100 hover:to-orange-50 transition-colors"
+                                onClick={() => applyPendingPatientImport('replace')}
+                            >
+                                <div className="flex items-start gap-3">
+                                    <div className="h-8 w-8 rounded-full bg-orange-100 border border-orange-200 flex items-center justify-center shrink-0">
+                                        <RotateCcw size={14} className="text-orange-700" />
+                                    </div>
+                                    <div className="min-w-0">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <div className="text-sm font-semibold text-orange-800">Değiştir (Önerilen)</div>
+                                            <Badge className="bg-orange-100 text-orange-700 border border-orange-200">Tam Senkron</Badge>
+                                        </div>
+                                        <div className="text-xs text-orange-700 mt-1">Mevcut bireysel kuralları siler, JSON içeriğini aynen uygular.</div>
+                                    </div>
+                                </div>
+                            </button>
+                            <button
+                                type="button"
+                                className="w-full rounded-xl border border-blue-200 bg-gradient-to-br from-blue-50 to-white px-4 py-3 text-left hover:from-blue-100 hover:to-blue-50 transition-colors"
+                                onClick={() => applyPendingPatientImport('merge')}
+                            >
+                                <div className="flex items-start gap-3">
+                                    <div className="h-8 w-8 rounded-full bg-blue-100 border border-blue-200 flex items-center justify-center shrink-0">
+                                        <Plus size={14} className="text-blue-700" />
+                                    </div>
+                                    <div className="min-w-0">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <div className="text-sm font-semibold text-blue-800">Birleştir</div>
+                                            <Badge className="bg-blue-100 text-blue-700 border border-blue-200">Farklıları Ekle</Badge>
+                                        </div>
+                                        <div className="text-xs text-blue-700 mt-1">Mevcut kurallar kalır, JSON’dan yalnızca farklı olanlar eklenir.</div>
+                                    </div>
+                                </div>
+                            </button>
+                        </div>
+                        <DialogFooter>
+                            <Button
+                                variant="outline"
+                                onClick={() => {
+                                    setImportModeDialogOpen(false)
+                                    setPendingImportedRules(null)
+                                    setPendingImportFileName('')
+                                }}
+                            >
+                                İptal
+                            </Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
+
+                <Dialog open={copyDialogOpen} onOpenChange={setCopyDialogOpen}>
+                    <DialogContent className="max-w-md">
+                        <DialogHeader>
+                            <DialogTitle>Başka Hastaya Kopyala</DialogTitle>
+                            <DialogDescription>
+                                Bu hastanın bireysel kurallarını hedef hastaya uygulama yöntemini seçin.
+                            </DialogDescription>
+                        </DialogHeader>
+
+                        <div className="space-y-3 pt-1">
+                            <div className="flex items-center gap-2">
+                                <Badge className="bg-emerald-100 text-emerald-700 border border-emerald-200">Kuralları Kopyala</Badge>
+                                <Badge variant="outline" className="text-slate-600">Hasta → Hasta</Badge>
+                            </div>
+                            <div className="space-y-1.5">
+                                <div className="text-xs text-slate-500">Hedef Hasta</div>
+                                <Select
+                                    value={copyTargetPatientId}
+                                    onValueChange={setCopyTargetPatientId}
+                                >
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Hasta seçin" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {copyTargetPatients.map((p) => (
+                                            <SelectItem key={p.id} value={p.id}>
+                                                {p.full_name || 'İsimsiz hasta'}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+
+                            <button
+                                type="button"
+                                className="w-full rounded-xl border border-orange-200 bg-gradient-to-br from-orange-50 to-white px-4 py-3 text-left hover:from-orange-100 hover:to-orange-50 transition-colors disabled:opacity-50"
+                                disabled={!copyTargetPatientId}
+                                onClick={() => applyCopyToPatient('replace')}
+                            >
+                                <div className="flex items-start gap-3">
+                                    <div className="h-8 w-8 rounded-full bg-orange-100 border border-orange-200 flex items-center justify-center shrink-0">
+                                        <RotateCcw size={14} className="text-orange-700" />
+                                    </div>
+                                    <div className="min-w-0">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <div className="text-sm font-semibold text-orange-800">Değiştir (Üzerine Yaz)</div>
+                                            <Badge className="bg-orange-100 text-orange-700 border border-orange-200">Eskiyi Sil</Badge>
+                                        </div>
+                                        <div className="text-xs text-orange-700 mt-1">Hedef hastanın mevcut bireysel kurallarını siler, bu hastanın kurallarını aynen uygular.</div>
+                                    </div>
+                                </div>
+                            </button>
+                            <button
+                                type="button"
+                                className="w-full rounded-xl border border-blue-200 bg-gradient-to-br from-blue-50 to-white px-4 py-3 text-left hover:from-blue-100 hover:to-blue-50 transition-colors disabled:opacity-50"
+                                disabled={!copyTargetPatientId}
+                                onClick={() => applyCopyToPatient('merge')}
+                            >
+                                <div className="flex items-start gap-3">
+                                    <div className="h-8 w-8 rounded-full bg-blue-100 border border-blue-200 flex items-center justify-center shrink-0">
+                                        <Plus size={14} className="text-blue-700" />
+                                    </div>
+                                    <div className="min-w-0">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <div className="text-sm font-semibold text-blue-800">Birleştir (Farklıları Ekle)</div>
+                                            <Badge className="bg-blue-100 text-blue-700 border border-blue-200">Güvenli Birleşim</Badge>
+                                        </div>
+                                        <div className="text-xs text-blue-700 mt-1">Hedefteki kurallar korunur, yalnızca farklı olan kurallar eklenir.</div>
+                                    </div>
+                                </div>
+                            </button>
+                        </div>
+
+                        <DialogFooter>
+                            <Button variant="outline" onClick={() => setCopyDialogOpen(false)}>
+                                İptal
+                            </Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
         </>
     )
 }
@@ -1090,6 +1923,8 @@ interface SortableRuleItemProps {
     index: number;
     loading: boolean;
     canMutate: boolean;
+    activeScope: RuleScopeKey;
+    sourceScope?: RuleScopeKey | null;
     onToggleActive: (rule: PlanningRule) => void;
     onEdit: (rule: PlanningRule) => void;
     onDelete: (rule: PlanningRule) => void;
@@ -1101,6 +1936,8 @@ function SortableRuleItem({
     index,
     loading,
     canMutate,
+    activeScope,
+    sourceScope,
     onToggleActive,
     onEdit,
     onDelete,
@@ -1141,9 +1978,17 @@ function SortableRuleItem({
                 <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1.5">
                         <span className="font-semibold text-sm truncate text-slate-900">{rule.name}</span>
-                        <Badge variant="outline" className="text-[10px] shrink-0 font-normal">
-                            {rule.rule_type}
+                        <Badge variant="outline" className={`text-[10px] shrink-0 font-normal ${getScopeBadgeClass(activeScope)}`}>
+                            {getScopeLabel(activeScope)}
                         </Badge>
+                        <Badge variant="outline" className="text-[10px] shrink-0 font-normal">
+                            {getRuleTypeLabel(rule.rule_type)}
+                        </Badge>
+                        {sourceScope && (
+                            <Badge variant="outline" className={`text-[10px] shrink-0 font-normal ${getScopeBadgeClass(sourceScope)} opacity-80`}>
+                                Kaynak: {getScopeLabel(sourceScope)}
+                            </Badge>
+                        )}
                         {(rule as any).source_rule_id && (
                             <Badge variant="secondary" className="text-[10px] shrink-0 font-normal">
                                 Klonlanmış
@@ -1158,6 +2003,9 @@ function SortableRuleItem({
                     {rule.description && (
                         <p className="text-xs text-slate-500 leading-relaxed">{rule.description}</p>
                     )}
+                    <p className="text-[11px] text-slate-400 mt-1">
+                        Sıra #{(rule.sort_order ?? (index + 1))} · Öncelik {rule.priority ?? 0}
+                    </p>
                 </div>
 
                 <div className="flex items-center gap-1 shrink-0">
@@ -1204,6 +2052,7 @@ function SortableRuleItem({
         </div>
     );
 }
+
 
 
 

@@ -152,6 +152,38 @@ function parseTagArray(value: unknown): string[] {
     return []
 }
 
+function isLikelyNonFoodUnknown(value: string) {
+    const raw = String(value || '').trim()
+    if (!raw) return true
+    const folded = String(raw)
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLocaleLowerCase('tr-TR')
+        .replace(/[^a-z0-9çğıöşü\s]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+    if (!folded) return true
+    if (!/[a-zçğıöşü]/i.test(folded)) return true
+
+    const tokens = folded.split(' ').filter(Boolean)
+    const noiseTokens = new Set([
+        'pazartesi', 'sali', 'carsamba', 'carşamba', 'persembe', 'perşembe', 'cuma', 'cumartesi', 'pazar',
+        'kahvalti', 'kahvaltı', 'ogle', 'ögle', 'öğle', 'oglen', 'öğlen', 'aksam', 'akşam',
+        'ara', 'ogun', 'öğün', 'kusluk', 'kuşluk', 'gec', 'gece',
+        'tercihen', 'saat', 'civarinda', 'civarında', 'not', 'notlar',
+        'hafta', 'gunluk', 'günlük', 'hedef', 'gercek', 'gerçek',
+    ])
+    const allNoiseLike = tokens.length > 0 && tokens.every(t => noiseTokens.has(t) || /^\d+$/.test(t))
+    if (allNoiseLike) return true
+
+    if (/(tercihen\s+saat)/i.test(folded)) return true
+    if (/^(pazartesi|sali|carsamba|persembe|cuma|cumartesi|pazar)$/i.test(folded)) return true
+    if (/^(kahvalti|ogle|oglen|aksam|ara ogun|kusluk|gec gece)$/i.test(folded)) return true
+
+    if (/^[\d\s.,:+\-_/()]+$/.test(raw)) return true
+    return false
+}
+
 const NAME_STOPWORDS = new Set([
     've',
     'ile',
@@ -251,6 +283,9 @@ export async function GET(req: NextRequest) {
             dataSourceRaw === 'render' || dataSourceRaw === 'pool' || dataSourceRaw === 'both'
                 ? (dataSourceRaw as 'render' | 'pool' | 'both')
                 : 'both'
+        const includePoolUnmatched = ['1', 'true', 'yes', 'on'].includes(
+            String(params.get('include_pool_unmatched') || '').trim().toLowerCase()
+        )
         const useRender = dataSource !== 'pool'
         const usePool = dataSource !== 'render'
         const seasonStartMonth = normalizeMonth(parseNumber(params.get('season_start_month'), Number.NaN))
@@ -420,7 +455,7 @@ export async function GET(req: NextRequest) {
                 let poolQuery = supabaseAdmin
                     .from('menu_import_pool')
                     .select(
-                        'id, week_id, week_number, program_template_id, meal_name, matched_food_ids, source_file_id, source_file_name, source_patient_name, source_tab_name'
+                        'id, week_id, week_number, program_template_id, meal_name, matched_food_ids, unknown_food_names, source_file_id, source_file_name, source_patient_name, source_tab_name'
                     )
                     .order('created_at', { ascending: false })
                     .range(from, from + pageSize - 1)
@@ -473,6 +508,22 @@ export async function GET(req: NextRequest) {
                         food_id: foodId,
                         custom_name: null,
                     })
+                }
+
+                if (includePoolUnmatched) {
+                    const unknownNames = Array.isArray(row.unknown_food_names)
+                        ? row.unknown_food_names.map((v: unknown) => String(v || '').trim()).filter(Boolean)
+                        : []
+                    for (const unknownName of unknownNames) {
+                        if (isLikelyNonFoodUnknown(unknownName)) continue
+                        occurrences.push({
+                            basket_key: `pool:${row.id}`,
+                            week_key: poolWeekKey,
+                            meal_time: mealSlot,
+                            food_id: null,
+                            custom_name: unknownName,
+                        })
+                    }
                 }
             }
         }
@@ -543,7 +594,10 @@ export async function GET(req: NextRequest) {
 
         for (const occurrence of occurrences) {
             const mealSlot = String(occurrence.meal_time || 'DIGER').trim() || 'DIGER'
+            const customName = String(occurrence.custom_name || '').trim()
+            if (!occurrence.food_id && isLikelyNonFoodUnknown(customName)) continue
             const food = occurrence.food_id ? foodById.get(occurrence.food_id) : null
+            if (food && isLikelyNonFoodUnknown(String(food.name || ''))) continue
 
             if (foodRoles.length > 0) {
                 const role = String(food?.role || '').trim()
@@ -568,10 +622,10 @@ export async function GET(req: NextRequest) {
 
             const foodKey = occurrence.food_id
                 ? `food:${occurrence.food_id}`
-                : `custom:${String(occurrence.custom_name || '').trim().toLocaleLowerCase('tr-TR')}`
+                : `custom:${customName.toLocaleLowerCase('tr-TR')}`
             if (foodKey.endsWith(':')) continue
 
-            itemNames.set(foodKey, food?.name || String(occurrence.custom_name || 'Ozel Yemek'))
+            itemNames.set(foodKey, food?.name || customName || 'Ozel Yemek')
             itemMeta.set(foodKey, {
                 role: food?.role ? String(food.role) : null,
                 category: food?.category ? String(food.category) : null,
@@ -605,6 +659,7 @@ export async function GET(req: NextRequest) {
         }
 
         const basketCount = basketItems.size
+        const unmatchedPoolOccurrenceCount = occurrences.filter(o => !o.food_id && !!String(o.custom_name || '').trim()).length
         const itemCount = new Map<string, number>()
         const pairCount = new Map<string, number>()
 
@@ -743,6 +798,8 @@ export async function GET(req: NextRequest) {
                 filteredMeals: occurrences.length,
                 filteredWeeks: weekIdList.length,
                 dataSource,
+                unmatchedPoolOccurrences: unmatchedPoolOccurrenceCount,
+                includePoolUnmatched,
             },
             metrics: metrics.slice(0, limit),
             frequency_metrics: frequencyMetrics.slice(0, frequencyRowLimit),
@@ -756,3 +813,5 @@ export async function GET(req: NextRequest) {
         )
     }
 }
+
+

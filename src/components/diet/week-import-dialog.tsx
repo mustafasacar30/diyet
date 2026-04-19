@@ -341,18 +341,38 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
     }, [isOpen, autoStart])
 
     // --- WEEK TAB MATCHING ---
+    function getExactWeekNumberFromTab(tabName: string): number | null {
+        const normalized = tabName
+            .trim()
+            .toLocaleLowerCase('tr-TR')
+            .replace(/\s+/g, ' ')
+
+        // Explicitly exclude noisy / derivative tabs
+        if (/(pdf|gdf|kopya|copy|yedek|backup|arsiv|archive)/i.test(normalized)) {
+            return null
+        }
+
+        // Accept only exact forms:
+        // "1. hafta", "1 hafta", "hafta 1", "hafta 1."
+        const exactForward = normalized.match(/^(\d+)\.?\s*hafta$/i)
+        if (exactForward?.[1]) {
+            const n = parseInt(exactForward[1], 10)
+            return Number.isFinite(n) ? n : null
+        }
+
+        const exactReverse = normalized.match(/^hafta\s*(\d+)\.?$/i)
+        if (exactReverse?.[1]) {
+            const n = parseInt(exactReverse[1], 10)
+            return Number.isFinite(n) ? n : null
+        }
+
+        return null
+    }
+
     function matchWeekTab(tabs: string[], targetWeek: number): string | null {
-        // Normalize: "1. Hafta" → "1hafta", "1.    HAFTA" → "1hafta", "1. hafta" → "1hafta"
-        const normalizeTab = (t: string) => t.toLowerCase()
-            .replace(/\s+/g, '')
-            .replace(/\./g, '')
-
-        const targetPattern = `${targetWeek}hafta`
-
         for (const tab of tabs) {
-            if (normalizeTab(tab).includes(targetPattern)) {
-                return tab
-            }
+            const n = getExactWeekNumberFromTab(tab)
+            if (n === targetWeek) return tab
         }
         return null
     }
@@ -1507,18 +1527,9 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
         const weekMap = new Map<number, { tabName: string, weekNumber: number }>()
 
         for (const tab of tabs) {
-            const trimmed = tab.trim()
-            const numberMatch = trimmed.match(/(\d+)\.?\s*hafta/i) || trimmed.match(/hafta\s*(\d+)/i)
-            if (!numberMatch?.[1]) continue
-
-            const weekNumber = parseInt(numberMatch[1], 10)
-            if (!Number.isFinite(weekNumber)) continue
-
-            const current = weekMap.get(weekNumber)
-            const isPdf = /pdf/i.test(trimmed)
-            const currentIsPdf = current ? /pdf/i.test(current.tabName) : false
-
-            if (!current || (isPdf && !currentIsPdf)) {
+            const weekNumber = getExactWeekNumberFromTab(tab)
+            if (typeof weekNumber !== 'number' || !Number.isFinite(weekNumber)) continue
+            if (!weekMap.has(weekNumber)) {
                 weekMap.set(weekNumber, { tabName: tab, weekNumber })
             }
         }
@@ -1738,11 +1749,20 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
 
                 // If all columns are empty, skip
                 if (nameIndex >= normalizedParts.length) continue
+                // İlk sütun boşsa (gün toplamı gibi), bu satırı yemek olarak alma.
+                if (nameIndex !== 0) continue
 
                 let foodName = normalizedParts[nameIndex] || cleanLine
 
                 // Skip if foodName is too short or just numbers (daily total)
                 if (!foodName || foodName.length < 2 || foodName.match(/^[\d.,\s]+$/)) continue
+                // Açıklama/not satırları yemek satırı değildir.
+                if (
+                    /^(\*|-|•)/.test(foodName) ||
+                    /(gunluk|ortalama|onerilir|degistirebilirsiniz|tercihen saat)/i.test(normalizeForMatch(foodName))
+                ) {
+                    continue
+                }
 
                 // Check for inline nutrition values
                 let lineCalories = 0, lineProtein = 0, lineCarbs = 0, lineFat = 0
@@ -1792,17 +1812,8 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
                         macroParseMode = 'trailing'
                     }
                 }
-                if (!hasLineValues) {
-                    const lookupMacro = macroLookup.get(normalizeForMatch(foodName))
-                    if (lookupMacro) {
-                        lineCalories = lookupMacro.calories
-                        lineCarbs = lookupMacro.carbs
-                        lineProtein = lookupMacro.protein
-                        lineFat = lookupMacro.fat
-                        hasLineValues = true
-                        macroParseMode = 'lookup'
-                    }
-                }
+                // Makro bulunamayan satırlar (ör. dip notlar) import edilmez.
+                if (!hasLineValues) continue
 
                 // Try to match with DB
                 const matchResult = findBestMatch(foodName)
@@ -1837,7 +1848,7 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
                     fat: finalFat,
                     matchedFoodId: matchResult?.id, // Her zaman eşleşme varsa ayarla
                     matchConfidence: matchResult?.score || 0,
-                    status: matchResult ? 'matched' : (hasLineValues ? 'created' : 'unknown')
+                    status: matchResult ? 'matched' : 'created'
                 })
             }
         }

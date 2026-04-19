@@ -9,7 +9,7 @@ import {
     DialogDescription,
 } from "@/components/ui/dialog"
 import { X, Download, Loader2 } from "lucide-react"
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 
 interface RecipeCardDialogProps {
     isOpen: boolean
@@ -20,6 +20,29 @@ interface RecipeCardDialogProps {
 
 export function RecipeCardDialog({ isOpen, onClose, cardUrl, cardName }: RecipeCardDialogProps) {
     const [isDownloading, setIsDownloading] = useState(false);
+    const [currentSrcIndex, setCurrentSrcIndex] = useState(0);
+    const [imageReady, setImageReady] = useState(false);
+
+    const resolveRecipeSources = (url: string) => {
+        const sources: string[] = []
+        const rawGithub = /^https?:\/\/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\/([^/]+)\/(.+)$/
+        const m = url.match(rawGithub)
+        if (m) {
+            const [, owner, repo, branch, path] = m
+            sources.push(`https://cdn.jsdelivr.net/gh/${owner}/${repo}@${branch}/${path}`)
+        }
+        sources.push(url)
+        return Array.from(new Set(sources))
+    }
+
+    const candidateSources = useMemo(() => resolveRecipeSources(cardUrl), [cardUrl])
+    const activeSrc = candidateSources[Math.min(currentSrcIndex, candidateSources.length - 1)] || cardUrl
+
+    useEffect(() => {
+        if (!isOpen) return
+        setCurrentSrcIndex(0)
+        setImageReady(false)
+    }, [isOpen, cardUrl])
 
     const handleDownload = async (e: React.MouseEvent) => {
         e.preventDefault();
@@ -82,10 +105,23 @@ export function RecipeCardDialog({ isOpen, onClose, cardUrl, cardName }: RecipeC
                 </button>
 
                 {/* Image drives the size */}
+                {!imageReady && (
+                    <div className="w-[80vw] max-w-[720px] h-[60vh] max-h-[900px] rounded-xl bg-black/30 backdrop-blur-sm flex items-center justify-center">
+                        <Loader2 className="h-8 w-8 animate-spin text-white/90" />
+                    </div>
+                )}
                 <img
-                    src={cardUrl}
+                    src={activeSrc}
                     alt={cardName}
-                    className="max-w-[100vw] max-h-[100dvh] w-auto h-auto object-contain shadow-2xl"
+                    className={`max-w-[100vw] max-h-[100dvh] w-auto h-auto object-contain shadow-2xl ${imageReady ? "block" : "hidden"}`}
+                    onLoad={() => setImageReady(true)}
+                    onError={() => {
+                        if (currentSrcIndex < candidateSources.length - 1) {
+                            setCurrentSrcIndex((prev) => prev + 1)
+                            return
+                        }
+                        setImageReady(true)
+                    }}
                 />
             </DialogContent>
         </Dialog>

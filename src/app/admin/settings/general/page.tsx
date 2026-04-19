@@ -11,7 +11,6 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
-import { Input } from "@/components/ui/input"
 import { Slider } from "@/components/ui/slider"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
@@ -28,12 +27,17 @@ type FlavorTuningSettings = {
     allow_post_edit: boolean
     respect_scope_filters: boolean
     respect_frequency_rules: boolean
+    use_pattern_insights: boolean
     strict_locked_items: boolean
     suggestion_count: number
     macro_weight: number
     flavor_weight: number
     diversity_weight: number
     compatibility_weight: number
+    pattern_weight: number
+    pattern_min_confidence: number
+    pattern_min_lift: number
+    pattern_min_support: number
 }
 
 const DEFAULT_REGISTRATION_SETTINGS: RegistrationSettings = {
@@ -46,12 +50,17 @@ const DEFAULT_FLAVOR_SETTINGS: FlavorTuningSettings = {
     allow_post_edit: true,
     respect_scope_filters: true,
     respect_frequency_rules: true,
+    use_pattern_insights: true,
     strict_locked_items: true,
     suggestion_count: 3,
     macro_weight: 0.4,
     flavor_weight: 0.35,
     diversity_weight: 0.15,
     compatibility_weight: 0.1,
+    pattern_weight: 0.2,
+    pattern_min_confidence: 0.15,
+    pattern_min_lift: 1.1,
+    pattern_min_support: 3,
 }
 
 // ── Preset Templates ─────────────────────────────────
@@ -80,6 +89,10 @@ const PRESET_TEMPLATES: PresetTemplate[] = [
             flavor_weight: 0.15,
             diversity_weight: 0.1,
             compatibility_weight: 0.05,
+            pattern_weight: 0.18,
+            pattern_min_confidence: 0.24,
+            pattern_min_lift: 1.35,
+            pattern_min_support: 5,
             suggestion_count: 2,
             respect_frequency_rules: true,
             strict_locked_items: true,
@@ -110,6 +123,10 @@ const PRESET_TEMPLATES: PresetTemplate[] = [
             flavor_weight: 0.45,
             diversity_weight: 0.2,
             compatibility_weight: 0.15,
+            pattern_weight: 0.2,
+            pattern_min_confidence: 0.12,
+            pattern_min_lift: 1.0,
+            pattern_min_support: 2,
             suggestion_count: 4,
             strict_locked_items: false,
         }
@@ -127,6 +144,10 @@ const PRESET_TEMPLATES: PresetTemplate[] = [
             flavor_weight: 0.25,
             diversity_weight: 0.35,
             compatibility_weight: 0.15,
+            pattern_weight: 0.24,
+            pattern_min_confidence: 0.1,
+            pattern_min_lift: 1.0,
+            pattern_min_support: 2,
             suggestion_count: 5,
             respect_frequency_rules: true,
             strict_locked_items: false,
@@ -145,6 +166,10 @@ const PRESET_TEMPLATES: PresetTemplate[] = [
             flavor_weight: 0.25,
             diversity_weight: 0.1,
             compatibility_weight: 0.4,
+            pattern_weight: 0.35,
+            pattern_min_confidence: 0.2,
+            pattern_min_lift: 1.2,
+            pattern_min_support: 3,
             suggestion_count: 3,
             strict_locked_items: true,
         }
@@ -162,12 +187,36 @@ const PRESET_TEMPLATES: PresetTemplate[] = [
             flavor_weight: 0.5,
             diversity_weight: 0.25,
             compatibility_weight: 0.2,
+            pattern_weight: 0.3,
+            pattern_min_confidence: 0.08,
+            pattern_min_lift: 0.9,
+            pattern_min_support: 1,
             suggestion_count: 6,
             respect_frequency_rules: false,
             strict_locked_items: false,
         }
     },
 ]
+
+function isCloseNumber(a: number, b: number, epsilon = 0.0001) {
+    return Math.abs(a - b) <= epsilon
+}
+
+function inferActivePreset(settings: FlavorTuningSettings): string | null {
+    for (const preset of PRESET_TEMPLATES) {
+        const keys = Object.keys(preset.values) as Array<keyof FlavorTuningSettings>
+        const isMatch = keys.every((key) => {
+            const presetValue = preset.values[key]
+            const currentValue = settings[key]
+            if (typeof presetValue === 'number' && typeof currentValue === 'number') {
+                return isCloseNumber(currentValue, presetValue)
+            }
+            return currentValue === presetValue
+        })
+        if (isMatch) return preset.id
+    }
+    return null
+}
 
 function parseNumberInput(raw: string, fallback: number, min: number, max: number) {
     const normalized = raw.trim().replace(",", ".")
@@ -370,6 +419,40 @@ export default function GeneralSettingsPage() {
         loadSettings()
     }, [scopeMode])
 
+    const resolveRegistrationSettingsKey = async () => {
+        const scopeCtx = await resolveTeamScopeContextFromAuth()
+        const canToggleForAdminDoctor =
+            scopeMode === 'team' &&
+            scopeCtx.role === 'doctor' &&
+            scopeCtx.canUseGlobal &&
+            !!scopeCtx.userId
+
+        const effectiveTeamOwnerId = canToggleForAdminDoctor
+            ? scopeCtx.userId
+            : scopeCtx.teamOwnerId
+
+        const teamModeActive =
+            scopeMode === 'team' &&
+            !!effectiveTeamOwnerId &&
+            (
+                !scopeCtx.canUseGlobal ||
+                canToggleForAdminDoctor ||
+                scopeCtx.role === 'dietitian'
+            )
+
+        if (teamModeActive && effectiveTeamOwnerId) {
+            return {
+                key: `registration_settings__team_${effectiveTeamOwnerId}`,
+                fallbackKey: 'registration_settings'
+            }
+        }
+
+        return {
+            key: 'registration_settings',
+            fallbackKey: null as string | null
+        }
+    }
+
     const resolveFlavorSettingsKey = async () => {
         const scopeCtx = await resolveTeamScopeContextFromAuth()
         const canToggleForAdminDoctor =
@@ -407,19 +490,25 @@ export default function GeneralSettingsPage() {
     const loadSettings = async () => {
         setLoading(true)
         try {
-            const { data, error } = await supabase
+            const { key: registrationKey, fallbackKey: registrationFallbackKey } = await resolveRegistrationSettingsKey()
+            let registration: any = null
+            const { data: registrationRow } = await supabase
                 .from("app_settings")
-                .select("key,value")
-                .eq("key", "registration_settings")
+                .select("value")
+                .eq("key", registrationKey)
+                .maybeSingle()
 
-            if (error) {
-                console.error("Error loading general settings:", error)
-                return
+            if (registrationRow?.value) {
+                registration = registrationRow.value
+            } else if (registrationFallbackKey) {
+                const { data: fallbackRegistrationRow } = await supabase
+                    .from("app_settings")
+                    .select("value")
+                    .eq("key", registrationFallbackKey)
+                    .maybeSingle()
+                if (fallbackRegistrationRow?.value) registration = fallbackRegistrationRow.value
             }
 
-            const byKey = new Map((data || []).map(row => [row.key, row.value]))
-
-            const registration = byKey.get("registration_settings")
             if (registration) {
                 setRegistrationSettings({
                     allow_program_selection: Boolean(registration.allow_program_selection),
@@ -447,18 +536,28 @@ export default function GeneralSettingsPage() {
             }
 
             if (flavor) {
-                setFlavorSettings({
+                const nextFlavorSettings: FlavorTuningSettings = {
                     enabled: Boolean(flavor.enabled),
                     allow_post_edit: Boolean(flavor.allow_post_edit ?? true),
                     respect_scope_filters: Boolean(flavor.respect_scope_filters ?? true),
                     respect_frequency_rules: Boolean(flavor.respect_frequency_rules ?? true),
+                    use_pattern_insights: Boolean(flavor.use_pattern_insights ?? true),
                     strict_locked_items: Boolean(flavor.strict_locked_items ?? true),
                     suggestion_count: parseNumberInput(String(flavor.suggestion_count ?? 3), 3, 1, 6),
                     macro_weight: parseNumberInput(String(flavor.macro_weight ?? 0.4), 0.4, 0, 1),
                     flavor_weight: parseNumberInput(String(flavor.flavor_weight ?? 0.35), 0.35, 0, 1),
                     diversity_weight: parseNumberInput(String(flavor.diversity_weight ?? 0.15), 0.15, 0, 1),
                     compatibility_weight: parseNumberInput(String(flavor.compatibility_weight ?? 0.1), 0.1, 0, 1),
-                })
+                    pattern_weight: parseNumberInput(String(flavor.pattern_weight ?? 0.2), 0.2, 0, 1),
+                    pattern_min_confidence: parseNumberInput(String(flavor.pattern_min_confidence ?? 0.15), 0.15, 0, 1),
+                    pattern_min_lift: parseNumberInput(String(flavor.pattern_min_lift ?? 1.1), 1.1, 0.1, 10),
+                    pattern_min_support: parseNumberInput(String(flavor.pattern_min_support ?? 3), 3, 1, 999),
+                }
+                setFlavorSettings(nextFlavorSettings)
+                setActivePreset(inferActivePreset(nextFlavorSettings))
+            } else {
+                setFlavorSettings(DEFAULT_FLAVOR_SETTINGS)
+                setActivePreset(inferActivePreset(DEFAULT_FLAVOR_SETTINGS))
             }
         } finally {
             setLoading(false)
@@ -476,12 +575,17 @@ export default function GeneralSettingsPage() {
                 flavor_weight: parseNumberInput(String(flavorSettings.flavor_weight), 0.35, 0, 1),
                 diversity_weight: parseNumberInput(String(flavorSettings.diversity_weight), 0.15, 0, 1),
                 compatibility_weight: parseNumberInput(String(flavorSettings.compatibility_weight), 0.1, 0, 1),
+                pattern_weight: parseNumberInput(String(flavorSettings.pattern_weight), 0.2, 0, 1),
+                pattern_min_confidence: parseNumberInput(String(flavorSettings.pattern_min_confidence), 0.15, 0, 1),
+                pattern_min_lift: parseNumberInput(String(flavorSettings.pattern_min_lift), 1.1, 0.1, 10),
+                pattern_min_support: parseNumberInput(String(flavorSettings.pattern_min_support), 3, 1, 999),
             }
 
+            const { key: registrationKey } = await resolveRegistrationSettingsKey()
             const { key: flavorKey } = await resolveFlavorSettingsKey()
             const { error } = await supabase.from("app_settings").upsert([
                 {
-                    key: "registration_settings",
+                    key: registrationKey,
                     value: registrationSettings,
                     updated_at: new Date().toISOString(),
                 },
@@ -498,6 +602,7 @@ export default function GeneralSettingsPage() {
             }
 
             setFlavorSettings(flavorNormalized)
+            setActivePreset(inferActivePreset(flavorNormalized))
             setSaveSuccess(true)
             setTimeout(() => setSaveSuccess(false), 3000)
         } finally {
@@ -509,7 +614,7 @@ export default function GeneralSettingsPage() {
         setRegistrationSettings(prev => ({ ...prev, [key]: checked }))
     }
 
-    const toggleFlavor = (key: keyof Omit<FlavorTuningSettings, "suggestion_count" | "macro_weight" | "flavor_weight" | "diversity_weight" | "compatibility_weight">, checked: boolean) => {
+    const toggleFlavor = (key: keyof Omit<FlavorTuningSettings, "suggestion_count" | "macro_weight" | "flavor_weight" | "diversity_weight" | "compatibility_weight" | "pattern_weight" | "pattern_min_confidence" | "pattern_min_lift" | "pattern_min_support">, checked: boolean) => {
         setFlavorSettings(prev => ({ ...prev, [key]: checked }))
         setActivePreset(null)
     }
@@ -545,20 +650,21 @@ export default function GeneralSettingsPage() {
     }
 
     const AnalysisIcon = analysis.icon
+    const settingsScopeLabel = scopeMode === 'team' ? 'Takım' : 'Global'
 
     return (
         <div className="container mx-auto max-w-5xl space-y-6 p-6">
             <div>
                 <h1 className="text-3xl font-bold">Genel Ayarlar</h1>
                 <p className="text-muted-foreground">
-                    Kayıt izinleri ve global Lezzet Ayarı kriterleri burada yönetilir.
+                    Kayıt izinleri ve {settingsScopeLabel.toLowerCase()} Lezzet Ayarı kriterleri burada yönetilir.
                 </p>
             </div>
 
             {/* ── Registration Settings ── */}
             <Card>
                 <CardHeader>
-                    <CardTitle>Hasta Kayıt Formu İzinleri</CardTitle>
+                    <CardTitle>Hasta Kayıt Formu İzinleri ({settingsScopeLabel})</CardTitle>
                     <CardDescription>
                         Hastalar kayıt olurken program/hedef seçimlerinin açık veya kapalı olmasını belirleyin.
                     </CardDescription>
@@ -648,7 +754,7 @@ export default function GeneralSettingsPage() {
                 <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                         <SlidersHorizontal className="h-5 w-5" />
-                        Lezzet Ayarı (Global)
+                        Lezzet Ayarı ({settingsScopeLabel})
                     </CardTitle>
                     <CardDescription>
                         Oto-plan sonrası önerilerde makro, lezzet, çeşitlilik ve uyumluluk dengesini detaylı ayarlayın.
@@ -667,6 +773,7 @@ export default function GeneralSettingsPage() {
                                 { id: 'flavor-post-edit', key: 'allow_post_edit' as const, label: 'Post-edit önerileri', desc: 'Plan oluşturulduktan sonra düzenleme izni' },
                                 { id: 'flavor-scope', key: 'respect_scope_filters' as const, label: 'Program/Faz filtresi', desc: 'Yalnızca hastanın programa uygun gıdalar' },
                                 { id: 'flavor-frequency', key: 'respect_frequency_rules' as const, label: 'Sıklık kuralları', desc: 'Haftalık tekrar limitine uy' },
+                                { id: 'flavor-pattern-insights', key: 'use_pattern_insights' as const, label: 'Örüntü içgörüleri', desc: 'Geçmiş kombinasyon metriklerini skora kat' },
                                 { id: 'flavor-locked', key: 'strict_locked_items' as const, label: 'Kilitli öğeleri koru', desc: 'Diyetisyenin kilitlediği yemeklere dokunma' },
                             ].map(item => (
                                 <div key={item.id} className="flex items-center justify-between gap-3">
@@ -776,6 +883,122 @@ export default function GeneralSettingsPage() {
                             icon={Link2}
                             percentage={compatPct}
                         />
+                    </div>
+
+                    <div className="grid gap-4 md:grid-cols-2 rounded-xl border bg-white p-4">
+                        <div className="space-y-3">
+                            <h4 className="font-bold text-sm text-gray-700 flex items-center gap-2">
+                                <Brain className="h-4 w-4 text-violet-500" />
+                                Örüntü Eşikleri
+                                <span
+                                    className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-300 text-[10px] text-slate-500 cursor-help"
+                                    title="Örüntü metrikleri, geçmişte birlikte görülen yemek kombinasyonlarını (support/confidence/lift) skora dahil eder."
+                                >
+                                    ?
+                                </span>
+                            </h4>
+                            <div className="space-y-2">
+                                <Label className="text-xs text-gray-600">Örüntü ağırlığı</Label>
+                                <Slider
+                                    value={[Math.round((flavorSettings.pattern_weight || 0) * 100)]}
+                                    onValueChange={([v]) => {
+                                        setFlavorSettings(prev => ({ ...prev, pattern_weight: Math.round(v) / 100 }))
+                                        setActivePreset(null)
+                                    }}
+                                    min={0}
+                                    max={100}
+                                    step={5}
+                                />
+                                <p className="text-[11px] text-gray-500">
+                                    Geçmiş kombinasyonların öneri skoruna etkisi.
+                                </p>
+                            </div>
+                            <div className="space-y-2">
+                                <Label className="text-xs text-gray-600">Minimum confidence</Label>
+                                <div className="flex items-center justify-between">
+                                    <p className="text-[11px] text-gray-500">Kural güvenirliği eşiği</p>
+                                    <Badge variant="outline" className="text-[11px] tabular-nums">{flavorSettings.pattern_min_confidence.toFixed(2)}</Badge>
+                                </div>
+                                <Slider
+                                    value={[Math.round((flavorSettings.pattern_min_confidence || 0) * 100)]}
+                                    onValueChange={([v]) => {
+                                        setFlavorSettings(prev => ({ ...prev, pattern_min_confidence: Math.round(v) / 100 }))
+                                        setActivePreset(null)
+                                    }}
+                                    min={0}
+                                    max={100}
+                                    step={1}
+                                />
+                                <p className="text-[11px] text-gray-500">
+                                    Hover ipucu: Düşük olursa daha fazla ama daha zayıf örüntü kabul edilir.
+                                </p>
+                            </div>
+                        </div>
+                        <div className="space-y-3">
+                            <h4 className="font-bold text-sm text-gray-700 flex items-center gap-2">
+                                <Link2 className="h-4 w-4 text-teal-500" />
+                                Güven Filtresi
+                                <span
+                                    className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-300 text-[10px] text-slate-500 cursor-help"
+                                    title="Lift, birlikte görülmenin rastgele beklenenden ne kadar güçlü olduğunu gösterir. Support ise veri içinde kaç kez görüldüğünü gösterir."
+                                >
+                                    ?
+                                </span>
+                            </h4>
+                            <div className="space-y-2">
+                                <Label className="text-xs text-gray-600">Minimum lift</Label>
+                                <div className="flex items-center justify-between">
+                                    <p className="text-[11px] text-gray-500">Beklenenin üstü bağ gücü</p>
+                                    <Badge variant="outline" className="text-[11px] tabular-nums">{flavorSettings.pattern_min_lift.toFixed(2)}</Badge>
+                                </div>
+                                <Slider
+                                    value={[Math.round((flavorSettings.pattern_min_lift || 0.1) * 100)]}
+                                    onValueChange={([v]) => {
+                                        setFlavorSettings(prev => ({ ...prev, pattern_min_lift: Math.max(0.1, Math.round(v) / 100) }))
+                                        setActivePreset(null)
+                                    }}
+                                    min={10}
+                                    max={300}
+                                    step={5}
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label className="text-xs text-gray-600">Minimum support (adet)</Label>
+                                <div className="flex items-center justify-between">
+                                    <p className="text-[11px] text-gray-500">Minimum birlikte görünme sayısı</p>
+                                    <Badge variant="outline" className="text-[11px] tabular-nums">{Math.round(flavorSettings.pattern_min_support)}</Badge>
+                                </div>
+                                <Slider
+                                    value={[Math.round(flavorSettings.pattern_min_support || 1)]}
+                                    onValueChange={([v]) => {
+                                        setFlavorSettings(prev => ({ ...prev, pattern_min_support: Math.max(1, Math.round(v)) }))
+                                        setActivePreset(null)
+                                    }}
+                                    min={1}
+                                    max={30}
+                                    step={1}
+                                />
+                            </div>
+                            <p className="text-[11px] text-gray-500">
+                                Düşük güvenilirlikteki eşleşmeler filtrelenir.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div className="rounded-xl border border-violet-200 bg-violet-50/70 px-4 py-3 text-[12px] text-violet-900">
+                        <p className="font-semibold mb-1">Gurme Editöre Etkisi</p>
+                        <p>
+                            Bu üç slider, lezzet değişimlerinde "hangi öneriyi neden seçtiğini" etkiler.
+                            Eşikler yükseldikçe modalda daha güçlü ve daha az sayıda örüntü kaynağı görünür.
+                            Eşikler düşerse çeşit artar, ama bazı önerilerin güveni daha düşük olabilir.
+                        </p>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-[12px] text-slate-700 space-y-2">
+                        <p className="font-semibold text-slate-800">Hızlı Profiller ve Alt 4 Slider İlişkisi</p>
+                        <p>Hızlı profil seçimi artık üstteki 4 ağırlıkla birlikte alttaki örüntü ve güven filtrelerini de eşler.</p>
+                        <p><span className="font-medium">Klinik Katı:</span> confidence/lift/support artar. Daha az ama daha güvenilir örüntü önerisi gelir.</p>
+                        <p><span className="font-medium">Ultra Esnek:</span> eşikler düşer. Alternatif sayısı artar, fakat örüntü güven kalitesi daha değişken olabilir.</p>
+                        <p><span className="font-medium">Gurme Eşleşme:</span> pattern ağırlığı artar; uyumluluk ve geçmiş kombinasyon etkisi belirginleşir.</p>
                     </div>
                 </CardContent>
             </Card>

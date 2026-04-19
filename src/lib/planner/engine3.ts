@@ -18,12 +18,27 @@ type FlavorTuningConfig = {
     allow_post_edit: boolean
     respect_scope_filters: boolean
     respect_frequency_rules: boolean
+    use_pattern_insights: boolean
     strict_locked_items: boolean
     suggestion_count: number
     macro_weight: number
     flavor_weight: number
     diversity_weight: number
     compatibility_weight: number
+    pattern_weight: number
+    pattern_min_confidence: number
+    pattern_min_lift: number
+    pattern_min_support: number
+}
+
+type PatternMetricRow = {
+    lhs_food_id: string
+    lhs_food_name?: string
+    rhs_food_id: string
+    rhs_food_name?: string
+    support_count: number
+    confidence: number
+    lift: number
 }
 
 const DEFAULT_FLAVOR_TUNING_CONFIG: FlavorTuningConfig = {
@@ -31,12 +46,17 @@ const DEFAULT_FLAVOR_TUNING_CONFIG: FlavorTuningConfig = {
     allow_post_edit: true,
     respect_scope_filters: true,
     respect_frequency_rules: true,
+    use_pattern_insights: true,
     strict_locked_items: true,
     suggestion_count: 3,
     macro_weight: 0.4,
     flavor_weight: 0.35,
     diversity_weight: 0.15,
-    compatibility_weight: 0.1
+    compatibility_weight: 0.1,
+    pattern_weight: 0.2,
+    pattern_min_confidence: 0.15,
+    pattern_min_lift: 1.1,
+    pattern_min_support: 3
 }
 
 // Slot Configuration - defines how many foods per meal slot and which roles
@@ -88,6 +108,8 @@ export class Planner {
     private teamOwnerId: string | null = null
     private activeDietRules: { allowedTags: string[], bannedKeywords: string[], bannedTags?: string[], bannedDetails?: Record<string, any>, dietName: string } | undefined = undefined
     private flavorTuningConfig: FlavorTuningConfig = { ...DEFAULT_FLAVOR_TUNING_CONFIG }
+    private patternMetricsCache = new Map<string, PatternMetricRow[]>()
+    private patternMetricsPromiseCache = new Map<string, Promise<PatternMetricRow[]>>()
 
     // Patient specific data for compatibility checks
     private patientDiseases: any[] = []
@@ -397,7 +419,19 @@ export class Planner {
         try {
             let raw: any = null
 
-            if (this.teamOwnerId) {
+            if (this.patientId) {
+                const patientKey = `flavor_tuning_settings__patient_${this.patientId}`
+                const { data: patientData } = await supabase
+                    .from('app_settings')
+                    .select('value')
+                    .eq('key', patientKey)
+                    .maybeSingle()
+                if (patientData?.value && typeof patientData.value === 'object') {
+                    raw = patientData.value
+                }
+            }
+
+            if (!raw && this.teamOwnerId) {
                 const teamKey = `flavor_tuning_settings__team_${this.teamOwnerId}`
                 const { data: teamData } = await supabase
                     .from('app_settings')
@@ -430,12 +464,17 @@ export class Planner {
                 allow_post_edit: this.parseFlavorBoolean(raw.allow_post_edit, DEFAULT_FLAVOR_TUNING_CONFIG.allow_post_edit),
                 respect_scope_filters: this.parseFlavorBoolean(raw.respect_scope_filters, DEFAULT_FLAVOR_TUNING_CONFIG.respect_scope_filters),
                 respect_frequency_rules: this.parseFlavorBoolean(raw.respect_frequency_rules, DEFAULT_FLAVOR_TUNING_CONFIG.respect_frequency_rules),
+                use_pattern_insights: this.parseFlavorBoolean(raw.use_pattern_insights, DEFAULT_FLAVOR_TUNING_CONFIG.use_pattern_insights),
                 strict_locked_items: this.parseFlavorBoolean(raw.strict_locked_items, DEFAULT_FLAVOR_TUNING_CONFIG.strict_locked_items),
                 suggestion_count: Math.round(this.parseFlavorNumber(raw.suggestion_count, DEFAULT_FLAVOR_TUNING_CONFIG.suggestion_count, 1, 6)),
                 macro_weight: this.parseFlavorNumber(raw.macro_weight, DEFAULT_FLAVOR_TUNING_CONFIG.macro_weight, 0, 1),
                 flavor_weight: this.parseFlavorNumber(raw.flavor_weight, DEFAULT_FLAVOR_TUNING_CONFIG.flavor_weight, 0, 1),
                 diversity_weight: this.parseFlavorNumber(raw.diversity_weight, DEFAULT_FLAVOR_TUNING_CONFIG.diversity_weight, 0, 1),
-                compatibility_weight: this.parseFlavorNumber(raw.compatibility_weight, DEFAULT_FLAVOR_TUNING_CONFIG.compatibility_weight, 0, 1)
+                compatibility_weight: this.parseFlavorNumber(raw.compatibility_weight, DEFAULT_FLAVOR_TUNING_CONFIG.compatibility_weight, 0, 1),
+                pattern_weight: this.parseFlavorNumber(raw.pattern_weight, DEFAULT_FLAVOR_TUNING_CONFIG.pattern_weight, 0, 1),
+                pattern_min_confidence: this.parseFlavorNumber(raw.pattern_min_confidence, DEFAULT_FLAVOR_TUNING_CONFIG.pattern_min_confidence, 0, 1),
+                pattern_min_lift: this.parseFlavorNumber(raw.pattern_min_lift, DEFAULT_FLAVOR_TUNING_CONFIG.pattern_min_lift, 0.1, 10),
+                pattern_min_support: Math.round(this.parseFlavorNumber(raw.pattern_min_support, DEFAULT_FLAVOR_TUNING_CONFIG.pattern_min_support, 1, 999))
             }
         } catch {
             this.flavorTuningConfig = { ...DEFAULT_FLAVOR_TUNING_CONFIG }
@@ -1654,20 +1693,31 @@ export class Planner {
 
         // 6. POST-PROCESSING: Smart Balance (auto-balance macros)
         if (targetMacros) {
-            console.log('[AUTO-BALANCE] Smart Balance starting as post-processing step...')
-            this.log(0, 'AUTO-BALANCE', 'info', 'Running Smart Balance as post-processing step...')
-            try {
-                const { plan: balancedPlan, changes } = await this.balancePlan(plan, 'weekly')
+            const macroTolerances = this.settings?.portion_settings?.macro_tolerances || {
+                protein: { min: 80, max: 120 },
+                carb: { min: 80, max: 120 },
+                fat: { min: 80, max: 120 },
+                calories: { min: 90, max: 110 }
+            }
+            if (this.isWeeklyPlanWithinTolerance(plan, targetMacros, macroTolerances)) {
+                console.log('[AUTO-BALANCE] Skipped (weekly plan already within tolerance).')
+                this.log(0, 'AUTO-BALANCE', 'info', 'Skipped: weekly plan already within tolerance.')
+            } else {
+                console.log('[AUTO-BALANCE] Smart Balance starting as post-processing step...')
+                this.log(0, 'AUTO-BALANCE', 'info', 'Running Smart Balance as post-processing step...')
+                try {
+                    const { plan: balancedPlan, changes } = await this.balancePlan(plan, 'weekly')
 
-                if (changes && Array.isArray(changes)) {
-                    for (const ch of changes) {
-                        this.log(0, 'AUTO-BALANCE', 'info', ch)
+                    if (changes && Array.isArray(changes)) {
+                        for (const ch of changes) {
+                            this.log(0, 'AUTO-BALANCE', 'info', ch)
+                        }
                     }
+                    console.log('[AUTO-BALANCE] Smart Balance completed successfully')
+                    return balancedPlan
+                } catch (err) {
+                    console.error('[AUTO-BALANCE] Smart Balance failed:', err)
                 }
-                console.log('[AUTO-BALANCE] Smart Balance completed successfully')
-                return balancedPlan
-            } catch (err) {
-                console.error('[AUTO-BALANCE] Smart Balance failed:', err)
             }
         }
 
@@ -6125,6 +6175,46 @@ export class Planner {
         )
     }
 
+    private getWeeklyTotalsFromMeals(meals: any[]): { calories: number; protein: number; carbs: number; fat: number } {
+        return this.getDayTotalsFromMeals(Array.isArray(meals) ? meals : [])
+    }
+
+    private isWeeklyPlanWithinTolerance(
+        plan: any,
+        target: { calories: number; protein: number; carbs: number; fat: number },
+        tolerances: any
+    ): boolean {
+        const meals = Array.isArray(plan?.meals) ? plan.meals : []
+        if (!meals.length) return false
+
+        const weekly = this.getWeeklyTotalsFromMeals(meals)
+        const scale = 7
+        const weeklyTarget = {
+            calories: Math.max(1, Number(target?.calories || 0) * scale),
+            protein: Math.max(1, Number(target?.protein || 0) * scale),
+            carbs: Math.max(1, Number(target?.carbs || 0) * scale),
+            fat: Math.max(1, Number(target?.fat || 0) * scale),
+        }
+
+        const pct = (val: number, tgt: number) => (tgt > 0 ? (val / tgt) * 100 : 100)
+        const calPct = pct(weekly.calories, weeklyTarget.calories)
+        const proPct = pct(weekly.protein, weeklyTarget.protein)
+        const carbPct = pct(weekly.carbs, weeklyTarget.carbs)
+        const fatPct = pct(weekly.fat, weeklyTarget.fat)
+
+        const calTol = tolerances?.calories || { min: 90, max: 110 }
+        const proTol = tolerances?.protein || { min: 80, max: 120 }
+        const carbTol = tolerances?.carb || tolerances?.carbs || { min: 80, max: 120 }
+        const fatTol = tolerances?.fat || { min: 80, max: 120 }
+
+        return (
+            calPct >= Number(calTol.min) && calPct <= Number(calTol.max) &&
+            proPct >= Number(proTol.min) && proPct <= Number(proTol.max) &&
+            carbPct >= Number(carbTol.min) && carbPct <= Number(carbTol.max) &&
+            fatPct >= Number(fatTol.min) && fatPct <= Number(fatTol.max)
+        )
+    }
+
     private calculateMacroDistance(
         totals: { calories: number; protein: number; carbs: number; fat: number },
         target: { calories: number; protein: number; carbs: number; fat: number }
@@ -6160,6 +6250,117 @@ export class Planner {
             if (Number.isFinite(affinityScore)) score += affinityScore
         }
         return score
+    }
+
+    private getPatternCacheKey(slotName: string, cfg: FlavorTuningConfig): string {
+        return [
+            normalizeSlotName(slotName),
+            String(Math.max(1, Math.round(cfg.pattern_min_support || 3))),
+            String(Math.max(0, cfg.pattern_min_confidence || 0)),
+            String(Math.max(0.1, cfg.pattern_min_lift || 1.1))
+        ].join('|')
+    }
+
+    private async getPatternMetricsForSlot(slotName: string, cfg: FlavorTuningConfig): Promise<PatternMetricRow[]> {
+        const key = this.getPatternCacheKey(slotName, cfg)
+        const cached = this.patternMetricsCache.get(key)
+        if (cached) return cached
+
+        const pending = this.patternMetricsPromiseCache.get(key)
+        if (pending) return pending
+
+        const task = (async () => {
+            try {
+                const params = new URLSearchParams()
+                params.set('meal_times', normalizeSlotName(slotName))
+                params.set('min_support', String(Math.max(1, Math.round(cfg.pattern_min_support || 3))))
+                params.set('min_confidence', String(Math.max(0, cfg.pattern_min_confidence || 0)))
+                params.set('limit', '300')
+                const response = await fetch(`/api/admin/pattern-insights?${params.toString()}`, { method: 'GET' })
+                if (!response.ok) {
+                    this.patternMetricsCache.set(key, [])
+                    return []
+                }
+                const payload = await response.json()
+                const metricsRaw = Array.isArray(payload?.metrics) ? payload.metrics : []
+                const minLift = Math.max(0.1, cfg.pattern_min_lift || 1.1)
+                const metrics = metricsRaw.filter((row: any) => {
+                    const support = Number(row?.support_count || 0)
+                    const confidence = Number(row?.confidence || 0)
+                    const lift = Number(row?.lift || 0)
+                    return (
+                        typeof row?.lhs_food_id === 'string' &&
+                        typeof row?.rhs_food_id === 'string' &&
+                        support >= Math.max(1, Math.round(cfg.pattern_min_support || 3)) &&
+                        confidence >= Math.max(0, cfg.pattern_min_confidence || 0) &&
+                        lift >= minLift
+                    )
+                }) as PatternMetricRow[]
+                this.patternMetricsCache.set(key, metrics)
+                return metrics
+            } catch {
+                this.patternMetricsCache.set(key, [])
+                return []
+            } finally {
+                this.patternMetricsPromiseCache.delete(key)
+            }
+        })()
+
+        this.patternMetricsPromiseCache.set(key, task)
+        return task
+    }
+
+    private async getPatternAffinityScore(
+        candidate: any,
+        slotFoods: any[],
+        slotName: string,
+        cfg: FlavorTuningConfig
+    ): Promise<{ score: number; best: PatternMetricRow | null; reason: string }> {
+        if (!cfg.use_pattern_insights) {
+            return { score: 0, best: null, reason: 'Örüntü kapalı' }
+        }
+        const candidateId = String(candidate?.id || '')
+        if (!candidateId || !Array.isArray(slotFoods) || slotFoods.length === 0) {
+            return { score: 0, best: null, reason: 'Slot bağlamı yok' }
+        }
+
+        const metrics = await this.getPatternMetricsForSlot(slotName, cfg)
+        if (!metrics.length) return { score: 0, best: null, reason: 'Eşik üstü örüntü bulunamadı' }
+
+        const contextIds = new Set(slotFoods.map((f: any) => String(f?.id || '')).filter(Boolean))
+        let bestScore = 0
+        let bestMetric: PatternMetricRow | null = null
+        let hadContextMatch = false
+
+        for (const row of metrics) {
+            const lhs = String(row.lhs_food_id || '')
+            const rhs = String(row.rhs_food_id || '')
+            if (!lhs || !rhs) continue
+
+            const isForward = contextIds.has(lhs) && rhs === candidateId
+            const isReverse = contextIds.has(rhs) && lhs === candidateId
+            if (!isForward && !isReverse) continue
+            hadContextMatch = true
+
+            const confidence = Number(row.confidence || 0)
+            const lift = Number(row.lift || 0)
+            const support = Number(row.support_count || 0)
+            const supportNorm = Math.min(1, support / Math.max(1, Math.round(cfg.pattern_min_support || 3)))
+            const score = (confidence * 0.6) + (Math.min(4, lift) / 4) * 0.3 + (supportNorm * 0.1)
+
+            if (score > bestScore) {
+                bestScore = score
+                bestMetric = row
+            }
+        }
+
+        if (!hadContextMatch) {
+            return { score: 0, best: null, reason: 'Slotta eşleşen örüntü yok' }
+        }
+        if (!bestMetric || bestScore <= 0) {
+            return { score: 0, best: null, reason: 'Eşleşme var, skor katkısı düşük' }
+        }
+        return { score: bestScore, best: bestMetric, reason: 'Örüntü katkısı bulundu' }
     }
 
     private isLockedByConsistencyRule(food: any, slotNameRaw: string, dayNum: number): boolean {
@@ -6212,12 +6413,14 @@ export class Planner {
             (cfg.macro_weight || 0) +
             (cfg.flavor_weight || 0) +
             (cfg.diversity_weight || 0) +
-            (cfg.compatibility_weight || 0)
+            (cfg.compatibility_weight || 0) +
+            ((cfg.use_pattern_insights ? cfg.pattern_weight : 0) || 0)
         )
         const macroWeight = (cfg.macro_weight || 0) / weightTotal
         const flavorWeight = (cfg.flavor_weight || 0) / weightTotal
         const diversityWeight = (cfg.diversity_weight || 0) / weightTotal
         const compatibilityWeight = (cfg.compatibility_weight || 0) / weightTotal
+        const patternWeight = ((cfg.use_pattern_insights ? cfg.pattern_weight : 0) || 0) / weightTotal
 
         const targetMacros = {
             calories: Number(newPlan?.targetMacros?.calories || 1800),
@@ -6233,6 +6436,13 @@ export class Planner {
         const sourceFoods = (this.eligibleFoods && this.eligibleFoods.length > 0)
             ? this.eligibleFoods
             : this.allFoods
+        const sourceFoodsByRole = new Map<string, any[]>()
+        for (const food of sourceFoods) {
+            const role = this.getCanonicalLockRole(food?.role || '')
+            if (!role) continue
+            if (!sourceFoodsByRole.has(role)) sourceFoodsByRole.set(role, [])
+            sourceFoodsByRole.get(role)!.push(food)
+        }
 
         // Rebuild weekly tracker from incoming plan for frequency and variety checks.
         this.currentWeekFoods = newPlan.meals.map((m: any) => ({
@@ -6241,6 +6451,12 @@ export class Planner {
             slot: m?.slot || '',
             portion_multiplier: typeof m?.portion_multiplier === 'number' ? m.portion_multiplier : 1
         }))
+        const weekCountMap = new Map<string, number>()
+        for (const wf of this.currentWeekFoods) {
+            const fid = String(wf?.id || '')
+            if (!fid) continue
+            weekCountMap.set(fid, (weekCountMap.get(fid) || 0) + 1)
+        }
 
         for (const dayNum of daysToTune) {
             const dayMeals = newPlan.meals.filter((m: any) => Number(m?.day) === dayNum)
@@ -6261,6 +6477,17 @@ export class Planner {
                     const canonicalRole = this.getCanonicalLockRole(m?.food?.role || '')
                     return canonicalRole === 'maindish' || canonicalRole === 'breakfast_main'
                 })?.food || null
+                const isBreakfastSlot = slotName === normalizeSlotName('KAHVALTI')
+                const hasStrongAnchor = Boolean(slotMainDish) && !isBreakfastSlot
+                const macroWeightCap = isBreakfastSlot && !hasStrongAnchor ? 0.45 : 1
+                const slotMacroWeightRaw = macroWeight * macroWeightCap
+                const slotOtherWeightRaw = flavorWeight + diversityWeight + compatibilityWeight + patternWeight
+                const slotWeightTotal = Math.max(0.0001, slotMacroWeightRaw + slotOtherWeightRaw)
+                const slotMacroWeight = slotMacroWeightRaw / slotWeightTotal
+                const slotFlavorWeight = flavorWeight / slotWeightTotal
+                const slotDiversityWeight = diversityWeight / slotWeightTotal
+                const slotCompatibilityWeight = compatibilityWeight / slotWeightTotal
+                const slotPatternWeight = patternWeight / slotWeightTotal
 
                 for (const meal of slotMeals) {
                     if (daySwapCount >= suggestionCount) break
@@ -6275,7 +6502,7 @@ export class Planner {
                     if (cfg.strict_locked_items && this.isLockedByConsistencyRule(oldFood, slotName, dayNum)) continue
                     
                     const sourceType = meal.source?.type || ''
-                    if (sourceType === 'fixed_meal' || sourceType === 'lock_rule') continue
+                    if (sourceType === 'fixed_meal' || sourceType === 'fixed' || sourceType === 'lock_rule') continue
                     if (meal.source?.is_required_role === true) continue
 
                     const fixedByPortion = oldFood.portion_fixed === true || (
@@ -6310,11 +6537,20 @@ export class Planner {
 
                     const baseAffinity = this.getFlavorAffinityScore(oldFood, sameSlotOtherFoods, slotName, dayIndex)
                     const baseComp = slotMainDish ? this.getCompatibilityAnalysis(oldFood, slotMainDish).boost : 0
-                    const baseWeekCount = this.currentWeekFoods.filter((wf: any) => wf.id === oldFoodId).length
+                    const basePattern = await this.getPatternAffinityScore(oldFood, sameSlotOtherFoods, slotName, cfg)
+                    const baseWeekCount = weekCountMap.get(String(oldFoodId)) || 0
                     const baseDiversity = Math.max(0, 4 - baseWeekCount)
-                    const baseComposite = (flavorWeight * (baseAffinity / 5000)) +
-                        (compatibilityWeight * (baseComp / 1000)) +
-                        (diversityWeight * baseDiversity)
+                    const baseComposite = (slotFlavorWeight * (baseAffinity / 5000)) +
+                        (slotCompatibilityWeight * (baseComp / 1000)) +
+                        (slotDiversityWeight * baseDiversity) +
+                        (slotPatternWeight * basePattern.score)
+                    const baseWeighted = {
+                        macro: 0,
+                        flavor: Number((slotFlavorWeight * (baseAffinity / 5000)).toFixed(4)),
+                        compatibility: Number((slotCompatibilityWeight * (baseComp / 1000)).toFixed(4)),
+                        diversity: Number((slotDiversityWeight * baseDiversity).toFixed(4)),
+                        pattern: Number((slotPatternWeight * basePattern.score).toFixed(4))
+                    }
 
                     const candidates: Array<{
                         food: any
@@ -6323,12 +6559,15 @@ export class Planner {
                         affinityScore: number
                         compatibilityScore: number
                         diversityScore: number
+                        patternScore: number
+                        bestPattern: PatternMetricRow | null
+                        patternReason: string
                     }> = []
 
-                    for (const candidate of sourceFoods) {
+                    const roleCandidates = sourceFoodsByRole.get(oldRole) || []
+                    for (const candidate of roleCandidates) {
                         if (!candidate?.id || candidate.id === oldFoodId) continue
                         if (slotFoodIds.has(candidate.id)) continue
-                        if (this.getCanonicalLockRole(candidate.role || '') !== oldRole) continue
 
                         if (cfg.respect_scope_filters) {
                             if (!this.isMealTypeCompatibleWithSlot(candidate, slotName)) continue
@@ -6338,7 +6577,7 @@ export class Planner {
                         if (this.hasForbiddenAffinityConflict(candidate, sameSlotOtherFoods)) continue
 
                         if (cfg.respect_frequency_rules) {
-                            const weekCount = this.currentWeekFoods.filter((wf: any) => wf.id === candidate.id).length
+                            const weekCount = weekCountMap.get(String(candidate.id)) || 0
                             if (this.hasReachedWeeklyCap(candidate, weekCount)) continue
 
                             const frequencyContext = {
@@ -6367,15 +6606,17 @@ export class Planner {
                             ? this.getCompatibilityAnalysis(candidate, slotMainDish).boost
                             : 0
 
-                        const candidateWeekCount = this.currentWeekFoods.filter((wf: any) => wf.id === candidate.id).length
+                        const patternResult = await this.getPatternAffinityScore(candidate, sameSlotOtherFoods, slotName, cfg)
+                        const candidateWeekCount = weekCountMap.get(String(candidate.id)) || 0
                         const diversityScore = Math.max(0, 4 - candidateWeekCount)
                         const jitter = Math.random() * 0.03
 
                         const totalScore =
-                            (macroWeight * macroGain) +
-                            (flavorWeight * (affinityScore / 5000)) +
-                            (compatibilityWeight * (compatibilityScore / 1000)) +
-                            (diversityWeight * diversityScore) +
+                            (slotMacroWeight * macroGain) +
+                            (slotFlavorWeight * (affinityScore / 5000)) +
+                            (slotCompatibilityWeight * (compatibilityScore / 1000)) +
+                            (slotDiversityWeight * diversityScore) +
+                            (slotPatternWeight * patternResult.score) +
                             jitter
 
                         candidates.push({
@@ -6384,7 +6625,10 @@ export class Planner {
                             macroGain,
                             affinityScore,
                             compatibilityScore,
-                            diversityScore
+                            diversityScore,
+                            patternScore: patternResult.score,
+                            bestPattern: patternResult.best,
+                            patternReason: patternResult.reason
                         })
                     }
 
@@ -6404,7 +6648,37 @@ export class Planner {
                         ...(meal.source || {}),
                         type: 'flavor_tune',
                         rule: 'Lezzet Ayari',
-                        rule_id: 'system_flavor_tune'
+                        rule_id: 'system_flavor_tune',
+                        flavor_reason: {
+                            slot: slotName,
+                            original_food_name: oldFood?.name || null,
+                            candidate_food_name: selected.food?.name || null,
+                            macro_gain: Number(selected.macroGain.toFixed(4)),
+                            affinity_score: Number((selected.affinityScore / 5000).toFixed(4)),
+                            compatibility_score: Number((selected.compatibilityScore / 1000).toFixed(4)),
+                            diversity_score: Number(selected.diversityScore.toFixed(4)),
+                            pattern_score: Number(selected.patternScore.toFixed(4)),
+                            weighted_base: baseWeighted,
+                            weighted: {
+                                macro: Number((slotMacroWeight * selected.macroGain).toFixed(4)),
+                                flavor: Number((slotFlavorWeight * (selected.affinityScore / 5000)).toFixed(4)),
+                                compatibility: Number((slotCompatibilityWeight * (selected.compatibilityScore / 1000)).toFixed(4)),
+                                diversity: Number((slotDiversityWeight * selected.diversityScore).toFixed(4)),
+                                pattern: Number((slotPatternWeight * selected.patternScore).toFixed(4))
+                            },
+                            pattern_source: selected.bestPattern
+                                ? {
+                                    lhs_food_id: selected.bestPattern.lhs_food_id,
+                                    lhs_food_name: selected.bestPattern.lhs_food_name,
+                                    rhs_food_id: selected.bestPattern.rhs_food_id,
+                                    rhs_food_name: selected.bestPattern.rhs_food_name,
+                                    support_count: selected.bestPattern.support_count,
+                                    confidence: selected.bestPattern.confidence,
+                                    lift: selected.bestPattern.lift
+                                }
+                                : null,
+                            pattern_reason: selected.patternReason || null
+                        }
                     }
 
                     const weeklyIdx = this.currentWeekFoods.findIndex((wf: any) =>
@@ -6422,6 +6696,14 @@ export class Planner {
                         this.currentWeekFoods[weeklyIdx] = replacement
                     } else {
                         this.currentWeekFoods.push(replacement)
+                    }
+                    const oldKey = String(oldFoodId || '')
+                    if (oldKey) {
+                        weekCountMap.set(oldKey, Math.max(0, (weekCountMap.get(oldKey) || 0) - 1))
+                    }
+                    const newKey = String(selected.food?.id || '')
+                    if (newKey) {
+                        weekCountMap.set(newKey, (weekCountMap.get(newKey) || 0) + 1)
                     }
 
                     daySwapCount++

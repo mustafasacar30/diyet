@@ -25,6 +25,19 @@ export type RecipeCard = {
     created_at: string
 }
 
+const RECIPE_MANAGER_CACHE_TTL_MS = 3 * 60 * 1000
+let recipeCache: {
+    fetchedAt: number
+    manualMatches: ManualMatch[]
+    bans: MatchBan[]
+    cards: RecipeCard[]
+} | null = null
+let recipeInFlight: Promise<{
+    manualMatches: ManualMatch[]
+    bans: MatchBan[]
+    cards: RecipeCard[]
+} | null> | null = null
+
 export function useRecipeManager() {
     const [manualMatches, setManualMatches] = useState<ManualMatch[]>([])
     const [bans, setBans] = useState<MatchBan[]>([])
@@ -37,37 +50,57 @@ export function useRecipeManager() {
 
     async function fetchData() {
         try {
-            // Manual Matches
-            const { data: mData, error: mError } = await supabase
-                .from('recipe_manual_matches')
-                .select('*')
+            const now = Date.now()
+            if (recipeCache && (now - recipeCache.fetchedAt) < RECIPE_MANAGER_CACHE_TTL_MS) {
+                setManualMatches(recipeCache.manualMatches)
+                setBans(recipeCache.bans)
+                setCards(recipeCache.cards)
+                setIsLoading(false)
+                return
+            }
 
-            if (mError) throw mError
-            // console.log("Recipes: Manual matches fetched:", mData?.length)
+            if (recipeInFlight) {
+                const cachedInFlight = await recipeInFlight
+                if (cachedInFlight) {
+                    setManualMatches(cachedInFlight.manualMatches)
+                    setBans(cachedInFlight.bans)
+                    setCards(cachedInFlight.cards)
+                }
+                return
+            }
 
-            // Bans
-            const { data: bData, error: bError } = await supabase
-                .from('recipe_match_bans')
-                .select('*')
+            recipeInFlight = (async () => {
+                const [mRes, bRes, cRes] = await Promise.all([
+                    supabase.from('recipe_manual_matches').select('*'),
+                    supabase.from('recipe_match_bans').select('*'),
+                    supabase.from('recipe_cards').select('*').order('created_at', { ascending: false }),
+                ])
 
-            if (bError) throw bError
-            // console.log("Recipes: Bans fetched:", bData?.length)
+                const { data: mData, error: mError } = mRes
+                const { data: bData, error: bError } = bRes
+                const { data: cData, error: cError } = cRes
 
-            // Cards
-            const { data: cData, error: cError } = await supabase
-                .from('recipe_cards')
-                .select('*')
-                .order('created_at', { ascending: false })
+                if (mError) throw mError
+                if (bError) throw bError
+                if (cError) throw cError
+                return {
+                    manualMatches: mData || [],
+                    bans: bData || [],
+                    cards: cData || [],
+                }
+            })()
 
-            if (cError) throw cError
-            // console.log("Recipes: Cards fetched:", cData?.length)
-
-            setManualMatches(mData || [])
-            setBans(bData || [])
-            setCards(cData || [])
+            const result = await recipeInFlight
+            if (result) {
+                recipeCache = { ...result, fetchedAt: Date.now() }
+                setManualMatches(result.manualMatches)
+                setBans(result.bans)
+                setCards(result.cards)
+            }
         } catch (error: any) {
             console.error("Error fetching recipe data:", error)
         } finally {
+            recipeInFlight = null
             setIsLoading(false)
         }
     }
@@ -83,7 +116,7 @@ export function useRecipeManager() {
             if (error) throw error
 
             setManualMatches([data, ...manualMatches])
-            setManualMatches([data, ...manualMatches])
+            recipeCache = null
             return true
         } catch (error: any) {
             console.error('Error adding match:', error)
@@ -99,7 +132,7 @@ export function useRecipeManager() {
             if (error) throw error
 
             setManualMatches(manualMatches.filter(m => m.id !== id))
-            setManualMatches(manualMatches.filter(m => m.id !== id))
+            recipeCache = null
         } catch (error: any) {
             console.error('Error deleting match:', error)
         }
@@ -116,10 +149,9 @@ export function useRecipeManager() {
             if (error) throw error
 
             setBans([data, ...bans])
-            setBans([data, ...bans])
+            recipeCache = null
             return true
         } catch (error: any) {
-            console.error('Error adding ban:', error)
             console.error('Error adding ban:', error)
             return false
         }
@@ -132,7 +164,7 @@ export function useRecipeManager() {
             if (error) throw error
 
             setBans(bans.filter(b => b.id !== id))
-            setBans(bans.filter(b => b.id !== id))
+            recipeCache = null
         } catch (error: any) {
             console.error('Error deleting ban:', error)
         }
@@ -158,6 +190,7 @@ export function useRecipeManager() {
                 if (error) throw error
 
                 setManualMatches(manualMatches.map(m => m.id === id ? data : m))
+                recipeCache = null
                 return true
             } catch (error: any) {
                 console.error('Error updating match:', error)

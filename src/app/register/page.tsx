@@ -91,10 +91,26 @@ export default function RegisterPage() {
             }
 
             // Fetch app settings
-            const { data: settingsData } = await supabase.from('app_settings').select('value').eq('id', 'registration_settings').single();
-            if (settingsData && settingsData.value) {
-                setAllowProgramSelection(!!settingsData.value.allow_program_selection);
-                const canSelectGoals = !!settingsData.value.allow_goal_selection;
+            let settingsValue: any = null
+            const { data: settingsData } = await supabase
+                .from('app_settings')
+                .select('value')
+                .eq('key', 'registration_settings')
+                .maybeSingle();
+            if (settingsData?.value) {
+                settingsValue = settingsData.value
+            } else {
+                const { data: legacySettingsData } = await supabase
+                    .from('app_settings')
+                    .select('value')
+                    .eq('id', 'registration_settings')
+                    .maybeSingle();
+                if (legacySettingsData?.value) settingsValue = legacySettingsData.value
+            }
+
+            if (settingsValue) {
+                setAllowProgramSelection(!!settingsValue.allow_program_selection);
+                const canSelectGoals = !!settingsValue.allow_goal_selection;
                 setAllowGoalSelection(canSelectGoals);
 
                 if (!canSelectGoals) {

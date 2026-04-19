@@ -11,6 +11,14 @@ declare global {
 
 const DISCOVERY_DOCS = ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest', 'https://sheets.googleapis.com/$discovery/rest?version=v4'];
 const SCOPES = 'https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/spreadsheets.readonly';
+const GAPI_TOKEN_STORAGE_KEY = 'diyet_gapi_token_v1';
+
+type StoredToken = {
+    access_token: string;
+    expires_at: number;
+    scope?: string;
+    token_type?: string;
+}
 
 export function useGapi(enabled: boolean = false) {
     const [isGapiLoaded, setIsGapiLoaded] = useState(false);
@@ -110,6 +118,21 @@ export function useGapi(enabled: boolean = false) {
                         callback: (tokenResponse: any) => {
                             appendLog('Token received.');
                             if (tokenResponse && tokenResponse.access_token) {
+                                try {
+                                    window.gapi?.client?.setToken(tokenResponse);
+                                } catch { }
+
+                                const expiresIn = Number(tokenResponse?.expires_in ?? 3600);
+                                const stored: StoredToken = {
+                                    access_token: tokenResponse.access_token,
+                                    expires_at: Date.now() + Math.max(60, expiresIn - 60) * 1000,
+                                    scope: tokenResponse?.scope,
+                                    token_type: tokenResponse?.token_type,
+                                };
+                                try {
+                                    sessionStorage.setItem(GAPI_TOKEN_STORAGE_KEY, JSON.stringify(stored));
+                                } catch { }
+
                                 setIsAuthenticated(true);
                                 appendLog('Authenticated true.');
                             }
@@ -129,6 +152,27 @@ export function useGapi(enabled: boolean = false) {
                     setError("Oturum Açma Servisi (Token Client) Hatası: " + tokenErr.message);
                 }
 
+                // Restore an existing session token without opening popup again.
+                try {
+                    const raw = sessionStorage.getItem(GAPI_TOKEN_STORAGE_KEY);
+                    if (raw) {
+                        const parsed = JSON.parse(raw) as StoredToken;
+                        if (parsed?.access_token && Number(parsed?.expires_at) > Date.now()) {
+                            window.gapi?.client?.setToken({
+                                access_token: parsed.access_token,
+                                scope: parsed.scope || SCOPES,
+                                token_type: parsed.token_type || 'Bearer',
+                            });
+                            setIsAuthenticated(true);
+                            appendLog('Session token restored.');
+                        } else {
+                            sessionStorage.removeItem(GAPI_TOKEN_STORAGE_KEY);
+                        }
+                    }
+                } catch {
+                    // ignore storage parse failures
+                }
+
                 setIsInitialized(true);
                 return true;
             } catch (err: any) {
@@ -144,11 +188,11 @@ export function useGapi(enabled: boolean = false) {
         return initPromiseRef.current;
     }, [enabled, isGapiLoaded, isGisLoaded, appendLog]);
 
-    const login = useCallback(() => {
+    const login = useCallback((forceConsent: boolean = false) => {
         const client = tokenClientRef.current || tokenClient;
         appendLog(`Login requested. TokenClient present? ${!!client}`);
         if (client) {
-            client.requestAccessToken({ prompt: 'consent' });
+            client.requestAccessToken({ prompt: forceConsent ? 'consent' : '' });
             return true;
         } else {
             appendLog('TokenClient not ready yet.');
