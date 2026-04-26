@@ -4579,7 +4579,7 @@ ${ingredients.map((ing, i) => `${i + 1}. ${ing}`).join("\n")}`;
       const tagsRaw = els.lipodemTags.value.trim();
       const tagsArray = tagsRaw ? tagsRaw.split(",").map(t => t.trim().toLowerCase()).filter(Boolean) : [];
 
-      const lipodemRepo = "lipodemmerkezi/zip";
+      const lipodemRepo = "mustafasacar30/diyet";
       const branch = "main";
       const headers = { "Authorization": `Bearer ${pat}`, "Content-Type": "application/json" };
 
@@ -5677,7 +5677,7 @@ ${revisionText}`
       if (lipodemRepoDishes.size > 0 || isFetchingDishes) return;
       isFetchingDishes = true;
       try {
-        const url = `https://raw.githubusercontent.com/lipodemmerkezi/zip/main/tarifler/list.json`;
+        const url = `https://raw.githubusercontent.com/mustafasacar30/diyet/main/tarifler/list.json`;
         const res = await fetch(url);
         if (!res.ok) throw new Error("list.json fetch failed");
         const list = await res.json();

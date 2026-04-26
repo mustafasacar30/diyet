@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-const LIPODEM_OWNER = 'lipodemmerkezi'
-const LIPODEM_REPO = 'zip'
+const LIPODEM_OWNER = 'mustafasacar30'
+const LIPODEM_REPO = 'diyet'
 
 export async function POST(req: NextRequest) {
     try {

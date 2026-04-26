@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-const LIPODEM_OWNER = 'lipodemmerkezi'
-const LIPODEM_REPO = 'zip'
-const TEMPLATE_OWNER = 'lipodemmerkezi'
-const TEMPLATE_REPO = 'zip'
+const LIPODEM_OWNER = 'mustafasacar30'
+const LIPODEM_REPO = 'diyet'
+const TEMPLATE_OWNER = 'mustafasacar30'
+const TEMPLATE_REPO = 'diyet'
 
 // Normalize Turkish characters to ASCII for matching
 function normalizeTR(str: string): string {

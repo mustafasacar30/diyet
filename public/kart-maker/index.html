@@ -1487,6 +1487,201 @@ makro değerleri</textarea>
       </div>
 
       <div class="footer-note">
+          </div>
+          <div class="group">
+            <label>Hazırlama</label>
+            <textarea id="preparationEditor" style="min-height:130px"></textarea>
+          </div>
+
+          <div class="group">
+            <label>Makro başlığı</label>
+            <textarea id="macroTitleEditor">1 porsiyon için
+makro değerleri</textarea>
+          </div>
+
+          <div class="group">
+            <label>Görsel prompt (AI draft sonrası gelir, istersen değiştir)</label>
+            <textarea id="imagePromptEditor" style="min-height:100px"></textarea>
+          </div>
+
+          <div class="two-col">
+            <div class="group">
+              <label>Karbonhidrat</label>
+              <input id="carbEditor" value="-" />
+            </div>
+            <div class="group">
+              <label>Protein</label>
+              <input id="proteinEditor" value="-" />
+            </div>
+          </div>
+          <div class="two-col">
+            <div class="group">
+              <label>Yağ</label>
+              <input id="fatEditor" value="-" />
+            </div>
+            <div class="group">
+              <label>Kalori</label>
+              <input id="kcalEditor" value="-" />
+            </div>
+          </div>
+
+          <div class="mini">Not: Kartta görünen alanlar layer (katman) mantığında ayrı ayrı taşınabilir/düzenlenebilir.
+          </div>
+        </div>
+      </details>
+
+      <details class="accordion">
+        <summary>📂 GitHub & Şablon Yönetimi</summary>
+        <div class="acc-body">
+          <div class="group">
+            <label>Şablon adı</label>
+            <input id="templateName" placeholder="Örn: Keto Kurabiye Şablonu" />
+          </div>
+          <div class="row">
+            <button id="saveTemplateBtn" class="btn-soft" style="flex:1">💾 Kaydet</button>
+            <button id="pushGithubBtn" style="background:#2c6e49; color:#fff; flex:1">☁️ GitHub Save</button>
+          </div>
+          <div class="group" style="margin-top:8px">
+            <label>Kayıtlı Şablonlar</label>
+            <div class="row">
+              <select id="templateSelect" style="flex:1">
+                <option value="">-- Kart seç --</option>
+              </select>
+              <button id="refreshCardsBtn">↻</button>
+            </div>
+            <button id="loadTemplateBtn" style="width:100%; margin-top:4px">Yükle</button>
+          </div>
+          <div class="row" style="margin-top:4px">
+            <button id="deleteTemplateBtn" class="btn-danger" style="flex:1">Sil</button>
+            <button id="pullGithubBtn" style="flex:1">GitHub'dan Çek</button>
+          </div>
+          <button id="draftGalleryBtn"
+            style="width:100%; margin-top:8px; background:#fff3cd; color:#856404; border-color:#ffeeba;">📂 Taslak
+            Galerisi</button>
+          <div class="group" style="margin-top:12px">
+            <label>Hero Görseli Yükle</label>
+            <input type="file" id="heroUpload" accept="image/*" />
+          </div>
+        </div>
+      </details>
+
+      <details class="accordion">
+        <summary>⚙️ Style & Prompt Ayarları</summary>
+        <div class="acc-body">
+          <div class="group">
+            <label>AI Metin Şablonu</label>
+            <textarea id="textPromptTemplate" style="min-height:100px"></textarea>
+          </div>
+          <div class="group">
+            <label>Görsel Stil Eki</label>
+            <textarea
+              id="imageStylePrompt">Photorealistic Turkish food photography, appetizing, premium plating, clean composition, slightly zoomed out, served on an elegant plate fitting the dish, ready to serve, set on a stylish dining table, warm natural light, high detail.</textarea>
+          </div>
+
+          <div class="row" style="margin-top:12px">
+            <button id="generateDraftBtn" class="btn-soft" style="flex:1">AI Taslak Oluştur</button>
+            <button id="generateImageBtn" class="btn-primary" style="flex:1">AI Görsel Üret</button>
+          </div>
+        </div>
+      </details>
+
+      <details class="accordion">
+        <summary>🔐 API & Model Ayarları</summary>
+        <div class="acc-body">
+          <div class="group">
+            <label>Gemini API Key</label>
+            <input id="apiKey" type="password" placeholder="AIza..." />
+          </div>
+          <div class="group">
+            <label>GitHub PAT</label>
+            <input id="githubPat" type="password" placeholder="ghp_..." />
+          </div>
+          <div class="group">
+            <label>USDA API Key <span style="font-weight:400;color:#888">(opsiyonel)</span></label>
+            <input id="usdaApiKey" type="password" placeholder="USDA FoodData Central API Key" />
+          </div>
+          <div class="row">
+            <div class="group">
+              <label>Metin Model</label>
+              <input id="textModel" value="gemini-2.5-flash" />
+            </div>
+            <div class="group">
+              <label>Görsel Model</label>
+              <input id="imageModel" value="imagen-4.0-generate-001" />
+            </div>
+          </div>
+          <div class="group">
+            <label>Görsel Motoru</label>
+            <select id="imageProvider">
+              <option value="gemini-native">Gemini Native (2.0 Flash - Ücretsiz)</option>
+              <option value="imagen">Imagen (Google)</option>
+              <option value="auto" selected>Otomatik (Imagen → Gemini Native)</option>
+            </select>
+          </div>
+          <div class="group">
+            <label>Yemek Keşfi: Dahil Edilecek Siteler</label>
+            <input id="discoverySearchSites" placeholder="Örn: nefisyemektarifleri.com, yemek.com" />
+            <div class="mini">Virgülle ayırın. Boş bırakılırsa genel arama yapılır. (Admin Paneli ile senkronize çalışır)</div>
+          </div>
+          <div class="row">
+            <button id="saveKeyBtn" style="width:100%" class="btn-accent">🔑 API Anahtarlarını Kaydet</button>
+          </div>
+          <div class="row" style="margin-top:4px">
+            <button id="loadKeyBtn" style="flex:1">Yükle</button>
+            <button id="clearKeyBtn" class="btn-danger" style="flex:1">Temizle</button>
+          </div>
+        </div>
+      </details>
+
+      <div id="status" class="status"></div>
+    </aside>
+
+    <!-- ORTA ÖNİZLEME -->
+    <main class="preview-wrap" style="position: relative;">
+
+      <!-- Image History Overlay -->
+      <div id="imageHistoryNav" data-html2canvas-ignore="true" style="display:none; position:absolute; top:180px; left:0; right:0; padding:0 50px; justify-content:space-between; z-index:50; pointer-events:none;">
+        <button id="prevImageBtn" onclick="navigateImageHistory(-1)" style="pointer-events:auto; background:rgba(0,0,0,0.6); color:#fff; border:none; border-radius:50%; width:44px; height:44px; cursor:pointer; font-size:24px; display:flex; align-items:center; justify-content:center; transition:0.2s; box-shadow:0 4px 10px rgba(0,0,0,0.3);">&#8249;</button>
+        <button id="nextImageBtn" onclick="navigateImageHistory(1)" style="pointer-events:auto; background:rgba(0,0,0,0.6); color:#fff; border:none; border-radius:50%; width:44px; height:44px; cursor:pointer; font-size:24px; display:flex; align-items:center; justify-content:center; transition:0.2s; box-shadow:0 4px 10px rgba(0,0,0,0.3);">&#8250;</button>
+      </div>
+
+      <div id="recipeCard" class="recipe-card">
+        <div id="hero" class="hero"></div>
+        <div id="heroZoomBar" class="hero-zoom-bar">
+          <label>Zoom</label>
+          <input type="range" id="heroZoom" min="100" max="300" value="100" />
+          <button id="heroEditDone">✓ Tamam</button>
+        </div>
+
+        <!-- floating rich text toolbar -->
+        <div id="richToolbar" class="rich-toolbar">
+          <button data-cmd="bold" title="Kalın (Bold)"><b>B</b></button>
+          <button data-cmd="italic" title="İtalik (Italic)"><i>I</i></button>
+          <button data-cmd="underline" title="Altı Çizili"><u>U</u></button>
+          <button data-cmd="insertUnorderedList" title="Madde Listesi">•</button>
+          <button data-cmd="insertOrderedList" title="Numaralı Liste">1.</button>
+          <select id="richFontSize" title="Font Boyutu"
+            style="width:52px;height:28px;padding:2px;font-size:12px;border-radius:4px;border:1px solid #ddd">
+            <option value="">Px</option>
+            <option value="1">12</option>
+            <option value="2">16</option>
+            <option value="3">20</option>
+            <option value="4">24</option>
+            <option value="5">32</option>
+            <option value="6">40</option>
+            <option value="7">48</option>
+          </select>
+          <input type="color" id="richColorPicker" title="Yazı Rengi" value="#171717" />
+        </div>
+
+        <!-- snap guides -->
+        <div id="guideVCenter" class="guide v"></div>
+        <div id="guideHCenter" class="guide h"></div>
+
+        <!-- Layer container dynamically filled -->
+      </div>
+
+      <div class="footer-note">
         İpucu: İlk kullanım sırası → <b>AI Taslak Oluştur</b> → <b>AI Görsel Üret</b> → katmanları yerleştir → <b>PNG
           İndir</b>
       </div>
@@ -1501,10 +1696,10 @@ makro değerleri</textarea>
       -->
 
       <!-- Lipodem Paneli Yönlendirme Linki -->
-      <a id="lipodemPanelLink" href="https://lipodemmerkezi.github.io/zip/index.html"
+      <a id="lipodemPanelLink" href="https://mustafasacar.com"
         class="btn-primary"
         style="display:block; text-align:center; text-decoration:none; margin-bottom:12px; font-weight:bold; background-color:#5b1e6b; border-color:#4a1558; padding:10px; border-radius:10px; font-size:14px;">
-        🔗 Lipödem Takip Paneli
+        🔗 Diyet Paneli
       </a>
       <script>
         // Check if we came from Lipödem Panel
@@ -4762,7 +4957,7 @@ ${ingredients.map((ing, i) => `${i + 1}. ${ing}`).join("\n")}`;
     // =====================================================
     // Template Management (localStorage + GitHub)
     // =====================================================
-    const GITHUB_OWNER = "lipodemmerkezi";
+    const GITHUB_OWNER = "mustafasacar30";
     const GITHUB_REPO = "zip";
     const GITHUB_TEMPLATES_PATH = "templates";
 
@@ -4987,7 +5182,7 @@ ${ingredients.map((ing, i) => `${i + 1}. ${ing}`).join("\n")}`;
       const tagsRaw = els.lipodemTags.value.trim();
       const tagsArray = tagsRaw ? tagsRaw.split(",").map(t => t.trim().toLowerCase()).filter(Boolean) : [];
 
-      const lipodemRepo = "lipodemmerkezi/zip";
+      const lipodemRepo = "mustafasacar30/diyet";
       const branch = "main";
       const headers = { "Authorization": `Bearer ${pat}`, "Content-Type": "application/json" };
 
@@ -5067,11 +5262,11 @@ ${ingredients.map((ing, i) => `${i + 1}. ${ing}`).join("\n")}`;
           return list.sort((a, b) => (a.name).localeCompare(b.name, "tr"));
         }, []);
 
-        setStatus(`Başarıyla Lipodem paneline gönderildi: ${baseName}`, "ok");
+        setStatus(`Başarıyla Diyet paneline gönderildi: ${baseName}`, "ok");
 
       } catch (err) {
         els.recipeCard.classList.remove("export-mode");
-        console.error("Lipodem Export Error:", err);
+        console.error("Diyet Export Error:", err);
         setStatus("Aktarım hatası: " + err.message, "error");
       }
     }

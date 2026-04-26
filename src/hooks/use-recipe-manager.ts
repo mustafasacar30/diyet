@@ -83,10 +83,23 @@ export function useRecipeManager() {
                 if (mError) throw mError
                 if (bError) throw bError
                 if (cError) throw cError
+
+                const migrateUrl = (url: string) => {
+                    if (!url) return url;
+                    return url
+                        .replace('mustafasacar35/lipodem-takip-paneli', 'mustafasacar30/diyet')
+                        .replace('lipodemmerkezi/zip', 'mustafasacar30/diyet');
+                }
+
+                const migratedCards = (cData || []).map(card => ({
+                    ...card,
+                    url: migrateUrl(card.url)
+                }))
+
                 return {
                     manualMatches: mData || [],
                     bans: bData || [],
-                    cards: cData || [],
+                    cards: migratedCards,
                 }
             })()
 
