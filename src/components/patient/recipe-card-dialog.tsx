@@ -23,15 +23,30 @@ export function RecipeCardDialog({ isOpen, onClose, cardUrl, cardName }: RecipeC
     const [currentSrcIndex, setCurrentSrcIndex] = useState(0);
     const [imageReady, setImageReady] = useState(false);
 
+    // Migrate legacy repo URLs to the new lipodemmerkezi/zip repo
+    const migrateRecipeUrl = (url: string): string => {
+        if (!url) return url
+        return url
+            .replace(
+                /raw\.githubusercontent\.com\/mustafasacar35\/lipodem-takip-paneli\//g,
+                'raw.githubusercontent.com/lipodemmerkezi/zip/'
+            )
+            .replace(
+                /api\.github\.com\/repos\/mustafasacar35\/lipodem-takip-paneli\//g,
+                'api.github.com/repos/lipodemmerkezi/zip/'
+            )
+    }
+
     const resolveRecipeSources = (url: string) => {
+        const migrated = migrateRecipeUrl(url)
         const sources: string[] = []
         const rawGithub = /^https?:\/\/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\/([^/]+)\/(.+)$/
-        const m = url.match(rawGithub)
+        const m = migrated.match(rawGithub)
         if (m) {
             const [, owner, repo, branch, path] = m
             sources.push(`https://cdn.jsdelivr.net/gh/${owner}/${repo}@${branch}/${path}`)
         }
-        sources.push(url)
+        sources.push(migrated)
         return Array.from(new Set(sources))
     }
 
@@ -52,7 +67,7 @@ export function RecipeCardDialog({ isOpen, onClose, cardUrl, cardName }: RecipeC
         setIsDownloading(true);
 
         try {
-            const response = await fetch(cardUrl);
+            const response = await fetch(migrateRecipeUrl(cardUrl));
             const blob = await response.blob();
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -67,7 +82,7 @@ export function RecipeCardDialog({ isOpen, onClose, cardUrl, cardName }: RecipeC
         } catch (err) {
             console.error('Failed to download image', err);
             // Fallback: Just open image in new tab if blob fetch fails (e.g., CORS issue)
-            window.open(cardUrl, '_blank');
+            window.open(migrateRecipeUrl(cardUrl), '_blank');
         } finally {
             setIsDownloading(false);
         }
