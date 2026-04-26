@@ -198,6 +198,18 @@ export function useRecipeManager() {
                 return false
             }
         },
+        syncCards: async () => {
+            try {
+                const res = await fetch('/api/admin/recipe-sync', { method: 'POST' })
+                if (res.ok) {
+                    recipeCache = null
+                }
+                return res.ok
+            } catch (e) {
+                console.error('Sync error:', e)
+                return false
+            }
+        },
         refresh: fetchData
     }
 }

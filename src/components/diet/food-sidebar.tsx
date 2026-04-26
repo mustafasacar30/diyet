@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react"
 import { supabase } from "@/lib/supabase"
-import { Search, Filter, Plus, X, Edit2, Check, Settings, Save, Trash2, Pencil, AlertTriangle, Heart, Info } from 'lucide-react'
+import { Search, Filter, Plus, X, Edit2, Check, Settings, Save, Trash2, Pencil, AlertTriangle, Heart, Info, RefreshCw } from 'lucide-react'
 import {
     Dialog,
     DialogContent,
@@ -970,8 +970,9 @@ export function FoodEditDialog({
     const [effectiveTeamOwnerId, setEffectiveTeamOwnerId] = useState<string | null>(teamOwnerId ?? null)
 
     // Recipe match/ban management
-    const { manualMatches, bans, cards, addManualMatch, deleteManualMatch, addBan, deleteBan } = useRecipeManager()
+    const { manualMatches, bans, cards, addManualMatch, deleteManualMatch, addBan, deleteBan, syncCards, refresh } = useRecipeManager()
     const [recipeSearch, setRecipeSearch] = useState('')
+    const [isSyncing, setIsSyncing] = useState(false)
 
     // Compute existing matches & bans for this food
     const foodPattern = normalizeFoodName(name)
@@ -1589,12 +1590,30 @@ export function FoodEditDialog({
                                     {/* Search + Add */}
                                     <div className="flex gap-1 items-end">
                                         <div className="flex-1 relative">
-                                            <Input
-                                                placeholder="Tarif kartı ara... (2+ karakter)"
-                                                value={recipeSearch}
-                                                onChange={e => setRecipeSearch(e.target.value)}
-                                                className="h-7 text-xs"
-                                            />
+                                            <div className="flex items-center gap-1">
+                                                <Input
+                                                    placeholder="Tarif kartı ara... (2+ karakter)"
+                                                    value={recipeSearch}
+                                                    onChange={e => setRecipeSearch(e.target.value)}
+                                                    className="h-7 text-xs"
+                                                />
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="h-7 w-7 shrink-0"
+                                                    onClick={async (e) => {
+                                                        e.preventDefault()
+                                                        setIsSyncing(true)
+                                                        await syncCards()
+                                                        await refresh()
+                                                        setIsSyncing(false)
+                                                    }}
+                                                    disabled={isSyncing}
+                                                    title="GitHub'dan yeni kartları çek"
+                                                >
+                                                    <RefreshCw size={14} className={isSyncing ? 'animate-spin' : ''} />
+                                                </Button>
+                                            </div>
                                             {filteredCards.length > 0 && recipeSearch.length >= 2 && (
                                                 <div className="absolute z-50 top-full left-0 right-0 mt-0.5 bg-white border border-gray-200 rounded shadow-lg max-h-40 overflow-y-auto">
                                                     {filteredCards.map(c => {
