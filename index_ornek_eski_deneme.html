@@ -1549,7 +1549,7 @@
           style="width:100%; margin-bottom:5px; padding:6px; font-size:11px; border:1px solid #ddd; border-radius:3px;"
           oninput="saveTokenToStorage()">
         <input type="text" id="githubRepo" placeholder="GitHub Repo (owner/repo)"
-          value="mustafasacar30/diyet"
+          value="lipodemmerkezi/zip"
           style="width:100%; margin-bottom:5px; padding:6px; font-size:11px; border:1px solid #ddd; border-radius:3px;">
         <button onclick="testGitHubToken()"
           style="width:100%; margin-bottom:5px; padding:6px; font-size:11px; background:#17a2b8; color:white; border:none; border-radius:3px; cursor:pointer;">🔍
@@ -4462,7 +4462,7 @@
     async function loadPublicGitHubData() {
       try {
         console.log('📥 Public manuel eşleştirmeler yükleniyor...');
-        const manuelUrl = 'https://raw.githubusercontent.com/mustafasacar30/diyet/main/data/manuel_eslestirmeler.json';
+        const manuelUrl = 'https://raw.githubusercontent.com/lipodemmerkezi/zip/main/data/manuel_eslestirmeler.json';
 
         try {
           const manuelResp = await fetch(manuelUrl);
@@ -4482,7 +4482,7 @@
         }
 
         console.log('📥 Public yasak kuralları yükleniyor...');
-        const yasakUrl = 'https://raw.githubusercontent.com/mustafasacar30/diyet/main/data/eslesmeme_kurallari.json';
+        const yasakUrl = 'https://raw.githubusercontent.com/lipodemmerkezi/zip/main/data/eslesmeme_kurallari.json';
 
         try {
           const yasakResp = await fetch(yasakUrl);
@@ -7315,7 +7315,7 @@ Kullanıcı 13+ hafta olan hastaları manuel olarak arşivler.
         console.log('🔄 List.json temizliği başlatıldı...');
 
         // Önce list.json'u al
-        const response = await fetch('https://api.github.com/repos/mustafasacar30/diyet/contents/tarifler/list.json', {
+        const response = await fetch('https://api.github.com/repos/lipodemmerkezi/zip/contents/tarifler/list.json', {
           headers: {
             'Authorization': `token ${token}`,
             'Accept': 'application/vnd.github.v3+json'
@@ -7362,7 +7362,7 @@ Kullanıcı 13+ hafta olan hastaları manuel olarak arşivler.
         statusGoster(`${removedCount} dosya temizleniyor...`, 'info');
 
         // Güncellenmiş list.json'u gönder
-        const updateResponse = await fetch('https://api.github.com/repos/mustafasacar30/diyet/contents/tarifler/list.json', {
+        const updateResponse = await fetch('https://api.github.com/repos/lipodemmerkezi/zip/contents/tarifler/list.json', {
           method: 'PUT',
           headers: {
             'Authorization': `token ${token}`,
@@ -7929,7 +7929,7 @@ Kullanıcı 13+ hafta olan hastaları manuel olarak arşivler.
       }
 
       if (!repoValue || !repoValue.includes('/')) {
-        repoValue = 'mustafasacar30/diyet';
+        repoValue = 'lipodemmerkezi/zip';
       }
 
       const parts = repoValue.split('/');
@@ -8660,7 +8660,7 @@ Kullanıcı 13+ hafta olan hastaları manuel olarak arşivler.
 
               for (const dosyaAdi of dosyaAdlari) {
                 try {
-                  const response = await fetch(`https://api.github.com/repos/mustafasacar30/diyet/contents/patients/${dosyaAdi}`, {
+                  const response = await fetch(`https://api.github.com/repos/lipodemmerkezi/zip/contents/patients/${dosyaAdi}`, {
                     headers: { 'Authorization': `token ${token}` }
                   });
 
@@ -15027,7 +15027,7 @@ Kullanıcı 13+ hafta olan hastaları manuel olarak arşivler.
         const repoElement = document.getElementById('githubRepo');
 
         const GITHUB_TOKEN = tokenElement ? tokenElement.value.trim() : '';
-        const GITHUB_REPO = repoElement ? repoElement.value.trim() || 'mustafasacar30/diyet' : 'mustafasacar30/diyet';
+        const GITHUB_REPO = repoElement ? repoElement.value.trim() || 'lipodemmerkezi/zip' : 'lipodemmerkezi/zip';
 
         if (!GITHUB_TOKEN) {
           console.warn('⚠️ GitHub token bulunamadı');
@@ -17250,7 +17250,7 @@ ${mesajlar.join('\n')}
             const repoElement = document.getElementById('githubRepo');
 
             const GITHUB_TOKEN = tokenElement ? tokenElement.value.trim() : '';
-            const GITHUB_REPO = repoElement ? repoElement.value.trim() || 'mustafasacar30/diyet' : 'mustafasacar30/diyet';
+            const GITHUB_REPO = repoElement ? repoElement.value.trim() || 'lipodemmerkezi/zip' : 'lipodemmerkezi/zip';
 
             if (!GITHUB_TOKEN) {
               alert('GitHub token ayarlanmamış. Lütfen önce GitHub token\'ınızı girin.');
@@ -17383,7 +17383,7 @@ ${mesajlar.join('\n')}
                     } else {
                       // Standart raw format ile dene
                       const encodedFileName = encodeURIComponent(pdfFileName);
-                      pdfUrl = `https://raw.githubusercontent.com/mustafasacar30/diyet/main/pdfs/${encodedFileName}`;
+                      pdfUrl = `https://raw.githubusercontent.com/lipodemmerkezi/zip/main/pdfs/${encodedFileName}`;
                     }
 
                     console.log(`  PDF URL: ${pdfUrl}`);
@@ -23821,7 +23821,7 @@ SADECE malzemeleri listele, başka bir şey yazma.`;
 
             if (!cardUrl && card.kartResmi) {
               // tarifler klasöründen bul
-              cardUrl = `https://raw.githubusercontent.com/mustafasacar30/diyet/main/tarifler/${card.kartResmi}`;
+              cardUrl = `https://raw.githubusercontent.com/lipodemmerkezi/zip/main/tarifler/${card.kartResmi}`;
             }
 
             console.log(`🔍 Tarif kartı ${i + 1}:`, {

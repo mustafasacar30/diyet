@@ -114,14 +114,14 @@ async function importData() {
     // 3. Import Recipe Cards List (from GitHub)
     try {
         console.log('Fetching list.json from GitHub...');
-        const response = await fetch('https://raw.githubusercontent.com/mustafasacar30/diyet/main/tarifler/list.json');
+        const response = await fetch('https://raw.githubusercontent.com/lipodemmerkezi/zip/main/tarifler/list.json');
         if (response.ok) {
             const cards = await response.json();
             console.log(`Found ${cards.length} cards in GitHub list.`);
 
             let count = 0;
             for (const card of cards) {
-                const url = `https://raw.githubusercontent.com/mustafasacar30/diyet/main/tarifler/${card.file}`;
+                const url = `https://raw.githubusercontent.com/lipodemmerkezi/zip/main/tarifler/${card.file}`;
                 const { error } = await supabase.from('recipe_cards').upsert({
                     filename: card.file,
                     url: url,

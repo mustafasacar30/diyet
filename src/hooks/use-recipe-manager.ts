@@ -86,9 +86,10 @@ export function useRecipeManager() {
 
                 const migrateUrl = (url: string) => {
                     if (!url) return url;
+                    // Ensure all recipe source references point to lipodemmerkezi/zip where the images actually are
                     return url
-                        .replace('mustafasacar35/lipodem-takip-paneli', 'mustafasacar30/diyet')
-                        .replace('lipodemmerkezi/zip', 'mustafasacar30/diyet');
+                        .replace(/raw\.githubusercontent\.com\/(mustafasacar35\/lipodem-takip-paneli|mustafasacar30\/diyet)\//g, 'raw.githubusercontent.com/lipodemmerkezi/zip/')
+                        .replace(/api\.github\.com\/repos\/(mustafasacar35\/lipodem-takip-paneli|mustafasacar30\/diyet)\//g, 'api.github.com/repos/lipodemmerkezi/zip/');
                 }
 
                 const migratedCards = (cData || []).map(card => ({

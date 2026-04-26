@@ -28,12 +28,12 @@ export function RecipeCardDialog({ isOpen, onClose, cardUrl, cardName }: RecipeC
         if (!url) return url
         return url
             .replace(
-                /raw\.githubusercontent\.com\/(mustafasacar35\/lipodem-takip-paneli|lipodemmerkezi\/zip)\//g,
-                'raw.githubusercontent.com/mustafasacar30/diyet/'
+                /raw\.githubusercontent\.com\/(mustafasacar35\/lipodem-takip-paneli|mustafasacar30\/diyet)\//g,
+                'raw.githubusercontent.com/lipodemmerkezi/zip/'
             )
             .replace(
-                /api\.github\.com\/repos\/(mustafasacar35\/lipodem-takip-paneli|lipodemmerkezi\/zip)\//g,
-                'api.github.com/repos/mustafasacar30/diyet/'
+                /api\.github\.com\/repos\/(mustafasacar35\/lipodem-takip-paneli|mustafasacar30\/diyet)\//g,
+                'api.github.com/repos/lipodemmerkezi/zip/'
             )
     }
 
