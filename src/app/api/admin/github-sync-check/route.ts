@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-const GITHUB_OWNER = 'mustafasacar35'
-const LIPODEM_REPO = 'lipodem-takip-paneli'
+const LIPODEM_OWNER = 'lipodemmerkezi'
+const LIPODEM_REPO = 'zip'
+const TEMPLATE_OWNER = 'mustafasacar35'
 const TEMPLATE_REPO = 'kart_hazirlayici'
 
 // Normalize Turkish characters to ASCII for matching
@@ -29,11 +30,11 @@ export async function GET(req: NextRequest) {
             'Accept': 'application/vnd.github.v3+json',
         }
 
-        // Fetch published cards from lipodem-takip-paneli/tarifler/list.json
+        // Fetch published cards from zip/tarifler/list.json
         // Returns card names AND their raw GitHub image URLs
         const publishedCards: { name: string, imageUrl: string }[] = []
         try {
-            const listUrl = `https://api.github.com/repos/${GITHUB_OWNER}/${LIPODEM_REPO}/contents/tarifler/list.json`
+            const listUrl = `https://api.github.com/repos/${LIPODEM_OWNER}/${LIPODEM_REPO}/contents/tarifler/list.json`
             const res = await fetch(listUrl, { headers, cache: 'no-store' })
             if (res.ok) {
                 const fileData = await res.json()
@@ -44,7 +45,7 @@ export async function GET(req: NextRequest) {
                         const fileName = typeof item === 'string' ? item : item?.name || ''
                         if (!fileName) continue
                         const baseName = fileName.replace('.jpg', '')
-                        const imageUrl = `https://raw.githubusercontent.com/${GITHUB_OWNER}/${LIPODEM_REPO}/main/tarifler/${fileName.endsWith('.jpg') ? fileName : fileName + '.jpg'}`
+                        const imageUrl = `https://raw.githubusercontent.com/${LIPODEM_OWNER}/${LIPODEM_REPO}/main/tarifler/${fileName.endsWith('.jpg') ? fileName : fileName + '.jpg'}`
                         publishedCards.push({ name: baseName, imageUrl })
                     }
                 }
@@ -57,7 +58,7 @@ export async function GET(req: NextRequest) {
         // Returns draft base names AND their thumbnail URLs
         const draftCards: { name: string, thumbUrl: string }[] = []
         try {
-            const draftsUrl = `https://api.github.com/repos/${GITHUB_OWNER}/${TEMPLATE_REPO}/contents/drafts`
+            const draftsUrl = `https://api.github.com/repos/${TEMPLATE_OWNER}/${TEMPLATE_REPO}/contents/drafts`
             const res = await fetch(draftsUrl, { headers, cache: 'no-store' })
             if (res.ok) {
                 const files = await res.json()
@@ -73,7 +74,7 @@ export async function GET(req: NextRequest) {
                     for (const draftName of jsonDrafts) {
                         const thumbFile = thumbFiles.find((t: any) => t.name.includes(draftName))
                         const thumbUrl = thumbFile 
-                            ? `https://raw.githubusercontent.com/${GITHUB_OWNER}/${TEMPLATE_REPO}/main/drafts/${thumbFile.name}`
+                            ? `https://raw.githubusercontent.com/${TEMPLATE_OWNER}/${TEMPLATE_REPO}/main/drafts/${thumbFile.name}`
                             : ''
                         draftCards.push({ name: draftName, thumbUrl })
                     }

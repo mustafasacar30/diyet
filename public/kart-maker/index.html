@@ -1501,7 +1501,7 @@ makro değerleri</textarea>
       -->
 
       <!-- Lipodem Paneli Yönlendirme Linki -->
-      <a id="lipodemPanelLink" href="https://mustafasacar35.github.io/lipodem-takip-paneli/index.html"
+      <a id="lipodemPanelLink" href="https://lipodemmerkezi.github.io/zip/index.html"
         class="btn-primary"
         style="display:block; text-align:center; text-decoration:none; margin-bottom:12px; font-weight:bold; background-color:#5b1e6b; border-color:#4a1558; padding:10px; border-radius:10px; font-size:14px;">
         🔗 Lipödem Takip Paneli
@@ -4987,7 +4987,7 @@ ${ingredients.map((ing, i) => `${i + 1}. ${ing}`).join("\n")}`;
       const tagsRaw = els.lipodemTags.value.trim();
       const tagsArray = tagsRaw ? tagsRaw.split(",").map(t => t.trim().toLowerCase()).filter(Boolean) : [];
 
-      const lipodemRepo = "mustafasacar35/lipodem-takip-paneli";
+      const lipodemRepo = "lipodemmerkezi/zip";
       const branch = "main";
       const headers = { "Authorization": `Bearer ${pat}`, "Content-Type": "application/json" };
 
@@ -6374,7 +6374,7 @@ Beklenen JSON Şeması:
       if (lipodemRepoDishes.size > 0 || isFetchingDishes) return;
       isFetchingDishes = true;
       try {
-        const url = `https://raw.githubusercontent.com/mustafasacar35/lipodem-takip-paneli/main/tarifler/list.json`;
+        const url = `https://raw.githubusercontent.com/lipodemmerkezi/zip/main/tarifler/list.json`;
         const res = await fetch(url);
         if (!res.ok) throw new Error("list.json fetch failed");
         const list = await res.json();
