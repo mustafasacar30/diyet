@@ -235,8 +235,8 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
     // Google State
     const gapiEnabled = isOpen && activeTab === 'google'
     const { isReady, isInitializing, isInitialized, initClient, login, isAuthenticated, error: gapiError, gapi, logs } = useGapi(gapiEnabled)
-    const [apiKey, setApiKey] = useState('')
-    const [clientId, setClientId] = useState('')
+    const [apiKey, setApiKey] = useState('AIzaSyAFRdF7Myoa27DpBmt76_trtwEVpFpWgL8')
+    const [clientId, setClientId] = useState('337617773303-3h4isdumdaptn9psov53a930dp9c4826.apps.googleusercontent.com')
     const [searchQuery, setSearchQuery] = useState(patientName)
     const [autoStartTriggered, setAutoStartTriggered] = useState(false)
     const [foundFiles, setFoundFiles] = useState<any[]>([])
@@ -988,9 +988,9 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
         setAutoImportStatus('Bağlantı hazırlanıyor...')
         setIsProcessing(true)
 
-        // 1. Check API Keys from localStorage
-        const storedKey = localStorage.getItem('diyet_google_api_key')
-        const storedClient = localStorage.getItem('diyet_google_client_id')
+        // 1. Check API Keys
+        const storedKey = apiKey || localStorage.getItem('diyet_google_api_key') || 'AIzaSyAFRdF7Myoa27DpBmt76_trtwEVpFpWgL8'
+        const storedClient = clientId || localStorage.getItem('diyet_google_client_id') || '337617773303-3h4isdumdaptn9psov53a930dp9c4826.apps.googleusercontent.com'
 
         if (!storedKey || !storedClient) {
             setAutoImportStatus('API anahtarları eksik. Lütfen önce Ayarları yapılandırın.')
