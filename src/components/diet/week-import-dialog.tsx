@@ -1058,14 +1058,27 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
         // 4. Search Drive
         setAutoImportStatus(`"${patientName}" Drive'da aranıyor...`)
         try {
-            // Generate variants to handle Turkish case issues (i -> İ, I -> ı)
+            // Helper to convert Turkish chars to English equivalents for Drive indexing issues
+            const toEng = (s: string) => s
+                .replace(/ğ/g, 'g').replace(/Ğ/g, 'G')
+                .replace(/ü/g, 'u').replace(/Ü/g, 'U')
+                .replace(/ş/g, 's').replace(/Ş/g, 'S')
+                .replace(/ı/g, 'i').replace(/İ/g, 'I')
+                .replace(/ö/g, 'o').replace(/Ö/g, 'O')
+                .replace(/ç/g, 'c').replace(/Ç/g, 'C')
+
+            // Create highly flexible variants
+            const baseName = patientName.trim()
+            const firstWord = baseName.split(' ')[0] // e.g., "HACER"
+
             const nameVariants = [
-                patientName,
-                patientName.toLocaleUpperCase('tr-TR'),
-                patientName.toLocaleLowerCase('tr-TR'),
-                patientName.toUpperCase(), 
-                patientName.toLowerCase()
-            ].filter((v, i, a) => a.indexOf(v) === i)
+                baseName,
+                toEng(baseName),
+                baseName.toLocaleUpperCase('tr-TR'),
+                toEng(baseName).toUpperCase(),
+                firstWord, // Fallback to just the first name if full name fails
+                toEng(firstWord)
+            ].filter((v, i, a) => v && a.indexOf(v) === i)
 
             const nameQueries = nameVariants.map(v => `name contains '${v.replace(/'/g, "\\'")}'`).join(' or ')
             const q = `(mimeType='application/vnd.google-apps.spreadsheet' or mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') and (${nameQueries}) and trashed=false`
