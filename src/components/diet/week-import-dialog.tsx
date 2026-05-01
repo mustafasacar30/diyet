@@ -913,7 +913,7 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
             setLoadedTabNames([])
             setAutoImportStatus('')
 
-            const q = `name contains '${searchQuery.replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`
+            const q = `name contains '${searchQuery.replace(/'/g, "\\'")}' and (mimeType='application/vnd.google-apps.spreadsheet' or mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') and trashed=false`
             const response = await gapi.client.drive.files.list({
                 q: q,
                 fields: 'files(id, name)',
@@ -1068,7 +1068,7 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
             ].filter((v, i, a) => a.indexOf(v) === i)
 
             const nameQueries = nameVariants.map(v => `name contains '${v.replace(/'/g, "\\'")}'`).join(' or ')
-            const q = `mimeType='application/vnd.google-apps.spreadsheet' and (${nameQueries}) and trashed=false`
+            const q = `(mimeType='application/vnd.google-apps.spreadsheet' or mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') and (${nameQueries}) and trashed=false`
             
             const response = await gapi.client.drive.files.list({
                 q: q,
