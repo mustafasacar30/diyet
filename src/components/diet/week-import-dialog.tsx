@@ -917,7 +917,10 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
             const response = await gapi.client.drive.files.list({
                 q: q,
                 fields: 'files(id, name)',
-                pageSize: 20
+                pageSize: 20,
+                supportsAllDrives: true,
+                includeItemsFromAllDrives: true,
+                corpora: 'allDrives'
             })
             setFoundFiles(response.result.files || [])
         } catch (err: any) {
@@ -1086,7 +1089,10 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
             const response = await gapi.client.drive.files.list({
                 q: q,
                 fields: 'files(id, name)',
-                pageSize: 10
+                pageSize: 10,
+                supportsAllDrives: true,
+                includeItemsFromAllDrives: true,
+                corpora: 'allDrives'
             })
             const files = response.result.files || []
 
