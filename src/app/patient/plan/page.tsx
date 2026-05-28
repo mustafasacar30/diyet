@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import { useAuth } from "@/contexts/auth-context"
 import { useEffect, useState, useRef, useMemo, type ReactNode } from "react"
@@ -1719,7 +1719,16 @@ export default function PatientPlanPage() {
             // SET ACTIVE PROGRAM IF ANY (from nested fetch)
             let patientProgramData = null
 
-            if (scopedPatientRecord.program_templates) {
+            if (scopedPatientRecord.program_template_id) {
+                const progResult = await getPublicProgramDetails(scopedPatientRecord.program_template_id)
+                if (progResult?.data) {
+                    patientProgramData = progResult.data
+                    setPatientProgram(patientProgramData)
+                } else if (scopedPatientRecord.program_templates) {
+                    patientProgramData = scopedPatientRecord.program_templates
+                    setPatientProgram(patientProgramData)
+                }
+            } else if (scopedPatientRecord.program_templates) {
                 patientProgramData = scopedPatientRecord.program_templates
                 setPatientProgram(patientProgramData)
             }

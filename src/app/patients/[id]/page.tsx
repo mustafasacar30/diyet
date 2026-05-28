@@ -1561,7 +1561,15 @@ export default function PatientDetailPage({ params }: { params: Promise<{ id: st
             setPatient(patientData)
             setShowMealBadges(patientData.show_meal_badges !== false)
             setSidebarSortPreference(patientData.sidebar_sort_preference || null)
-            if (patientData.program_templates) {
+            
+            if (patientData.program_template_id) {
+                const progResult = await getPublicProgramDetails(patientData.program_template_id)
+                if (progResult?.data) {
+                    setPatientProgram(progResult.data)
+                } else if (patientData.program_templates) {
+                    setPatientProgram(patientData.program_templates)
+                }
+            } else if (patientData.program_templates) {
                 setPatientProgram(patientData.program_templates)
             }
 

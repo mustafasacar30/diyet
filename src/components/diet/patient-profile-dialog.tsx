@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { useForm } from "react-hook-form"
@@ -762,18 +762,15 @@ export function PatientProfileDialog({
     async function fetchPrograms() {
         // Program şablonlarını çek
         try {
-            const { data, error } = await supabase
-                .from('program_templates')
-                .select('id, name, program_template_weeks(week_start, week_end, diet_type_id)')
-                .eq('is_active', true)
-                .order('name')
+            const { data, error } = await getPublicProgramTemplatesList()
 
             if (!error && data) {
-                setPrograms(data)
+                // Filter only active programs for selection
+                const activePrograms = data.filter((p: any) => p.is_active)
+                setPrograms(activePrograms)
             }
         } catch (e) {
-            // Tablo henüz yoksa sessizce geç
-            console.log('Programs fetch error (table might be missing):', e)
+            console.log('Programs fetch error:', e)
         }
     }
 
@@ -1179,7 +1176,7 @@ export function PatientProfileDialog({
                             const { data: activePlan, error: planError } = await supabase
                                 .from('diet_plans')
                                 .select('id')
-                                .eq('patient_id', patientId)
+                                .eq('patient_id', currentPatientId)
                                 .eq('status', 'active')
                                 .maybeSingle()
 
