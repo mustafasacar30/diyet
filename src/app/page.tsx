@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import { useEffect } from 'react'
 import { useRouter } from "next/navigation"
@@ -26,11 +26,29 @@ export default function Home() {
     }
   }, [user, profile, loading, router])
 
+  if (loading) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-[#F8FAFC]">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      </div>
+    )
+  }
+
+  // After loading, if patient, we can show loader until redirect happens.
+  if (profile?.role === 'patient') {
+    return (
+      <AppStartupLoader
+        displayName={startupName}
+        title="Panel aciliyor"
+        subtitle="Hesabiniz yonlendiriliyor..."
+      />
+    )
+  }
+
+  // For admins/staff, show simple spinner until redirect happens
   return (
-    <AppStartupLoader
-      displayName={startupName}
-      title="Panel aciliyor"
-      subtitle="Hesabiniz yonlendiriliyor..."
-    />
+    <div className="flex h-screen w-full items-center justify-center bg-[#F8FAFC]">
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+    </div>
   )
 }

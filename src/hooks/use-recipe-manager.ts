@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import { getPublicRecipeData } from '@/actions/public-db-actions'
 
 export type ManualMatch = {
     id: string
@@ -70,19 +71,8 @@ export function useRecipeManager() {
             }
 
             recipeInFlight = (async () => {
-                const [mRes, bRes, cRes] = await Promise.all([
-                    supabase.from('recipe_manual_matches').select('*'),
-                    supabase.from('recipe_match_bans').select('*'),
-                    supabase.from('recipe_cards').select('*').order('created_at', { ascending: false }),
-                ])
-
-                const { data: mData, error: mError } = mRes
-                const { data: bData, error: bError } = bRes
-                const { data: cData, error: cError } = cRes
-
-                if (mError) throw mError
-                if (bError) throw bError
-                if (cError) throw cError
+                const res = await getPublicRecipeData();
+                if (res.error) throw new Error(res.error);
 
                 const migrateUrl = (url: string) => {
                     if (!url) return url;
@@ -92,14 +82,14 @@ export function useRecipeManager() {
                         .replace(/api\.github\.com\/repos\/(mustafasacar35\/lipodem-takip-paneli|mustafasacar30\/diyet)\//g, 'api.github.com/repos/lipodemmerkezi/zip/');
                 }
 
-                const migratedCards = (cData || []).map(card => ({
+                const migratedCards = (res.cards || []).map((card: any) => ({
                     ...card,
                     url: migrateUrl(card.url)
                 }))
 
                 return {
-                    manualMatches: mData || [],
-                    bans: bData || [],
+                    manualMatches: res.manualMatches || [],
+                    bans: res.bans || [],
                     cards: migratedCards,
                 }
             })()

@@ -1979,6 +1979,33 @@ export class Planner {
         const MAX_FLEX_ITERATIONS = 10
         let flexCount = 0
 
+        const getWeeklyEquivalentCount = (ruleDef: any, baseCount: number | null | undefined): number => {
+            if (baseCount === null || baseCount === undefined) return 0
+            const count = Number(baseCount)
+            if (!Number.isFinite(count) || count <= 0) return 0
+
+            const period = ruleDef.period || 'weekly'
+            let dayMultiplier = 7
+            
+            const randomDaysTarget = ruleDef.random_day_count || (period !== 'per_meal' && (!ruleDef.scope_days || ruleDef.scope_days.length === 0) && ruleDef.max_count ? ruleDef.max_count : null)
+            if (randomDaysTarget) {
+                dayMultiplier = typeof randomDaysTarget === 'number' ? randomDaysTarget : Number(randomDaysTarget)
+            } else if (ruleDef.scope_days && ruleDef.scope_days.length > 0) {
+                dayMultiplier = ruleDef.scope_days.length
+            }
+
+            if (period === 'per_meal') {
+                let mealMultiplier = mealTypes.filter((m: string) => m !== 'KAHVALTI').length || 2
+                if (ruleDef.scope_meals && ruleDef.scope_meals.length > 0) {
+                    mealMultiplier = ruleDef.scope_meals.length
+                }
+                return count * dayMultiplier * mealMultiplier
+            } else if (period === 'daily') {
+                return count * dayMultiplier
+            }
+            return count // weekly
+        }
+
         if (weeklyGap > 0) {
             // === CALORIE DEFICIT: Increase frequency (min → max) ===
             // Sort rules by average calories (highest first - fill faster)
@@ -1987,7 +2014,8 @@ export class Planner {
                     const rawDef = rule.definition as any
                     const def = rawDef.data || rawDef
                     const current = countRuleOccurrences(rule)
-                    const maxCount = def.max_count || current
+                    const equivalentMax = getWeeklyEquivalentCount(def, def.max_count)
+                    const maxCount = equivalentMax > 0 ? equivalentMax : current
                     const canExpand = maxCount - current
                     const avgCal = avgCaloriesForRule(rule)
                     return { rule, def, current, maxCount, canExpand, avgCal }
@@ -2194,7 +2222,7 @@ export class Planner {
                     const rawDef = rule.definition as any
                     const def = rawDef.data || rawDef
                     const current = countRuleOccurrences(rule)
-                    const minCount = def.min_count || 0
+                    const minCount = getWeeklyEquivalentCount(def, def.min_count) || 0
                     const canReduce = current - minCount
                     const avgCal = avgCaloriesForRule(rule)
                     return { rule, def, current, minCount, canReduce, avgCal }
@@ -2628,7 +2656,12 @@ export class Planner {
             if (def.scope_days && def.scope_days.length > 0 && !def.scope_days.includes(dayOfWeek)) return false
 
             // Check Random Days (Explicit or Implicit based on max_count)
-            const randomDaysTarget = def.random_day_count || ((!def.scope_days || def.scope_days.length === 0) && def.max_count ? def.max_count : null)
+            // IMPORTANT: per_meal rules should NOT use implicit random_day_count fallback.
+            // per_meal max_count means "max N items of this type PER MEAL" not "apply on N days per week".
+            // Only weekly/daily period rules should get implicit random day restriction from max_count.
+            const period = def.period || 'weekly'
+            const useImplicitRandomDays = period !== 'per_meal' && (!def.scope_days || def.scope_days.length === 0) && def.max_count
+            const randomDaysTarget = def.random_day_count || (useImplicitRandomDays ? def.max_count : null)
             if (randomDaysTarget) {
                 const count = typeof randomDaysTarget === 'number' ? randomDaysTarget : Number(randomDaysTarget)
                 const randomDays = this.getRandomDaysForRule(r.id, count)
@@ -2742,6 +2775,7 @@ export class Planner {
                     true,
                     true,
                     true,
+                    true,
                     true
                 )
                 if (food) {
@@ -2758,7 +2792,7 @@ export class Planner {
                     // Retry with full emergency mode to bypass locks and find a correctly-typed food
                     food = await this.selectBestFoodByRole(
                         category, role, context, selectedIds, slotTags, null,
-                        99999, true, true, true, true
+                        99999, true, true, true, true, true
                     )
                     // Verify the retry result also matches
                     if (food) {
@@ -2847,7 +2881,8 @@ export class Planner {
             if (selectedFoods.length >= config.maxItems) continue
 
             // Check Budget constraint (Strict unless forced)
-            if (slotMacros.calories >= slotCalorieBudget && !forceInclusion) continue // changed from break to continue to allow searching for other forced rules? No, original was break. Let's keep strictness unless forced. Actually continue is safer for priority.
+            // Relaxed from slotCalorieBudget to slotCalorieBudget * 1.6 in Pass 1 to prevent high-calorie items from blocking other rules.
+            if (slotMacros.calories >= slotCalorieBudget * 1.6 && !forceInclusion) continue // changed from break to continue to allow searching for other forced rules? No, original was break. Let's keep strictness unless forced. Actually continue is safer for priority.
 
             const period = def.period || 'weekly'
 
@@ -2877,7 +2912,7 @@ export class Planner {
                     }
 
                     // Allow budget overflow if force_inclusion is ON
-                    if (slotMacros.calories >= slotCalorieBudget && !forceInclusion) {
+                    if (slotMacros.calories >= slotCalorieBudget * 1.6 && !forceInclusion) {
                         this.log(context.dayIndex + 1, slotName, 'info', `Budget filled during Pass 1, stopping rule '${rule.name}'`)
                         break
                     }
@@ -3088,14 +3123,25 @@ export class Planner {
 
             // BUDGET CHECK: Stop ONLY if minItems is satisfied AND we have enough calories
             // If we haven't reached minItems, we MUST continue (even if over budget)
-            if (selectedFoods.length >= config.minItems && slotMacros.calories >= slotCalorieBudget * 0.9) {
+            let currentCalorieLimit = slotCalorieBudget * 0.9
+            const dayTargetCal = context.dailyTarget?.calories
+            const dayTargetFat = context.dailyTarget?.fat
+            if (dayTargetCal && dayTargetFat) {
+                const currentDayCal = (context.dailyMacros?.calories || 0) + slotMacros.calories
+                const currentDayFat = (context.dailyMacros?.fat || 0) + slotMacros.fat
+                if (currentDayCal < dayTargetCal * 0.95 || currentDayFat < dayTargetFat * 0.95) {
+                    currentCalorieLimit = slotCalorieBudget * 1.15 // Relax budget: allow 15% overflow if daily target or fat is under-satisfied
+                }
+            }
+
+            if (selectedFoods.length >= config.minItems && slotMacros.calories >= currentCalorieLimit) {
                 this.log(context.dayIndex + 1, slotName, 'info', `Budget reached (${Math.round(slotMacros.calories)}/${slotCalorieBudget}), stopping optional selection`)
                 break
             }
 
             // Calculate remaining calorie budget for this slot
             // If under minItems, pretend we have budget to force selection
-            let remainingCalories = slotCalorieBudget - slotMacros.calories
+            let remainingCalories = Math.max(currentCalorieLimit, slotCalorieBudget) - slotMacros.calories
             if (selectedFoods.length < config.minItems) {
                 remainingCalories = Math.max(remainingCalories, 200) // Ensure at least 200kcal "phantom budget" to pick something
             }
@@ -3170,7 +3216,18 @@ export class Planner {
         // 3. Filler Logic - ONLY if we have significant deficit AND calorie budget remains
         const proteinRatio = slotMacros.protein / (context.slotTargetMacros?.protein || 30)
         const fatRatio = slotMacros.fat / (context.slotTargetMacros?.fat || 20)
-        const caloriesRemaining = slotCalorieBudget - slotMacros.calories
+        
+        let allowedFillerBudget = slotCalorieBudget
+        const dayTargetCal = context.dailyTarget?.calories
+        const dayTargetFat = context.dailyTarget?.fat
+        if (dayTargetCal && dayTargetFat) {
+            const currentDayCal = (context.dailyMacros?.calories || 0) + slotMacros.calories
+            const currentDayFat = (context.dailyMacros?.fat || 0) + slotMacros.fat
+            if (currentDayCal < dayTargetCal * 0.95 || currentDayFat < dayTargetFat * 0.95) {
+                allowedFillerBudget = slotCalorieBudget * 1.20 // Allow up to 120% of slot budget for filler if there is a daily deficit
+            }
+        }
+        const caloriesRemaining = allowedFillerBudget - slotMacros.calories
 
         if ((proteinRatio < 0.7 || fatRatio < 0.7) && caloriesRemaining > 50 && selectedFoods.length < config.maxItems) {
             const fillerFood = await this.selectFillerFood(
@@ -3432,6 +3489,7 @@ export class Planner {
         if (role === 'corba') role = 'soup'
         const lockRole = this.getCanonicalLockRole(role || '')
         const requestedRoleNorm = lockRole
+        const varietyMode = this.settings?.variety_mode || 'hybrid'
 
         // Helper: check if a food's meal_types allows it in this slot
         const requiredMealType = this.getRequiredMealTypeForSlot(category)
@@ -3456,12 +3514,7 @@ export class Planner {
                     if (reqLower.includes('kahvalt') && normT.includes('kahvalt')) return true
                     if (reqLower.includes('ara') && normT.includes('ara')) return true
 
-                    // Relax mainDish constraint: allow lunch/dinner mixing ONLY on absolute last resort fallback
-                    if (allowMealTypeBypass && role === 'mainDish') {
-                        const reqIsLunchOrDinner = reqLower === 'lunch' || reqLower === 'dinner' || reqLower.includes('ogle') || reqLower.includes('aksam')
-                        const normIsLunchOrDinner = normT === 'lunch' || normT === 'dinner' || normT.includes('ogle') || normT.includes('aksam')
-                        if (reqIsLunchOrDinner && normIsLunchOrDinner) return true
-                    }
+                    // We strictly obey meal type constraints and do not allow mixing or bypassing.
 
                     return false
                 })
@@ -3512,6 +3565,13 @@ export class Planner {
             const lockedFood = this.weeklyLocks.get(lockRole) || (lockRole === 'soup' ? this.weeklyLocks.get('corba') : null)
             if (!lockedFood) return null
             if (!excludeIds.has(lockedFood.id) && isMealTypeCompatible(lockedFood) && !this.hasTagConflict(lockedFood, slotTags) && isRoleMatch(lockedFood)) {
+                
+                // FIXED: Even if it's a locked food, we MUST respect the max count of frequency rules 
+                // and the explicit weekly caps, unless we are in a mandatory emergency.
+                const weekCount = context.weeklySelectedIds?.get(lockedFood.id) || 0
+                if (this.hasReachedWeeklyCap(lockedFood, weekCount)) return null
+                if (this.hasReachedFrequencyRuleMaxForFood(lockedFood, context)) return null
+
                 let lockReason = this.getWeeklyLockReason(lockRole)
                 if (!lockReason) {
                     const inferredLock = this.getLockedFood(category, role, context)
@@ -3624,12 +3684,14 @@ export class Planner {
             // ------------------------------------
 
             // MANDATORY BYPASS: If we are in emergency/mandatory mode, ignore almost everything else
-            // BUT still respect the food's OWN max_weekly_freq (not rule-level frequency limits)
+            // BUT still respect the food's OWN max_weekly_freq UNLESS allowWeeklyCapBypass is true
             if (isRequired && ignoreBudget && ignoreRepetition) {
-                const explicitMax = this.getExplicitMaxWeeklyFreq(f)
-                if (explicitMax !== null) {
-                    const weeklyCount = context.weeklySelectedIds?.get(f.id) || 0
-                    if (weeklyCount >= explicitMax) return false
+                if (!allowWeeklyCapBypass) {
+                    const explicitMax = this.getExplicitMaxWeeklyFreq(f)
+                    if (explicitMax !== null) {
+                        const weeklyCount = context.weeklySelectedIds?.get(f.id) || 0
+                        if (weeklyCount >= explicitMax) return false
+                    }
                 }
                 return isMealTypeCompatible(f)
             }
@@ -3671,6 +3733,61 @@ export class Planner {
             // Only apply if we still have candidates; otherwise fall back to unfiltered
             if (ceilingFiltered.length > 0) {
                 candidates = ceilingFiltered
+            }
+        }
+
+        // *** STRICT CONSECUTIVE DAY REPETITION CHECK (NO REPETITION UNLESS FORCED/NO ALTERNATIVES) ***
+        if (!ignoreRepetition && varietyMode !== 'off' && candidates.length > 1) {
+            const exemptWords = this.settings?.variety_exempt_words || []
+            const isWordExempt = (food: any): boolean => {
+                const foodNameLower = (food.name || '').toLowerCase()
+                return exemptWords.some((word: string) => foodNameLower.includes(word.toLowerCase()))
+            }
+
+            const getSignificantWords = (name: string): string[] => {
+                const exemptWordsName = this.settings?.name_similarity_exempt_words || []
+                const genericWords = new Set([
+                    'fırında', 'ızgara', 'sote', 'haşlama', 'kızartma', 'zeytinyağlı', 'yoğurtlu', 
+                    'kıymalı', 'etli', 'adet', 'gram', 'kase', 'porsiyon', 'dilim', 'yemek', 
+                    'kaşığı', 'tatlı', 'veya', 'biber', 'salata', 'çorba', 'kırmızı', 'yeşil',
+                    'sarı', 'kuru', 'taze', 'soslu', 'sade', 'fırın', 'tava', 'ızgarası'
+                ])
+                return (name || '').toLowerCase()
+                    .replace(/[^a-z0-9ğüşıiöç\s]/g, '') // strip punctuation
+                    .split(/\s+/)
+                    .filter((w: string) => w.length > 3 && !exemptWordsName.includes(w) && !genericWords.has(w))
+            }
+
+            const hasNameRepetitionMatch = (candidateFood: any, pastIds: Set<string> | undefined): boolean => {
+                if (!pastIds || pastIds.size === 0) return false
+                if (pastIds.has(candidateFood.id)) return true // exact match
+                
+                const candidateWords = getSignificantWords(candidateFood.name)
+                if (candidateWords.length === 0) return false
+
+                for (const id of pastIds) {
+                    const pastFood = this.eligibleFoods.find(food => food.id === id)
+                    if (pastFood) {
+                        const pastWords = getSignificantWords(pastFood.name)
+                        const hasSharedWord = candidateWords.some(w => pastWords.includes(w))
+                        if (hasSharedWord) return true
+                    }
+                }
+                return false
+            }
+
+            // Step 1: Filter out foods selected yesterday (which prevents consecutive days)
+            const yesterdayFiltered = candidates.filter(f => isWordExempt(f) || !hasNameRepetitionMatch(f, context.yesterdaySelectedIds))
+            if (yesterdayFiltered.length > 0) {
+                candidates = yesterdayFiltered
+            }
+
+            // Step 2: Filter out foods selected 2 days ago (to prevent 3 days in a row)
+            if (candidates.length > 1) {
+                const twoDaysAgoFiltered = candidates.filter(f => isWordExempt(f) || !hasNameRepetitionMatch(f, context.twoDaysAgoSelectedIds))
+                if (twoDaysAgoFiltered.length > 0) {
+                    candidates = twoDaysAgoFiltered
+                }
             }
         }
 
@@ -3744,13 +3861,64 @@ export class Planner {
                 }
                 return true
             })
+
+            // *** STRICT CONSECUTIVE DAY REPETITION CHECK FOR FALLBACK CANDIDATES ***
+            if (!ignoreRepetition && varietyMode !== 'off' && candidates.length > 1) {
+                const exemptWords = this.settings?.variety_exempt_words || []
+                const isWordExempt = (food: any): boolean => {
+                    const foodNameLower = (food.name || '').toLowerCase()
+                    return exemptWords.some((word: string) => foodNameLower.includes(word.toLowerCase()))
+                }
+
+                const getSignificantWords = (name: string): string[] => {
+                    const exemptWordsName = this.settings?.name_similarity_exempt_words || []
+                    const genericWords = new Set([
+                        'fırında', 'ızgara', 'sote', 'haşlama', 'kızartma', 'zeytinyağlı', 'yoğurtlu', 
+                        'kıymalı', 'etli', 'adet', 'gram', 'kase', 'porsiyon', 'dilim', 'yemek', 
+                        'kaşığı', 'tatlı', 'veya', 'biber', 'salata', 'çorba', 'kırmızı', 'yeşil',
+                        'sarı', 'kuru', 'taze', 'soslu', 'sade', 'fırın', 'tava', 'ızgarası'
+                    ])
+                    return (name || '').toLowerCase()
+                        .replace(/[^a-z0-9ğüşıiöç\s]/g, '') // strip punctuation
+                        .split(/\s+/)
+                        .filter((w: string) => w.length > 3 && !exemptWordsName.includes(w) && !genericWords.has(w))
+                }
+
+                const hasNameRepetitionMatch = (candidateFood: any, pastIds: Set<string> | undefined): boolean => {
+                    if (!pastIds || pastIds.size === 0) return false
+                    if (pastIds.has(candidateFood.id)) return true // exact match
+                    
+                    const candidateWords = getSignificantWords(candidateFood.name)
+                    if (candidateWords.length === 0) return false
+
+                    for (const id of pastIds) {
+                        const pastFood = this.eligibleFoods.find(food => food.id === id)
+                        if (pastFood) {
+                            const pastWords = getSignificantWords(pastFood.name)
+                            const hasSharedWord = candidateWords.some(w => pastWords.includes(w))
+                            if (hasSharedWord) return true
+                        }
+                    }
+                    return false
+                }
+
+                const yesterdayFiltered = candidates.filter(f => isWordExempt(f) || !hasNameRepetitionMatch(f, context.yesterdaySelectedIds))
+                if (yesterdayFiltered.length > 0) {
+                    candidates = yesterdayFiltered
+                }
+                if (candidates.length > 1) {
+                    const twoDaysAgoFiltered = candidates.filter(f => isWordExempt(f) || !hasNameRepetitionMatch(f, context.twoDaysAgoSelectedIds))
+                    if (twoDaysAgoFiltered.length > 0) {
+                        candidates = twoDaysAgoFiltered
+                    }
+                }
+            }
         }
 
         if (candidates.length === 0) return null
 
         // ── LAYER 1: HARD LIMIT FILTER ──
         // Remove foods that have reached their max_weekly_freq
-        const varietyMode = this.settings?.variety_mode || 'hybrid'
         const maxWeeklyDefault = this.settings?.max_weekly_default || 3
         const filteredByLimit = candidates.filter(f => {
             const weeklyCount = context.weeklySelectedIds?.get(f.id) || 0
@@ -4859,7 +5027,9 @@ export class Planner {
         const dayIndex = context.dayIndex !== undefined ? context.dayIndex : 0
         const dayOfWeek = dayIndex + 1
 
-        const randomDaysTarget = def.random_day_count || ((!def.scope_days || def.scope_days.length === 0) && def.max_count ? def.max_count : null)
+        const period = def.period || 'weekly'
+        const useImplicitRandomDays = period !== 'per_meal' && (!def.scope_days || def.scope_days.length === 0) && def.max_count
+        const randomDaysTarget = def.random_day_count || (useImplicitRandomDays ? def.max_count : null)
         if (randomDaysTarget) {
             const count = typeof randomDaysTarget === 'number' ? randomDaysTarget : Number(randomDaysTarget)
             const randomDays = this.getRandomDaysForRule(rule.id, count)
@@ -4962,6 +5132,7 @@ export class Planner {
 
     private matchesTarget(food: any, target: any): boolean {
         if (!food || !target) return false
+        if (target.value === undefined || target.value === null || String(target.value).trim() === '') return false
 
         if (target.type === 'category') {
             const tVal = normalizeCategory(target.value)

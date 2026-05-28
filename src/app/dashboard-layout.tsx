@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Users, FileText, LayoutDashboard, UtensilsCrossed, ClipboardList, Eye, Shield, UserCog, Stethoscope, MessageCircle, Activity, Sparkles, ChefHat, Image as ImageIcon, Menu, LogOut, ChevronLeft, ChevronRight, ScrollText, ArrowLeft, ArrowRightLeft, Settings, BarChart3, FileSpreadsheet } from 'lucide-react'
+import { Users, FileText, LayoutDashboard, UtensilsCrossed, ClipboardList, Eye, Shield, UserCog, Stethoscope, MessageCircle, Activity, Sparkles, ChefHat, Image as ImageIcon, Menu, LogOut, ChevronLeft, ChevronRight, ScrollText, ArrowLeft, ArrowRightLeft, Settings, BarChart3, FileSpreadsheet, Brain } from 'lucide-react'
 import { useAuth } from '@/contexts/auth-context'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -85,6 +85,13 @@ export default function DashboardLayout({
     // --- RENDER EARLY RETURNS ---
 
     if (!loading && user && pathname === '/login') {
+        if (profile?.role !== 'patient') {
+            return (
+                <div className="flex h-screen w-full items-center justify-center bg-[#F8FAFC]">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                </div>
+            )
+        }
         return <AppStartupLoader displayName={startupName} title="Panel aciliyor" subtitle="Hesabiniz dogrulaniyor..." />
     }
 
@@ -97,7 +104,18 @@ export default function DashboardLayout({
     }
 
     if (loading) {
-        return <AppStartupLoader displayName={startupName} title="Veriler yukleniyor" />
+        const isPatientPath = pathname === '/patient' || pathname?.startsWith('/patient/');
+        const isLoginPath = pathname === '/login';
+        
+        if (isPatientPath) {
+            return <AppStartupLoader displayName={startupName} title="Veriler yukleniyor" />
+        }
+        
+        return (
+            <div className="flex h-screen w-full items-center justify-center bg-[#F8FAFC]">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            </div>
+        )
     }
 
     if (!user) {
@@ -158,6 +176,7 @@ export default function DashboardLayout({
         aiTabs.push({ href: '/admin/food-discovery', label: 'AI Keşif', icon: ChefHat })
         aiTabs.push({ href: '/admin/card-maker', label: 'Kart Maker', icon: ImageIcon })
         aiTabs.push({ href: '/admin/pattern-insights', label: 'Oruntu Analizi', icon: BarChart3 })
+        aiTabs.push({ href: '/admin/smart-insights', label: 'Yapay Zeka Asistanı', icon: Brain })
         aiTabs.push({ href: '/admin/menu-import-pool', label: 'Drive İçe Aktar', icon: FileSpreadsheet })
 
         if (profile?.role === 'doctor' || profile?.role === 'dietitian') {

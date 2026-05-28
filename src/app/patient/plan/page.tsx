@@ -5,6 +5,7 @@ import { useEffect, useState, useRef, useMemo, type ReactNode } from "react"
 import { format } from "date-fns"
 import { tr } from "date-fns/locale"
 import { supabase } from "@/lib/supabase"
+import { getPublicProgramDetails } from '@/actions/public-db-actions'
 import { applyTeamFoodOverrides } from "@/lib/team-food-overrides"
 import { applyTeamFoodMicronutrientOverrides } from "@/lib/team-food-micronutrient-overrides"
 import { applyTeamDietTypeOverrides } from "@/lib/team-diet-type-overrides"

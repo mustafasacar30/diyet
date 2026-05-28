@@ -59,7 +59,7 @@ export default function DietitianDetailPage() {
 
         // Get dietitian info
         const { data: dietitianData } = await supabase
-            .from('user_management_view')
+            .from('profiles')
             .select('id, full_name, email, title')
             .eq('id', dietitianId)
             .single()

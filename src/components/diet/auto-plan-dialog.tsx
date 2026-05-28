@@ -1,4 +1,4 @@
-﻿import {
+import {
     Dialog,
     DialogContent,
     DialogHeader,
@@ -31,12 +31,12 @@ function MacroBar({ label, actual, target, unit = 'g', minTolerance = 80, maxTol
     return (
         <div className="flex items-center gap-1 text-[10px]">
             <span className="text-slate-600">{label}</span>
-            <span className={isOver ? 'text-red-600 font-medium' : isUnder ? 'text-yellow-600' : 'text-green-600 font-medium'}>
+            <span className={isOver ? 'text-red-600 font-medium' : isUnder ? 'text-blue-600 font-medium' : 'text-green-600 font-medium'}>
                 {Math.round(actual)}/{target}{unit}
             </span>
             <div className="w-12 h-1 bg-slate-200 rounded-full overflow-hidden">
                 <div
-                    className={`h-full ${isOver ? 'bg-red-500' : isUnder ? 'bg-yellow-500' : 'bg-green-500'}`}
+                    className={`h-full ${isOver ? 'bg-red-500' : isUnder ? 'bg-blue-500' : 'bg-green-500'}`}
                     style={{ width: `${Math.min(percentage, 100)}%` }}
                 />
             </div>
@@ -949,6 +949,10 @@ export function AutoPlanDialog({ open, onOpenChange, plan, onConfirm, loading, m
         setRegenerateLoadingSeen(false)
         setActionLoader({ type: 'regenerate', mode: 'weekly' })
         Promise.resolve(onRegenerate(Object.keys(adjustments).length > 0 ? adjustments : undefined))
+            .then(() => {
+                setActionLoaderProgress(100)
+                window.setTimeout(() => setActionLoader(null), 250)
+            })
             .catch((err) => {
                 console.error('[AutoPlanDialog] Regenerate error:', err)
                 setActionLoaderProgress(100)
@@ -956,17 +960,33 @@ export function AutoPlanDialog({ open, onOpenChange, plan, onConfirm, loading, m
             })
     }
 
+    // Track plan reference to detect regeneration completion
+    const prevPlanRef = useRef<any>(null)
+
     useEffect(() => {
         if (actionLoader?.type !== 'regenerate') return
-        if (loading) {
-            if (!regenerateLoadingSeen) setRegenerateLoadingSeen(true)
-            return
+
+        // If plan changed (new plan generated), regeneration is complete
+        if (plan && prevPlanRef.current !== null && plan !== prevPlanRef.current) {
+            setActionLoaderProgress(100)
+            const t = window.setTimeout(() => setActionLoader(null), 300)
+            prevPlanRef.current = plan
+            return () => window.clearTimeout(t)
         }
-        if (!regenerateLoadingSeen) return
-        setActionLoaderProgress(100)
-        const t = window.setTimeout(() => setActionLoader(null), 250)
-        return () => window.clearTimeout(t)
-    }, [loading, actionLoader?.type, regenerateLoadingSeen])
+
+        prevPlanRef.current = plan
+    }, [plan, actionLoader?.type])
+
+    // Safety timeout: if regenerate loader is stuck for more than 60s, dismiss it
+    useEffect(() => {
+        if (actionLoader?.type !== 'regenerate') return
+        const safety = window.setTimeout(() => {
+            console.warn('[AutoPlanDialog] Regenerate safety timeout - dismissing loader')
+            setActionLoaderProgress(100)
+            window.setTimeout(() => setActionLoader(null), 300)
+        }, 60000)
+        return () => window.clearTimeout(safety)
+    }, [actionLoader])
 
     const actionLoaderMeta = useMemo(() => {
         if (!actionLoader) return null
@@ -1145,7 +1165,7 @@ export function AutoPlanDialog({ open, onOpenChange, plan, onConfirm, loading, m
                                         <div className="bg-slate-100 px-3 py-2 flex items-center justify-between">
                                             <span className="font-semibold text-slate-800">{dayName}</span>
                                             <div className="flex items-center gap-2 text-[10px]">
-                                                <span className={`px-1.5 py-0.5 rounded ${isOver ? 'bg-red-100 text-red-700' : isUnder ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'} `}>
+                                                <span className={`px-1.5 py-0.5 rounded ${isOver ? 'bg-red-100 text-red-700' : isUnder ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'} `}>
                                                     {dayActual.calories} kcal
                                                 </span>
                                                 <span className="text-slate-400">P:{dayActual.protein}g K:{dayActual.carbs}g Y:{dayActual.fat}g</span>

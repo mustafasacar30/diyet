@@ -29,7 +29,12 @@ export function SidebarProvider({ children, initialWidth = 260 }: { children: Re
 export function useSidebar() {
     const context = useContext(SidebarContext)
     if (context === undefined) {
-        throw new Error('useSidebar must be used within a SidebarProvider')
+        // Safe fallback for server-side rendering (SSR) or when rendered outside SidebarProvider
+        return {
+            sidebarWidth: 260,
+            setSidebarWidth: () => {},
+            isSidebarCollapsed: false
+        }
     }
     return context
 }

@@ -59,10 +59,9 @@ export default function AdminUsersPage() {
 
     async function fetchUsers() {
         setIsLoadingData(true)
-        // Use the view that includes email from auth.users
         const { data: usersData, error } = await supabase
-            .from('user_management_view')
-            .select('*')
+            .from('profiles')
+            .select('id, full_name, email, role, title, created_at, valid_until')
             .order('created_at', { ascending: false })
 
         if (usersData) {

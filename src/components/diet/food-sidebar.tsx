@@ -991,9 +991,9 @@ export function FoodEditDialog({
     const filteredCards = useMemo(() => {
         if (recipeSearch.length < 2) return []
         
-        const trNorm = (s: string) => s.toLowerCase().replace(/[çğıöşüÇĞİÖŞÜ]/g, (ch: string) => ({
-            'ç':'c','ğ':'g','ı':'i','ö':'o','ş':'s','ü':'u',
-            'Ç':'c','Ğ':'g','İ':'i','Ö':'o','Ş':'s','Ü':'u'
+        const trNorm = (s: string) => s.toLowerCase().replace(/[İıĞğÜüŞşÖöÇç]/g, (ch: string) => ({
+            'İ':'i','ı':'i','Ğ':'g','ğ':'g','Ü':'u','ü':'u',
+            'Ş':'s','ş':'s','Ö':'o','ö':'o','Ç':'c','ç':'c'
         } as any)[ch] || ch)
         
         const searchTokens = trNorm(recipeSearch).split(/\s+/).filter(t => t.length >= 2)
@@ -1010,15 +1010,15 @@ export function FoodEditDialog({
     const activeThumbnail = useMemo(() => {
         if (!name || cards.length === 0) return null
         
-        const trNorm = (s: string) => s.toLowerCase().replace(/[çğıöşüÇĞİÖŞÜ]/g, (ch: string) => ({
-            'ç':'c','ğ':'g','ı':'i','ö':'o','ş':'s','ü':'u',
-            'Ç':'c','Ğ':'g','İ':'i','Ö':'o','Ş':'s','Ü':'u'
+        const trNorm = (s: string) => s.toLowerCase().replace(/[İıĞğÜüŞşÖöÇç]/g, (ch: string) => ({
+            'İ':'i','ı':'i','Ğ':'g','ğ':'g','Ü':'u','ü':'u',
+            'Ş':'s','ş':'s','Ö':'o','ö':'o','Ç':'c','ç':'c'
         } as any)[ch] || ch).replace(/[^a-z0-9]/g, '')
         
         const fn = trNorm(name)
-        const foodTokens = (name.toLowerCase().replace(/[çğıöşüÇĞİÖŞÜ]/g, (ch: string) => ({
-            'ç':'c','ğ':'g','ı':'i','ö':'o','ş':'s','ü':'u',
-            'Ç':'c','Ğ':'g','İ':'i','Ö':'o','Ş':'s','Ü':'u'
+        const foodTokens = (name.toLowerCase().replace(/[İıĞğÜüŞşÖöÇç]/g, (ch: string) => ({
+            'İ':'i','ı':'i','Ğ':'g','ğ':'g','Ü':'u','ü':'u',
+            'Ş':'s','ş':'s','Ö':'o','ö':'o','Ç':'c','ç':'c'
         } as any)[ch] || ch) || "").match(/[a-z0-9]+/g) || []
 
         // 1. Check manual matches first

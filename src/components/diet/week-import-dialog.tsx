@@ -330,15 +330,17 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
             setAutoStartTriggered(true)
             setActiveTab('google')
             // Small delay to ensure component is mounted
-            setTimeout(() => {
-                oneClickImport()
-            }, 300)
+            if (isAuthenticated) {
+                setTimeout(() => {
+                    oneClickImport()
+                }, 300)
+            }
         }
         // Reset trigger when dialog closes
         if (!isOpen) {
             setAutoStartTriggered(false)
         }
-    }, [isOpen, autoStart])
+    }, [isOpen, autoStart, isAuthenticated])
 
     // --- WEEK TAB MATCHING ---
     function getExactWeekNumberFromTab(tabName: string): number | null {
@@ -2148,7 +2150,23 @@ export function WeekImportDialog({ isOpen, onClose, onImport, weekId, checkSeaso
                                                     await fetchMultipleTabsContent(selectedFile.id, selectedTabs, false)
                                                     return
                                                 }
-                                                await oneClickImport()
+                                                if (isAuthenticated) {
+                                                    await oneClickImport()
+                                                } else {
+                                                    const storedKey = apiKey || localStorage.getItem('diyet_google_api_key') || 'AIzaSyAFRdF7Myoa27DpBmt76_trtwEVpFpWgL8';
+                                                    const storedClient = clientId || localStorage.getItem('diyet_google_client_id') || '337617773303-3h4isdumdaptn9psov53a930dp9c4826.apps.googleusercontent.com';
+                                                    if (!storedKey || !storedClient) {
+                                                        setAutoImportStatus('API anahtarları eksik. Lütfen Ayarları yapılandırın.');
+                                                        setConfigOpen(true);
+                                                        return;
+                                                    }
+                                                    if (isInitialized) {
+                                                        login();
+                                                    } else {
+                                                        setAutoImportStatus('Google API hazırlanıyor, lütfen birazdan tekrar tıklayın.');
+                                                        initClient(storedKey, storedClient);
+                                                    }
+                                                }
                                             }}
                                             disabled={isProcessing}
                                             className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white shadow-lg py-6 text-lg font-semibold"

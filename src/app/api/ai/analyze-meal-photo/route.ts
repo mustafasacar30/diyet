@@ -5,13 +5,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 // Initialize Gemini
 const genAI = process.env.GEMINI_API_KEY ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY) : null;
 
-export const config = {
-    api: {
-        bodyParser: {
-            sizeLimit: '4mb', // Allow larger for images
-        },
-    },
-};
+// Removed deprecated config
 
 export async function POST(req: NextRequest) {
     try {

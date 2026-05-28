@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
+import { adminSaveProgramTemplateAction } from '@/actions/public-db-actions'
 import {
     Dialog,
     DialogContent,
@@ -1170,123 +1171,22 @@ export default function ProgramDialog({ open, onClose, program, forcedMode }: Pr
                 !effectiveCanUseGlobal &&
                 !!effectiveTeamOwnerId
 
-            if (programId) {
-                if (isTeamScopedUser && effectiveTeamOwnerId && resolvedScopeCtx.userId) {
-                    saveMode = 'team'
+const saveResult = await adminSaveProgramTemplateAction({
+                programId,
+                name: name.trim(),
+                description: description.trim() || null,
+                totalWeeks,
+                activityLevel,
+                isActive,
+                weekMappings,
+                restrictions,
+                saveMode,
+                effectiveTeamOwnerId,
+                userId: resolvedScopeCtx.userId
+            });
 
-                    const { data: overrideRow, error: overrideError } = await supabase
-                        .from('team_program_overrides')
-                        .upsert(
-                            {
-                                team_owner_id: effectiveTeamOwnerId,
-                                program_template_id: programId,
-                                name: name.trim(),
-                                description: description.trim() || null,
-                                total_weeks: totalWeeks,
-                                default_activity_level: activityLevel,
-                                is_active: isActive,
-                                created_by: resolvedScopeCtx.userId,
-                            },
-                            { onConflict: 'team_owner_id,program_template_id' }
-                        )
-                        .select('id')
-                        .single()
-
-                    if (overrideError) throw overrideError
-                    teamOverrideId = overrideRow.id
-
-                    await supabase.from('team_program_override_weeks').delete().eq('override_id', teamOverrideId)
-                    await supabase.from('team_program_override_restrictions').delete().eq('override_id', teamOverrideId)
-                } else {
-                    const { error } = await supabase
-                        .from('program_templates')
-                        .update({
-                            name: name.trim(),
-                            description: description.trim() || null,
-                            total_weeks: totalWeeks,
-                            default_activity_level: activityLevel,
-                            is_active: isActive,
-                            updated_at: new Date().toISOString()
-                        })
-                        .eq('id', programId)
-
-                    if (error) throw error
-
-                    await supabase.from('program_template_weeks').delete().eq('program_template_id', programId)
-                    await supabase.from('program_template_restrictions').delete().eq('program_template_id', programId)
-                }
-            } else {
-                if (isTeamScopedUser) {
-                    alert('Takım modunda yeni global program olusturamazsiniz. Mevcut bir programi Takıma Ozel Hale Getir ile ozellestirin.')
-                    return
-                }
-
-                const { data, error } = await supabase
-                    .from('program_templates')
-                    .insert({
-                        name: name.trim(),
-                        description: description.trim() || null,
-                        total_weeks: totalWeeks,
-                        default_activity_level: activityLevel,
-                        is_active: isActive
-                    })
-                    .select()
-                    .single()
-
-                if (error) throw error
-                programId = data.id
-            }
-
-            // Insert week mappings
-            if (weekMappings.length > 0) {
-                if (saveMode === 'team' && teamOverrideId) {
-                    const weeksToInsert = weekMappings.map(w => ({
-                        override_id: teamOverrideId,
-                        week_start: w.week_start,
-                        week_end: w.week_end,
-                        diet_type_id: w.diet_type_id,
-                        notes: w.notes
-                    }))
-                    const { error } = await supabase.from('team_program_override_weeks').insert(weeksToInsert)
-                    if (error) throw error
-                } else {
-                    const weeksToInsert = weekMappings.map(w => ({
-                        program_template_id: programId,
-                        week_start: w.week_start,
-                        week_end: w.week_end,
-                        diet_type_id: w.diet_type_id,
-                        notes: w.notes
-                    }))
-                    const { error } = await supabase.from('program_template_weeks').insert(weeksToInsert)
-                    if (error) throw error
-                }
-            }
-
-            // Insert restrictions
-            if (restrictions.length > 0) {
-                if (saveMode === 'team' && teamOverrideId) {
-                    const restrictionsToInsert = restrictions.map(r => ({
-                        override_id: teamOverrideId,
-                        restriction_type: r.restriction_type,
-                        restriction_value: r.restriction_value,
-                        reason: r.reason,
-                        severity: r.severity
-                    }))
-                    const { error } = await supabase.from('team_program_override_restrictions').insert(restrictionsToInsert)
-                    if (error) throw error
-                } else {
-                    const restrictionsToInsert = restrictions.map(r => ({
-                        program_template_id: programId,
-                        restriction_type: r.restriction_type,
-                        restriction_value: r.restriction_value,
-                        reason: r.reason,
-                        severity: r.severity
-                    }))
-                    const { error } = await supabase.from('program_template_restrictions').insert(restrictionsToInsert)
-                    if (error) throw error
-                }
-            }
-
+            if (saveResult.error) throw new Error(saveResult.error);
+            onClose();
             onClose()
         } catch (error) {
             console.error('Error saving program:', error)

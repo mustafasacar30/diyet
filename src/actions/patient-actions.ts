@@ -352,3 +352,81 @@ export async function registerPatientSelf(userId: string, email: string, data: a
     }
 }
 
+/**
+ * Fetch metadata for the public registration page
+ */
+export async function getRegistrationMetadata() {
+    if (!supabaseServiceKey) return { error: "Sunucu hatası: Servis anahtarı eksik." }
+    try {
+        const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
+            auth: { autoRefreshToken: false, persistSession: false }
+        })
+
+        const { data: diseases } = await supabaseAdmin.from('diseases').select('*').order('name')
+        const { data: medications } = await supabaseAdmin.from('medications').select('*').order('name')
+        const { data: programs } = await supabaseAdmin.from('program_templates').select('id, name').eq('is_active', true).order('name')
+        
+        let settingsValue: any = null
+        const { data: settingsData } = await supabaseAdmin
+            .from('app_settings')
+            .select('value')
+            .eq('key', 'registration_settings')
+            .maybeSingle();
+        if (settingsData?.value) {
+            settingsValue = settingsData.value
+        } else {
+            const { data: legacySettingsData } = await supabaseAdmin
+                .from('app_settings')
+                .select('value')
+                .eq('id', 'registration_settings')
+                .maybeSingle();
+            if (legacySettingsData?.value) settingsValue = legacySettingsData.value
+        }
+
+        return { 
+            diseases: diseases || [], 
+            medications: medications || [], 
+            programs: programs || [],
+            settingsValue
+        }
+    } catch (e: any) {
+        return { error: e.message }
+    }
+}
+
+
+/**
+ * Approve a pending patient and auto-confirm their email so they can log in
+ */
+export async function approvePatient(patientId: string, userId?: string | null) {
+    if (!supabaseServiceKey) return { error: 'Sunucu hatası: Servis anahtarı eksik.' }
+    try {
+        const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
+            auth: { autoRefreshToken: false, persistSession: false }
+        })
+
+        // 1. Update patient status to active
+        const { error: updateError } = await supabaseAdmin
+            .from('patients')
+            .update({ status: 'active' })
+            .eq('id', patientId);
+            
+        if (updateError) throw updateError;
+
+        // 2. If they have a user_id, auto-confirm their email in Supabase Auth
+        if (userId) {
+            const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(userId, {
+                email_confirm: true
+            });
+            if (authError) {
+                console.error('Failed to auto-confirm email for user', userId, authError);
+                // We don't fail the approval if email confirm fails, but we log it
+            }
+        }
+
+        return { success: true }
+    } catch (e: any) {
+        console.error('Patient approval error:', e);
+        return { error: e.message }
+    }
+}

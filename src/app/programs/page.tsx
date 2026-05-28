@@ -3,6 +3,7 @@
 import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { getPublicProgramTemplatesList } from '@/actions/public-db-actions'
 import { useAuth } from '@/contexts/auth-context'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -136,19 +137,9 @@ function ProgramsContent() {
 
     async function fetchPrograms() {
         setLoading(true)
-        const { data, error } = await supabase
-            .from('program_templates')
-            .select(`
-                *,
-                program_template_weeks (
-                    id, week_start, week_end, diet_type_id, notes,
-                    diet_types (name, abbreviation)
-                ),
-                program_template_restrictions (
-                    id, restriction_type, restriction_value, reason, severity
-                )
-            `)
-            .order('name')
+        const res = await getPublicProgramTemplatesList()
+        const data = res.data || []
+        const error = res.error ? { message: res.error } : null
 
         if (error) {
             console.error('Error fetching programs:', error)

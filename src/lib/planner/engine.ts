@@ -4210,6 +4210,7 @@ export class Planner {
 
     private matchesTarget(food: any, target: any): boolean {
         if (!food || !target) return false
+        if (target.value === undefined || target.value === null || String(target.value).trim() === '') return false
 
         if (target.type === 'category') {
             const tVal = normalizeCategory(target.value)

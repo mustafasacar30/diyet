@@ -368,8 +368,8 @@ export default function LabResultsGrid({ patientId, onClose, readOnly = false }:
     // Filter by search query
     const filterBySearch = (items: Micronutrient[]) => {
         if (!searchQuery.trim()) return items
-        const q = searchQuery.toLowerCase()
-        return items.filter(m => m.name.toLowerCase().includes(q))
+        const q = searchQuery.toLocaleLowerCase('tr-TR')
+        return items.filter(m => m.name.toLocaleLowerCase('tr-TR').includes(q))
     }
 
     const mikrobesinler = filterBySearch(micronutrients.filter(m => m.category === 'mikrobesin' || !m.category))

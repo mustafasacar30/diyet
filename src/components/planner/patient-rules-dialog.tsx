@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import { useState, useEffect, useCallback, useRef } from "react"
 import { supabase } from "@/lib/supabase"
@@ -406,14 +406,12 @@ export function PatientRulesDialog({ open, onOpenChange, patientId, programTempl
             try {
                 const { data: patientRow } = await supabase
                     .from('patients')
-                    .select('first_name,last_name')
+                    .select('full_name')
                     .eq('id', patientId)
                     .maybeSingle()
 
                 if (cancelled) return
-                const first = String(patientRow?.first_name || '').trim()
-                const last = String(patientRow?.last_name || '').trim()
-                const full = `${first} ${last}`.trim()
+                const full = String(patientRow?.full_name || '').trim()
                 setPatientDisplayName(full || 'hasta')
             } catch {
                 if (!cancelled) setPatientDisplayName('hasta')
@@ -944,6 +942,12 @@ export function PatientRulesDialog({ open, onOpenChange, patientId, programTempl
     async function handleAddGlobalRule(baseRule: PlanningRule, isActive: boolean = true, isIgnored: boolean = false) {
         setLoading(true)
         try {
+            // Calculate next sort_order based on existing patient rules
+            const currentMaxSort = patientRules.reduce((max, r) => {
+                const v = Number(r.sort_order)
+                return Number.isFinite(v) ? Math.max(max, v) : max
+            }, -1)
+
             const { error } = await supabase
                 .from('planning_rules')
                 .insert({
@@ -957,7 +961,8 @@ export function PatientRulesDialog({ open, onOpenChange, patientId, programTempl
                     scope: 'patient',
                     patient_id: patientId,
                     team_owner_id: isTeamScopedContext ? teamOwnerId : null,
-                    source_rule_id: baseRule.id
+                    source_rule_id: baseRule.id,
+                    sort_order: baseRule.sort_order ?? (currentMaxSort + 1)
                 })
 
             if (error) throw error
@@ -1000,7 +1005,13 @@ export function PatientRulesDialog({ open, onOpenChange, patientId, programTempl
     async function handleAddAllNewGlobalRules() {
         setLoading(true)
         try {
-            const rulesToInsert = newInheritedRules.map(rule => ({
+            // Calculate next sort_order based on existing patient rules
+            const currentMaxSort = patientRules.reduce((max, r) => {
+                const v = Number(r.sort_order)
+                return Number.isFinite(v) ? Math.max(max, v) : max
+            }, -1)
+
+            const rulesToInsert = newInheritedRules.map((rule, index) => ({
                 name: rule.name,
                 description: rule.description,
                 rule_type: rule.rule_type,
@@ -1010,7 +1021,8 @@ export function PatientRulesDialog({ open, onOpenChange, patientId, programTempl
                 scope: 'patient',
                 patient_id: patientId,
                 team_owner_id: isTeamScopedContext ? teamOwnerId : null,
-                source_rule_id: rule.id
+                source_rule_id: rule.id,
+                sort_order: rule.sort_order ?? (currentMaxSort + index + 1)
             }))
 
             const { error } = await supabase
@@ -1085,18 +1097,17 @@ export function PatientRulesDialog({ open, onOpenChange, patientId, programTempl
                 currentRules = await ensurePatientRules();
             }
 
-            // 2. Loop and update the reordered rules
-            // We can just update minIndex to maxIndex
-            const minIndex = Math.min(oldIndex, newIndex);
-            const maxIndex = Math.max(oldIndex, newIndex);
-
-            for (let i = minIndex; i <= maxIndex; i++) {
-                const sr = sortedRules[i];
+            // 2. Update the sort_order for all rules to ensure complete consistency
+            // If some rules had NULL or arbitrary sort_order values before, just updating min to max leaves them broken.
+            const updatePromises = sortedRules.map((sr) => {
                 const dbRule = currentRules.find(r => r.id === sr.id || (r.source_rule_id === sr.id && sr.scope !== 'patient'));
                 if (dbRule) {
-                    await supabase.from('planning_rules').update({ sort_order: sr.sort_order }).eq('id', dbRule.id);
+                    return supabase.from('planning_rules').update({ sort_order: sr.sort_order }).eq('id', dbRule.id);
                 }
-            }
+                return Promise.resolve();
+            });
+
+            await Promise.all(updatePromises);
 
             await fetchRules(true);
             onRulesChanged?.();
@@ -1999,12 +2010,13 @@ function SortableRuleItem({
                                 Onay Bekliyor
                             </Badge>
                         )}
+
                     </div>
                     {rule.description && (
                         <p className="text-xs text-slate-500 leading-relaxed">{rule.description}</p>
                     )}
                     <p className="text-[11px] text-slate-400 mt-1">
-                        Sıra #{(rule.sort_order ?? (index + 1))} · Öncelik {rule.priority ?? 0}
+                        Sıra #{index + 1}
                     </p>
                 </div>
 

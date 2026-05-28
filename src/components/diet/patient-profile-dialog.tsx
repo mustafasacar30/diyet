@@ -35,6 +35,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox"
 import { Switch } from "@/components/ui/switch"
 import { supabase } from "@/lib/supabase"
+import { getPublicProgramTemplatesList } from '@/actions/public-db-actions'
 import { Textarea } from "@/components/ui/textarea"
 import { Label as ShcnLabel } from "@/components/ui/label"
 import { createPatientWithAuth } from "@/actions/patient-actions"
@@ -531,9 +532,9 @@ export function PatientProfileDialog({
     useEffect(() => {
         if (open) {
             fetchPrograms()
-            fetchDiseases()
+            fetchMeta()
             fetchMicronutrients()
-            fetchMedications()
+
             fetchGlobalSettings()
             if (patientId) {
                 fetchLabResults()
@@ -743,27 +744,18 @@ export function PatientProfileDialog({
         }
     }
 
-    async function fetchDiseases() {
-        try {
-            const { data, error } = await supabase
-                .from('diseases')
-                .select('id, name')
-                .order('name')
-            if (data) setDiseases(data)
-        } catch (e) {
-            console.error("Error fetching diseases", e)
-        }
-    }
 
-    async function fetchMedications() {
+
+
+
+    async function fetchMeta() {
         try {
-            const { data, error } = await supabase
-                .from('medications')
-                .select('id, name, generic_name')
-                .order('name')
-            if (data) setMedications(data)
+            const { getRegistrationMetadata } = await import('@/actions/patient-actions');
+            const result = await getRegistrationMetadata();
+            if (result.diseases) setDiseases(result.diseases);
+            if (result.medications) setMedications(result.medications);
         } catch (e) {
-            console.error("Error fetching medications", e)
+            console.error("Error fetching meta", e);
         }
     }
 

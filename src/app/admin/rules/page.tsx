@@ -209,7 +209,7 @@ export default function RulesPage() {
                 if (patientIds.length > 0) {
                     const { data: patients } = await supabase
                         .from('patients')
-                        .select('id, first_name, last_name')
+                        .select('id, full_name')
                         .in('id', patientIds)
 
                     if (patients) {
@@ -221,7 +221,7 @@ export default function RulesPage() {
 
                 const suggestionsWithPatient = suggestionData.map((r: any) => ({
                     ...r,
-                    patients: patientsMap[r.patient_id] || { first_name: 'Bilinmeyen', last_name: 'Hasta' }
+                    patients: patientsMap[r.patient_id] || { full_name: 'Bilinmeyen Hasta' }
                 }))
 
                 setSuggestions(suggestionsWithPatient as unknown as PlanningRule[])
@@ -542,7 +542,7 @@ export default function RulesPage() {
                                         </div>
                                         <p className="text-xs text-slate-500 mt-1">{suggestion.description}</p>
                                         <div className="text-[10px] text-amber-600 mt-1 font-medium">
-                                            Öneren: {suggestion.patients?.first_name} {suggestion.patients?.last_name}
+                                            Öneren: {suggestion.patients?.full_name}
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-2 shrink-0">

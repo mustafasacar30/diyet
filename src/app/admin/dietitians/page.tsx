@@ -47,8 +47,7 @@ export default function AdminDietitiansPage() {
         // Get dietitians from profiles
         const { data: profiles, error: profileError } = await supabase
             .from('profiles')
-            .select('id, full_name, title, created_at')
-            .eq('role', 'dietitian')
+            .select('id, full_name, title, created_at, role')
             .order('created_at', { ascending: false })
 
         if (profileError) {
@@ -57,9 +56,10 @@ export default function AdminDietitiansPage() {
             return
         }
 
+        const filtered = profiles?.filter((p: any) => p.role === 'dietitian') || [];
         // Get patient counts for each dietitian
         const dietitiansWithCounts = await Promise.all(
-            (profiles || []).map(async (d) => {
+            filtered.map(async (d) => {
                 const { count } = await supabase
                     .from('patient_assignments')
                     .select('*', { count: 'exact', head: true })

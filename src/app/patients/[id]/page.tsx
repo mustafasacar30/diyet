@@ -4,6 +4,7 @@ import { checkCompatibility, DietRules } from "@/utils/compatibility-checker"
 import { useState, useEffect, use, useMemo, useRef } from "react"
 import { createPortal } from "react-dom"
 import { supabase } from "@/lib/supabase"
+import { getPublicProgramDetails } from '@/actions/public-db-actions'
 import { applyTeamFoodOverrides, upsertTeamFoodOverride } from "@/lib/team-food-overrides"
 import {
     applyTeamFoodMicronutrientOverrides,
@@ -22,6 +23,7 @@ import {
     DropdownMenuContent,
     DropdownMenuItem,
     DropdownMenuTrigger,
+    DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu"
 import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Plus, Calendar, Save, Calculator, ChefHat, FileText, ChevronRight, ChevronLeft, MoreHorizontal, Copy, Pencil, Trash2, Sliders, X, AlertTriangle, Settings, RefreshCw, Wand2, Search, Filter, BookOpenText, Printer, ArrowLeft, Heart, Info, Archive, LayoutGrid, List, StickyNote, Activity, Menu, RotateCcw, Eraser, Grid3X3, Sparkles, Lock, Unlock, ChevronUp, ChevronDown, Camera, Image, ClipboardList, Check, Loader2 } from "lucide-react"
@@ -403,6 +405,8 @@ export default function PatientDetailPage({ params }: { params: Promise<{ id: st
     const [autoPlanOpen, setAutoPlanOpen] = useState(false)
     const [generatedPlan, setGeneratedPlan] = useState<any>(null)
     const [isGeneratingPlan, setIsGeneratingPlan] = useState(false)
+    const [isAddingWeek, setIsAddingWeek] = useState(false)
+    const [addingWeekProgress, setAddingWeekProgress] = useState(0)
     const [isApplyingPlan, setIsApplyingPlan] = useState(false)
     const { user, profile } = useAuth()
 
@@ -2039,33 +2043,51 @@ export default function PatientDetailPage({ params }: { params: Promise<{ id: st
             planId = newPlan.id;
         }
 
-        if (planId) {
-            let nextWeekNum = 1;
-            if (weeks.length > 0) {
-                const sortedNums = weeks.map(w => w.week_number).sort((a, b) => a - b);
-                const maxWeek = sortedNums[sortedNums.length - 1];
-                const activeWeekObj = weeks.find(w => w.id === activeWeekId);
-                const startCheckFrom = activeWeekObj ? activeWeekObj.week_number : 0;
+        setIsAddingWeek(true)
+        setAddingWeekProgress(8)
+        
+        // Simulate progress
+        const tick = window.setInterval(() => {
+            setAddingWeekProgress(prev => {
+                if (prev >= 92) return 92
+                const delta = prev < 35 ? 12 : prev < 70 ? 7 : 3
+                return Math.min(92, prev + delta)
+            })
+        }, 300)
 
-                let gapFound: number | null = null;
-                for (let i = startCheckFrom + 1; i <= maxWeek; i++) {
-                    if (!sortedNums.includes(i)) {
-                        gapFound = i;
-                        break;
+        try {
+            if (planId) {
+                let nextWeekNum = 1;
+                if (weeks.length > 0) {
+                    const sortedNums = weeks.map(w => w.week_number).sort((a, b) => a - b);
+                    const maxWeek = sortedNums[sortedNums.length - 1];
+                    const activeWeekObj = weeks.find(w => w.id === activeWeekId);
+                    const startCheckFrom = activeWeekObj ? activeWeekObj.week_number : 0;
+
+                    let gapFound: number | null = null;
+                    for (let i = startCheckFrom + 1; i <= maxWeek; i++) {
+                        if (!sortedNums.includes(i)) {
+                            gapFound = i;
+                            break;
+                        }
                     }
-                }
 
-                if (gapFound !== null) {
-                    if (confirm(`${gapFound}. hafta eksik görünüyor. Araya ${gapFound}. hafta olarak eklensin mi?\n\n(İptal derseniz sona ${maxWeek + 1}. hafta eklenecektir)`)) {
-                        nextWeekNum = gapFound;
+                    if (gapFound !== null) {
+                        if (confirm(`${gapFound}. hafta eksik görünüyor. Araya ${gapFound}. hafta olarak eklensin mi?\n\n(İptal derseniz sona ${maxWeek + 1}. hafta eklenecektir)`)) {
+                            nextWeekNum = gapFound;
+                        } else {
+                            nextWeekNum = maxWeek + 1;
+                        }
                     } else {
                         nextWeekNum = maxWeek + 1;
                     }
-                } else {
-                    nextWeekNum = maxWeek + 1;
                 }
+                await handleAddWeek(planId, nextWeekNum);
             }
-            await handleAddWeek(planId, nextWeekNum);
+        } finally {
+            window.clearInterval(tick)
+            setAddingWeekProgress(100)
+            window.setTimeout(() => setIsAddingWeek(false), 250)
         }
     }
 
@@ -3201,7 +3223,7 @@ export default function PatientDetailPage({ params }: { params: Promise<{ id: st
         const topItems = [
             { icon: Search, label: 'Yemek Ara', onClick: () => setIsFoodSidebarVisible(!isFoodSidebarVisible), active: isFoodSidebarVisible, color: 'blue' },
             { icon: LayoutGrid, label: 'Haftalık Plan', onClick: () => setActiveMainTab('diet'), active: activeMainTab === 'diet', color: 'blue' },
-            { icon: Sparkles, label: isGeneratingPlan ? 'Oluşturuluyor...' : 'Otomatik Plan', onClick: () => handleAutoGenerate(), disabled: isGeneratingPlan || !activeWeekId, color: 'green' },
+            { icon: Sparkles, label: isGeneratingPlan ? 'Oluşturuluyor...' : isAddingWeek ? `Ekleniyor (${addingWeekProgress}%)` : 'Otomatik Plan', onClick: () => handleAutoGenerate(), disabled: isGeneratingPlan || isAddingWeek || !activeWeekId, color: 'green' },
             { icon: Sparkles, label: 'AI Analiz', onClick: () => setAiAnalysisSheetOpen(true), color: 'purple' },
             { icon: RotateCcw, label: 'Geri Al', onClick: handleUndo, color: 'blue' },
             { icon: Eraser, label: 'Sıfırla', onClick: handleReset, color: 'red' },
@@ -3577,6 +3599,23 @@ export default function PatientDetailPage({ params }: { params: Promise<{ id: st
                                                                                 <Copy className="mr-2 h-3.5 w-3.5" />
                                                                                 <span>Başka Hastaya Kopyala</span>
                                                                             </DropdownMenuItem>
+                                                                            <DropdownMenuSeparator />
+                                                                            <DropdownMenuItem className="text-red-600" onClick={async (e) => {
+                                                                                e.stopPropagation()
+                                                                                const confirmed = await showAppModal(
+                                                                                    'Haftayı Sil',
+                                                                                    week.week_number === 1 && weeks.length === 1 
+                                                                                    ? `Bu son haftayı (${week.week_number}. Hafta) silmek istediğinize emin misiniz? Sistemde en az bir hafta bulunması gerektiği için, silindikten sonra otomatik olarak boş bir 1. Hafta oluşturulacaktır.`
+                                                                                    : `Bu haftayı (${week.week_number}. Hafta) silmek istediğinize emin misiniz? Bu işlem geri alınamaz.`,
+                                                                                    'confirm'
+                                                                                )
+                                                                                if (confirmed) {
+                                                                                    deleteWeek(week.id)
+                                                                                }
+                                                                            }}>
+                                                                                <Trash2 size={14} className="mr-2" />
+                                                                                Haftayı Sil
+                                                                            </DropdownMenuItem>
                                                                         </DropdownMenuContent>
                                                                     </DropdownMenu>
                                                                 </div>
@@ -3935,7 +3974,7 @@ export default function PatientDetailPage({ params }: { params: Promise<{ id: st
                 )
             }
 
-            {isGeneratingPlan && (
+            {isGeneratingPlan && !autoPlanOpen && (
                 <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/45 backdrop-blur-[1.5px]">
                     <div className="w-[92%] max-w-md rounded-2xl border border-slate-700/40 bg-gradient-to-b from-[#041730] to-[#03223d] p-6 shadow-2xl">
                         <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-white/10 bg-white/5">
@@ -3945,6 +3984,31 @@ export default function PatientDetailPage({ params }: { params: Promise<{ id: st
                         <p className="mt-2 text-center text-sm text-cyan-200">Kurallar, makrolar ve örüntü eşleşmeleri hesaplanıyor</p>
                         <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-white/10">
                             <div className="h-full w-[45%] animate-pulse rounded-full bg-gradient-to-r from-emerald-400 via-cyan-400 to-violet-500" />
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {isAddingWeek && (
+                <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/45 backdrop-blur-[1.5px]">
+                    <div className="w-[92%] max-w-md rounded-2xl border border-slate-700/40 bg-gradient-to-b from-[#0a1e30] to-[#0d2a3f] p-6 shadow-2xl">
+                        <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-emerald-400/20 bg-emerald-500/10">
+                            <Loader2 className="h-8 w-8 animate-spin text-emerald-400" />
+                        </div>
+                        <h3 className="mb-2 text-center text-lg font-semibold text-white">
+                            Hafta Ekleniyor
+                        </h3>
+                        <p className="mb-6 text-center text-sm text-slate-300">
+                            Lütfen bekleyin, yeni hafta yapısı hazırlanıyor...
+                        </p>
+                        <div className="relative h-2 w-full overflow-hidden rounded-full bg-slate-800/50">
+                            <div 
+                                className="absolute bottom-0 left-0 top-0 bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-300 ease-out"
+                                style={{ width: `${addingWeekProgress}%` }}
+                            />
+                        </div>
+                        <div className="mt-2 text-center text-xs text-slate-400 font-medium">
+                            {addingWeekProgress}%
                         </div>
                     </div>
                 </div>

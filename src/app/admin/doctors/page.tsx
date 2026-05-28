@@ -43,12 +43,11 @@ export default function AdminDoctorsPage() {
     async function fetchDoctors() {
         setIsLoadingData(true)
         const { data, error } = await supabase
-            .from('user_management_view')
-            .select('*')
-            .eq('role', 'doctor')
+            .from('profiles')
+            .select('id, full_name, email, created_at, title, role')
             .order('created_at', { ascending: false })
 
-        if (data) setDoctors(data)
+        if (data) setDoctors(data.filter((d: any) => d.role === 'doctor'))
         if (error) console.error("Fetch doctors error:", error)
         setIsLoadingData(false)
     }

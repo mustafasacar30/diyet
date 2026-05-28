@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useState, useEffect } from "react"
+import { adminGetMedications, adminSaveMedication, adminDeleteMedication, adminGetMedicationInteractions, adminSaveMedicationInteractions } from "@/actions/admin-db-actions";
 import { supabase } from "@/lib/supabase"
 import {
     Table,
@@ -388,11 +389,8 @@ export default function DiseasesPage() {
     // ========== MEDICATIONS FUNCTIONS ==========
     const loadMedications = async () => {
         setMedLoading(true)
-        const { data, error } = await supabase
-            .from('medications')
-            .select('*')
-            .order('name')
-        if (!error && data) setMedications(data)
+        const { data, error } = await adminGetMedications()
+        if (!error && data) setMedications(data as any)
         setMedLoading(false)
     }
 
@@ -419,11 +417,7 @@ export default function DiseasesPage() {
         setMedPositiveTags([])
 
         // Load interaction rules for this medication
-        const { data } = await supabase
-            .from('medication_interactions')
-            .select('*')
-            .eq('medication_id', med.id)
-            .order('created_at')
+        const { data } = await adminGetMedicationInteractions(med.id)
 
         if (data) {
             const neg: RichTag[] = []
@@ -461,31 +455,25 @@ export default function DiseasesPage() {
             let medId = editingMedication?.id
 
             if (editingMedication) {
-                // Update existing medication
-                const { error } = await supabase
-                    .from('medications')
-                    .update({
-                        name: medFormData.name,
-                        generic_name: medFormData.generic_name || null,
-                        category: medFormData.category || null,
-                        description: medFormData.description || null
-                    })
-                    .eq('id', editingMedication.id)
-                if (error) throw error
+                const res = await adminSaveMedication({
+                    id: editingMedication.id,
+                    name: medFormData.name,
+                    generic_name: medFormData.generic_name || null,
+                    category: medFormData.category || null,
+                    description: medFormData.description || null
+                })
+                if (res.error) throw new Error(res.error)
             } else {
-                // Insert new medication
-                const { data, error } = await supabase
-                    .from('medications')
-                    .insert({
-                        name: medFormData.name,
-                        generic_name: medFormData.generic_name || null,
-                        category: medFormData.category || null,
-                        description: medFormData.description || null
-                    })
-                    .select()
-                    .single()
-                if (error) throw error
-                medId = data.id
+                const uuid = crypto.randomUUID();
+                const res = await adminSaveMedication({
+                    id: uuid,
+                    name: medFormData.name,
+                    generic_name: medFormData.generic_name || null,
+                    category: medFormData.category || null,
+                    description: medFormData.description || null
+                })
+                if (res.error) throw new Error(res.error)
+                medId = uuid;
             }
 
             if (medId) {
@@ -508,14 +496,9 @@ export default function DiseasesPage() {
                     ...prepareRules(medPositiveTags, 'positive')
                 ]
 
-                // Delete old rules
-                await supabase.from('medication_interactions').delete().eq('medication_id', medId)
-
-                // Insert new rules
-                if (newRules.length > 0) {
-                    const { error: rulesError } = await supabase.from('medication_interactions').insert(newRules)
-                    if (rulesError) throw rulesError
-                }
+                // Sync new rules
+                const resRules = await adminSaveMedicationInteractions(medId, newRules);
+                if (resRules.error) throw new Error(resRules.error);
             }
 
             setIsMedDialogOpen(false)
@@ -528,21 +511,13 @@ export default function DiseasesPage() {
     const deleteMedication = async (id: string) => {
         if (!confirm('Bu ilacı silmek istediğinize emin misiniz?')) return
         try {
-            const { error } = await supabase.from('medications').delete().eq('id', id)
-            if (error) throw error
+            const { error } = await adminDeleteMedication(id)
+            if (error) throw new Error(error)
             loadMedications()
         } catch (error: any) {
             alert('Silinemedi: ' + error.message)
         }
     }
-
-
-
-
-
-
-
-
 
     const getMedRuleIcon = (ruleType: string) => {
         switch (ruleType) {
