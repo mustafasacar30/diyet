@@ -103,9 +103,13 @@ export default function LoginPage() {
 
                 const role = profile?.role || 'patient'
                 
-                // Asenkron olarak IP ve giriş logunu arka planda server action üzerinden ilet
+                // IP ve giriş logunu server action üzerinden ilet
                 if (role === 'patient') {
-                    logPatientLogin(data.user.id).catch(err => console.error("Login tracking error:", err));
+                    try {
+                        await logPatientLogin(data.user.id);
+                    } catch (err) {
+                        console.error("Login tracking error:", err);
+                    }
                 }
 
                 // Device Security Check (Skip for Admins if desired, but good to track)

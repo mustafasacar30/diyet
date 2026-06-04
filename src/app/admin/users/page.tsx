@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import { useAuth, UserRole } from "@/contexts/auth-context"
 import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase"
+import { adminFetchAllUsers } from "@/actions/admin-db-actions"
 import { Button } from "@/components/ui/button"
 import {
     Table,
@@ -59,31 +60,16 @@ export default function AdminUsersPage() {
 
     async function fetchUsers() {
         setIsLoadingData(true)
-        const { data: usersData, error } = await supabase
-            .from('profiles')
-            .select('id, full_name, email, role, title, created_at, valid_until')
-            .order('created_at', { ascending: false })
-
-        if (usersData) {
-            // Also fetch valid patients to filter out incomplete signups from the list
-            const { data: validPatients } = await supabase
-                .from('patients')
-                .select('id')
-                .not('gender', 'is', null)
-
-            const validPatientIds = new Set(validPatients?.map(p => p.id) || [])
-
-            const filteredUsers = usersData.filter(u => {
-                if (u.role === 'patient') {
-                    return validPatientIds.has(u.id)
-                }
-                return true // Administrators, doctors, dietitians, etc.
-            })
-
-            setUsers(filteredUsers)
+        try {
+            const result = await adminFetchAllUsers()
+            if (result.error) {
+                console.error("Fetch users error:", result.error)
+            } else if (result.data) {
+                setUsers(result.data)
+            }
+        } catch (error) {
+            console.error("Fetch users error:", error)
         }
-
-        if (error) console.error("Fetch users error:", error)
         setIsLoadingData(false)
     }
 

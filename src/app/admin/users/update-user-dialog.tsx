@@ -5,6 +5,7 @@ import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
 import { supabase } from "@/lib/supabase"
+import { adminUpdateUserProfile } from "@/actions/admin-db-actions"
 import { Button } from "@/components/ui/button"
 import {
     Dialog,
@@ -85,36 +86,17 @@ export function UpdateUserDialog({ open, onOpenChange, user, onSuccess }: Update
         setLoading(true)
 
         try {
-            // Get current session for token and ensure it's valid
-            const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-            if (sessionError || !session) throw new Error("Oturum bulunamadı veya süresi dolmuş.")
-
-            // Refresh if close to expiry (simplified check) - actually getSession handles refresh usually
-            // But let's verify user to be sure
-            const { error: userError } = await supabase.auth.getUser()
-            if (userError) throw new Error("Kullanıcı doğrulanamadı: " + userError.message)
-
-            // Call Admin API to handle all updates safely
-            const response = await fetch('/api/admin/users/update', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${session.access_token}`
-                },
-                body: JSON.stringify({
-                    target_user_id: user.id,
-                    full_name: values.full_name,
-                    title: values.title || null,
-                    max_devices: values.max_devices, // Include max_devices with new user limit
-                    valid_until: values.valid_until || null,
-                    new_email: values.email !== user.email ? values.email : undefined,
-                    new_password: values.password && values.password.length > 0 ? values.password : undefined
-                })
+            const result = await adminUpdateUserProfile(user.id, {
+                full_name: values.full_name,
+                title: values.title || null,
+                max_devices: values.max_devices,
+                valid_until: values.valid_until || null,
+                new_email: values.email !== user.email ? values.email : undefined,
+                new_password: values.password && values.password.length > 0 ? values.password : undefined
             })
 
-            const result = await response.json()
-            if (!response.ok) {
-                throw new Error(result.error || "Güncelleme işlemi başarısız oldu.")
+            if (result.error) {
+                throw new Error(result.error)
             }
 
             onSuccess()

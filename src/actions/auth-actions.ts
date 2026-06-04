@@ -138,9 +138,16 @@ export async function logPatientLogin(userId: string) {
     if (!supabaseServiceKey) return { error: "Sunucu hatası: Servis anahtarı eksik." }
 
     try {
-        const headersList = await headers()
-        const ip = headersList.get('x-forwarded-for') || headersList.get('x-real-ip') || 'Bilinmeyen IP'
-        const userAgent = headersList.get('user-agent') || 'Bilinmeyen Cihaz'
+        let ip = 'Bilinmeyen IP'
+        let userAgent = 'Bilinmeyen Cihaz'
+        
+        try {
+            const headersList = await headers()
+            ip = headersList.get('x-forwarded-for') || headersList.get('x-real-ip') || 'Bilinmeyen IP'
+            userAgent = headersList.get('user-agent') || 'Bilinmeyen Cihaz'
+        } catch (headerError) {
+            console.error("Header okuma hatası:", headerError)
+        }
 
         const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
             auth: {
