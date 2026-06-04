@@ -223,6 +223,23 @@ export default function PatientLayout({
                                 )}
                             </Link>
                         ))}
+                        
+                        {/* Desktop Auto-Plan Button */}
+                        <Button
+                            onClick={() => {
+                                if (pathname === '/patient/plan') {
+                                    window.dispatchEvent(new CustomEvent('trigger-autoplan'))
+                                } else {
+                                    router.push('/patient/plan')
+                                }
+                            }}
+                            className="bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 text-white shadow-md shadow-indigo-200"
+                            size="sm"
+                        >
+                            <Wand2 className="h-4 w-4 mr-2" />
+                            Otomatik Planla
+                        </Button>
+
                         <Button variant="ghost" size="sm" onClick={() => signOut()} className="text-red-500 hover:text-red-600 hover:bg-red-50">
                             <LogOut className="h-4 w-4 mr-2" />
                             Çıkış
