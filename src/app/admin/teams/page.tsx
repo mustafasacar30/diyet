@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase"
 import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
-import { ArrowLeft, UserPlus, Trash2, Shield, UserCog, Users, ChevronRight, Plus, Save, Upload, Image as ImageIcon, Loader2 } from "lucide-react"
+import { ArrowLeft, UserPlus, Trash2, Shield, UserCog, Users, ChevronRight, Plus, Save, Upload, Image as ImageIcon, Loader2 , Settings2 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
@@ -615,7 +615,13 @@ export default function AdminTeamsPage() {
                             </div>
                         </div>
                         {/* Only admin can add/remove dietitians */}
-                        {canManageTeams && selectedDoctor && (
+                        <div className="flex items-center gap-2">
+                            {selectedDoctor && (
+                                <Button size="sm" variant="outline" className="shrink-0 text-xs text-blue-600 border-blue-200 hover:bg-blue-50" onClick={() => router.push(`/admin/rules?team_id=${selectedDoctor.id}`)}>
+                                    <Settings2 className="h-3.5 w-3.5 mr-1" /> Takım Kuralları
+                                </Button>
+                            )}
+                            {canManageTeams && selectedDoctor && (
                             <Dialog open={assignDialogOpen} onOpenChange={setAssignDialogOpen}>
                                 <DialogTrigger asChild>
                                     <Button size="sm" variant="outline" className="shrink-0 text-xs" onClick={loadAvailableDietitians}>
@@ -654,6 +660,7 @@ export default function AdminTeamsPage() {
                                 </DialogContent>
                             </Dialog>
                         )}
+                        </div>
                     </CardHeader>
                     <div className="flex-1 overflow-y-auto p-3">
                         {!selectedDoctor ? (

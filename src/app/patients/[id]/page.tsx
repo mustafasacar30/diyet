@@ -1503,8 +1503,8 @@ export default function PatientDetailPage({ params }: { params: Promise<{ id: st
     const [patientDiseases, setPatientDiseases] = useState<any[]>([])
 
     // 1. Fetch Patient Data & Diet Plan
-    async function fetchPatientData(inputPatientId?: string) {
-        setLoading(true)
+    async function fetchPatientData(inputPatientId?: string, silent: boolean = false) {
+        if (!silent) setLoading(true)
         try {
             const queryId = inputPatientId || id
             if (!queryId) throw new Error("Patient ID Missing")
@@ -3826,7 +3826,7 @@ export default function PatientDetailPage({ params }: { params: Promise<{ id: st
                     patientId={patient.id}
                     programTemplateId={patient?.program_template_id}
                     onRulesChanged={() => {
-                        fetchPatientData()
+                        fetchPatientData(undefined, true)
                         setRefreshTrigger(prev => prev + 1)
                     }}
                 />

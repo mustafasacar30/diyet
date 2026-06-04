@@ -1310,6 +1310,7 @@ export default function PatternInsightsPage() {
             is_active: true,
             definition: {
                 type: "affinity",
+                _source: "pattern_insights",
                 data: {
                     trigger: { type: "food_id", value: lhsFoodId },
                     outcome: { type: "food_id", value: rhsFoodId },
@@ -1372,6 +1373,7 @@ export default function PatternInsightsPage() {
             is_active: true,
             definition: {
                 type: "affinity",
+                _source: "pattern_insights",
                 data: {
                     trigger: { type: triggerType, value: suggestion.trigger },
                     outcome: { type: outcomeType, value: suggestion.outcome },
@@ -1422,6 +1424,7 @@ export default function PatternInsightsPage() {
             is_active: true,
             definition: {
                 type: "frequency",
+                _source: "pattern_insights",
                 data: {
                     target: { type: targetType, value: row.basis_value },
                     period: "weekly",

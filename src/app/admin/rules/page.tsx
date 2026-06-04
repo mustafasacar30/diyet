@@ -50,15 +50,20 @@ export default function RulesPage() {
         teamScope.canUseGlobal &&
         !!teamScope.userId
 
-    const effectiveTeamOwnerId =
-        canToggleScopeMode && scopeMode === 'team'
-            ? teamScope.userId
-            : teamScope.teamOwnerId
+    const adminOverrideTeamId = searchParams?.get('team_id')
+    const isAdminOverride = !!adminOverrideTeamId && (teamScope.role === 'admin' || teamScope.canUseGlobal)
 
-    const hasTeamScope =
+    const effectiveTeamOwnerId = isAdminOverride
+        ? adminOverrideTeamId
+        : (canToggleScopeMode && scopeMode === 'team'
+            ? teamScope.userId
+            : teamScope.teamOwnerId)
+
+    const hasTeamScope = isAdminOverride || (
         (teamScope.role === 'doctor' || teamScope.role === 'dietitian') &&
         !!effectiveTeamOwnerId &&
         (!teamScope.canUseGlobal || (canToggleScopeMode && scopeMode === 'team'))
+    )
 
     useEffect(() => {
         fetchRules()
@@ -104,16 +109,21 @@ export default function RulesPage() {
             const hasTeamScopedRole = role === 'doctor' || role === 'dietitian'
             setTeamScope({ userId, role, canUseGlobal, teamOwnerId })
 
-            const canToggleForCurrentUser = role === 'doctor' && canUseGlobal && !!userId
-            const mergedTeamOwnerId =
-                canToggleForCurrentUser && scopeMode === 'team'
-                    ? userId
-                    : teamOwnerId
+            const adminOverrideTeamId = searchParams?.get('team_id')
+            const isAdminOverride = !!adminOverrideTeamId && (role === 'admin' || canUseGlobal)
 
-            const shouldUseTeamScope =
+            const canToggleForCurrentUser = role === 'doctor' && canUseGlobal && !!userId
+            const mergedTeamOwnerId = isAdminOverride 
+                ? adminOverrideTeamId
+                : (canToggleForCurrentUser && scopeMode === 'team'
+                    ? userId
+                    : teamOwnerId)
+
+            const shouldUseTeamScope = isAdminOverride || (
                 hasTeamScopedRole &&
                 !!mergedTeamOwnerId &&
                 (!canUseGlobal || (canToggleForCurrentUser && scopeMode === 'team'))
+            )
 
             // Always keep global rules for inheritance preview / team bootstrap.
             const { data: globalData, error: globalError } = await supabase

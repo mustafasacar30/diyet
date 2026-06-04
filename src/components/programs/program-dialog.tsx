@@ -26,7 +26,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Switch } from '@/components/ui/switch'
-import { Plus, Trash2, Calendar, Ban, AlertTriangle, BookOpen, UtensilsCrossed, Pencil, RotateCcw, Download, Loader2, Upload, Settings, Copy } from 'lucide-react'
+import { Plus, Trash2, Eye, Calendar, Ban, AlertTriangle, BookOpen, UtensilsCrossed, Pencil, RotateCcw, Download, Loader2, Upload, Settings, Copy } from 'lucide-react'
 import { MealTypesEditor, SlotConfig as MealSlotConfig } from '@/components/planner/meal-types-editor'
 import { RuleDialog } from '@/components/planner/rule-dialog'
 import { SettingsDialog } from '@/components/planner/settings-dialog'
@@ -199,6 +199,7 @@ export default function ProgramDialog({ open, onClose, program, forcedMode }: Pr
 
     // â”€â”€â”€ Rules Tab State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const [rulesLoading, setRulesLoading] = useState(false)
+    const [showDeleted, setShowDeleted] = useState(false)
     const [globalRules, setGlobalRules] = useState<PlanningRule[]>([])
     const [teamRules, setTeamRules] = useState<PlanningRule[]>([])
     const [programRules, setProgramRules] = useState<PlanningRule[]>([])
@@ -540,97 +541,146 @@ export default function ProgramDialog({ open, onClose, program, forcedMode }: Pr
             console.error("Error fetching program rules:", e)
         }
         setRulesLoading(false)
-    }, [forcedMode])
-
-    // Clone inherited base rules (team if exists, otherwise global) â†’ program scope
-    async function handleCloneGlobalRules(programId: string) {
-        if (!programId) return
-        setRulesLoading(true)
-        try {
-            const baseRules = teamRules.length > 0 ? teamRules : globalRules
-            const scopeCtx = await resolveEffectiveScopeContext()
-            const teamOwnerId = scopeCtx.isTeamScoped ? scopeCtx.teamOwnerId : null
-
-            const rulesToInsert = baseRules.map(rule => ({
-                name: rule.name,
-                description: rule.description,
-                rule_type: rule.rule_type,
-                priority: rule.priority,
-                is_active: rule.is_active,
-                definition: rule.definition,
-                scope: 'program',
-                program_template_id: programId,
-                team_owner_id: teamOwnerId,
-                source_rule_id: rule.id
-            }))
-            const { error } = await supabase.from('planning_rules').insert(rulesToInsert)
-            if (error) throw error
-            await fetchProgramRules(programId)
-        } catch (e: any) {
-            console.error("Error cloning rules:", e)
-            alert("Kurallar kopyalanamadı: " + e.message)
-        }
-        setRulesLoading(false)
-    }
-
-    // Revert to parent inherited layer (team/global) by deleting program rules.
-    async function handleRevertRules(programId: string) {
-        const parentLabel = teamRules.length > 0 ? 'takım kurallarına' : 'global kurallara'
-        if (!confirm(`Tüm program kuralları silinecek ve ${parentLabel} dönülecek. Emin misiniz?`)) return
-        setRulesLoading(true)
-        try {
-            const scopeCtx = await resolveEffectiveScopeContext()
-            const teamOwnerId = scopeCtx.isTeamScoped ? scopeCtx.teamOwnerId : null
-
-            let deleteQuery = supabase
-                .from('planning_rules')
-                .delete()
-                .eq('scope', 'program')
-                .eq('program_template_id', programId)
-
-            if (teamOwnerId) {
-                deleteQuery = deleteQuery.eq('team_owner_id', teamOwnerId)
-            } else {
-                deleteQuery = deleteQuery.is('team_owner_id', null)
-            }
-
-            const { error } = await deleteQuery
-            if (error) throw error
-            await fetchProgramRules(programId)
-        } catch (e: any) {
-            console.error("Error reverting rules:", e)
-            alert("Hata: " + e.message)
-        }
-        setRulesLoading(false)
-    }
-
-    // Toggle rule active state
+    }, [forcedMode])    // Toggle rule active state (creates override if inherited)
     async function handleToggleRuleActive(rule: PlanningRule) {
-        const { error } = await supabase
-            .from('planning_rules')
-            .update({ is_active: !rule.is_active })
-            .eq('id', rule.id)
-        if (!error && program?.id) await fetchProgramRules(program.id)
-    }
-
-    // Delete single program rule
+        setRulesLoading(true)
+        try {
+            if (rule.scope !== 'program') {
+                // It's inherited. Insert a program-scoped override
+                await supabase.from('planning_rules').insert({
+                    name: rule.name,
+                    description: rule.description,
+                    rule_type: rule.rule_type,
+                    priority: rule.priority,
+                    is_active: !rule.is_active,
+                    definition: rule.definition,
+                    scope: 'program',
+                    program_template_id: program!.id,
+                    team_owner_id: rulesTeamOwnerId,
+                    source_rule_id: rule.id,
+                    sort_order: rule.sort_order
+                })
+            } else {
+                await supabase
+                    .from('planning_rules')
+                    .update({ is_active: !rule.is_active })
+                    .eq('id', rule.id)
+            }
+            if (program?.id) await fetchProgramRules(program.id)
+        } catch (e: any) {
+            console.error("Error toggling rule:", e)
+        }
+        setRulesLoading(false)
+    }    // Delete single program rule (creates a tombstone if inherited/overridden)
     async function handleDeleteProgramRule(rule: PlanningRule) {
         if (!confirm(`"${rule.name}" kuralını silmek istediğinize emin misiniz?`)) return
-        const { error } = await supabase
-            .from('planning_rules')
-            .delete()
-            .eq('id', rule.id)
-        if (!error && program?.id) await fetchProgramRules(program.id)
+        setRulesLoading(true)
+        try {
+            if (rule.scope !== 'program') {
+                // Inherited: Insert a tombstone shadow record
+                await supabase.from('planning_rules').insert({
+                    name: rule.name,
+                    description: rule.description,
+                    rule_type: rule.rule_type,
+                    priority: rule.priority,
+                    is_active: false,
+                    definition: { ...((rule.definition as any) || {}), _is_deleted: true },
+                    scope: 'program',
+                    program_template_id: program!.id,
+                    team_owner_id: rulesTeamOwnerId,
+                    source_rule_id: rule.id,
+                    sort_order: rule.sort_order
+                })
+            } else if (rule.source_rule_id || (rule.scope === 'program' && allRules.some(r => r.id !== rule.id && (r.scope === 'global' || r.scope === 'team') && r.name === rule.name && r.rule_type === rule.rule_type))) {
+                // Overridden (explicit or implicit): Update the existing program row to be a tombstone
+                await supabase.from('planning_rules').update({
+                    is_active: false,
+                    definition: { ...((rule.definition as any) || {}), _is_deleted: true }
+                }).eq('id', rule.id)
+            } else {
+                // Pure program rule: Actually delete it
+                await supabase.from('planning_rules').delete().eq('id', rule.id)
+            }
+            if (program?.id) await fetchProgramRules(program.id)
+        } catch (e: any) {
+            console.error("Error deleting rule:", e)
+        }
+        setRulesLoading(false)
     }
 
-    // New inherited rules (team if available, otherwise global) not yet in program
-    const inheritedFromTeam = teamRules.length > 0
-    const baseRules = inheritedFromTeam ? teamRules : globalRules
-    const inheritedRulesSourceLabel = inheritedFromTeam ? 'Takım' : 'Global'
+    // Restore a deleted or overridden rule (removes the program-scoped row)
+    async function handleRestoreOriginal(rule: PlanningRule) {
+        if (!confirm(`"${rule.name}" kuralını orijinale (üst katmana) döndürmek istediğinize emin misiniz?`)) return
+        setRulesLoading(true)
+        try {
+            await supabase
+                .from('planning_rules')
+                .delete()
+                .eq('id', rule.id)
+            if (program?.id) await fetchProgramRules(program.id)
+        } catch (e: any) {
+            console.error("Error restoring rule:", e)
+        }
+        setRulesLoading(false)
+    }    // Sparse Override Merged Rules Calculation
+    const allRules = [...globalRules, ...teamRules, ...programRules]
+    const getRootId = (rule: PlanningRule, rules: PlanningRule[]): string => {
+        let current = rule
+        let visited = new Set<string>()
+        
+        // IMPLICIT MATCHING: For old legacy rules that were copied without source_rule_id
+        if (!current.source_rule_id && (current.scope === 'patient' || current.scope === 'program')) {
+            const implicitParent = rules.find(r => 
+                r.id !== current.id && 
+                (r.scope === 'global' || r.scope === 'team') && 
+                r.name === current.name && 
+                r.rule_type === current.rule_type
+            )
+            if (implicitParent) {
+                return implicitParent.id
+            }
+        }
 
-    const newGlobalRules = baseRules.filter(g =>
-        !programRules.some(p => p.source_rule_id === g.id || p.id === g.id)
-    )
+        while (current.source_rule_id && !visited.has(current.id)) {
+            visited.add(current.id)
+            const parent = rules.find(r => r.id === current.source_rule_id)
+            if (parent) {
+                current = parent
+            } else {
+                // BROKEN LINK HEALING:
+                const fallbackParent = rules.find(r => 
+                    r.id !== current.id && 
+                    (r.scope === 'global' || r.scope === 'team') && 
+                    r.name === current.name && 
+                    r.rule_type === current.rule_type
+                )
+                if (fallbackParent) {
+                    current = fallbackParent
+                } else {
+                    return current.source_rule_id
+                }
+            }
+        }
+        return current.id
+    }
+
+    const mergedRulesMap = new Map<string, PlanningRule>()
+    
+    globalRules.forEach(r => mergedRulesMap.set(getRootId(r, allRules), r))
+    teamRules.forEach(r => mergedRulesMap.set(getRootId(r, allRules), r))
+    programRules.forEach(r => mergedRulesMap.set(getRootId(r, allRules), r))
+    
+    const mergedRules = Array.from(mergedRulesMap.values())
+        .filter(r => {
+            const def = r.definition as any
+            if (!showDeleted && def && def._is_deleted === true) return false
+            return true
+        })
+        .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+
+    const inheritedFromTeam = teamRules.length > 0
+    const baseRules = mergedRules
+    const inheritedRulesSourceLabel = inheritedFromTeam ? 'Takım' : 'Global'
 
     const getActiveScopeForRule = useCallback((rule: PlanningRule): RuleScopeKey => {
         if (rule.scope === 'patient' || rule.scope === 'program' || rule.scope === 'team' || rule.scope === 'global') {
@@ -641,17 +691,49 @@ export default function ProgramDialog({ open, onClose, program, forcedMode }: Pr
         return 'global'
     }, [hasProgramRules, inheritedFromTeam])
 
-    const getSourceScopeForRule = useCallback((rule: PlanningRule): RuleScopeKey | null => {
-        const sourceId = rule.source_rule_id
-        if (!sourceId) return null
-        if (teamRules.some(base => base.id === sourceId)) return 'team'
-        if (globalRules.some(base => base.id === sourceId)) return 'global'
-        if (programRules.some(base => base.id === sourceId)) return 'program'
-        if (rule.scope === 'program') {
-            return inheritedFromTeam ? 'team' : 'global'
+    const getInheritanceChain = useCallback((rule: PlanningRule): RuleScopeKey[] => {
+        let chain: RuleScopeKey[] = [(rule.scope as RuleScopeKey)]
+        let current = rule
+        let visited = new Set<string>()
+
+        while (current.source_rule_id && !visited.has(current.id)) {
+            visited.add(current.id)
+            const parent = allRules.find(r => r.id === current.source_rule_id)
+            if (parent) {
+                if (parent.scope !== current.scope) {
+                    chain.push(parent.scope as RuleScopeKey)
+                }
+                current = parent
+            } else {
+                const implicitParent = allRules.find(r => 
+                    r.id !== current.id && 
+                    (r.scope === 'global' || r.scope === 'team') && 
+                    r.name === current.name && 
+                    r.rule_type === current.rule_type
+                )
+                if (implicitParent && implicitParent.scope !== current.scope) {
+                    chain.push(implicitParent.scope as RuleScopeKey)
+                    current = implicitParent
+                } else {
+                    break
+                }
+            }
         }
-        return null
-    }, [globalRules, teamRules, programRules, inheritedFromTeam])
+        
+        if (!current.source_rule_id && (current.scope === 'patient' || current.scope === 'program')) {
+            const implicitParent = allRules.find(r => 
+                r.id !== current.id && 
+                (r.scope === 'global' || r.scope === 'team') && 
+                r.name === current.name && 
+                r.rule_type === current.rule_type
+            )
+            if (implicitParent && !visited.has(implicitParent.id) && implicitParent.scope !== current.scope) {
+                chain.push(implicitParent.scope as RuleScopeKey)
+            }
+        }
+        
+        return chain.reverse()
+    }, [allRules])
 
     const getResolvedRuleName = useCallback((rule: PlanningRule) => {
         const ownName = getRuleDisplayName(rule)
@@ -676,6 +758,13 @@ export default function ProgramDialog({ open, onClose, program, forcedMode }: Pr
     }
 
     function openRuleDialogForEdit(rule: PlanningRule) {
+        if (rule.scope !== 'program') {
+            // Inherited rule: prefill for new override
+            setPrefillRule(rule)
+            setEditingRule(null)
+            setRuleDialogOpen(true)
+            return
+        }
         setPrefillRule(null)
         setEditingRule(rule)
         setRuleDialogOpen(true)
@@ -687,63 +776,6 @@ export default function ProgramDialog({ open, onClose, program, forcedMode }: Pr
             setEditingRule(null)
             setPrefillRule(null)
         }
-    }
-
-    // Add single inherited rule to program
-    async function handleAddGlobalRuleToProgram(globalRule: PlanningRule) {
-        if (!program?.id) return
-        setRulesLoading(true)
-        try {
-            const scopeCtx = await resolveEffectiveScopeContext()
-            const teamOwnerId = scopeCtx.isTeamScoped ? scopeCtx.teamOwnerId : null
-
-            const { error } = await supabase.from('planning_rules').insert({
-                name: globalRule.name,
-                description: globalRule.description,
-                rule_type: globalRule.rule_type,
-                priority: globalRule.priority,
-                is_active: globalRule.is_active,
-                definition: globalRule.definition,
-                scope: 'program',
-                program_template_id: program.id,
-                team_owner_id: teamOwnerId,
-                source_rule_id: globalRule.id
-            })
-            if (error) throw error
-            await fetchProgramRules(program.id)
-        } catch (e: any) {
-            alert("Hata: " + e.message)
-        }
-        setRulesLoading(false)
-    }
-
-    // Add all new global rules
-    async function handleAddAllNewGlobalRules() {
-        if (!program?.id) return
-        setRulesLoading(true)
-        try {
-            const scopeCtx = await resolveEffectiveScopeContext()
-            const teamOwnerId = scopeCtx.isTeamScoped ? scopeCtx.teamOwnerId : null
-
-            const rulesToInsert = newGlobalRules.map(rule => ({
-                name: rule.name,
-                description: rule.description,
-                rule_type: rule.rule_type,
-                priority: rule.priority,
-                is_active: rule.is_active,
-                definition: rule.definition,
-                scope: 'program',
-                program_template_id: program.id,
-                team_owner_id: teamOwnerId,
-                source_rule_id: rule.id
-            }))
-            const { error } = await supabase.from('planning_rules').insert(rulesToInsert)
-            if (error) throw error
-            await fetchProgramRules(program.id)
-        } catch (e: any) {
-            alert("Hata: " + e.message)
-        }
-        setRulesLoading(false)
     }
 
     function handleExportProgramRules() {
@@ -1072,9 +1104,7 @@ export default function ProgramDialog({ open, onClose, program, forcedMode }: Pr
         }
     }
 
-    const displayRules = hasProgramRules
-        ? programRules.filter(r => !r.is_ignored)
-        : baseRules
+    const displayRules = mergedRules.filter(r => !r.is_ignored)
 
     // â”€â”€â”€ Week Mapping Handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     function addWeekMapping() {
@@ -1508,272 +1538,100 @@ const saveResult = await adminSaveProgramTemplateAction({
                     {/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• NEW: Rules Tab â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
                     <TabsContent value="rules" className="space-y-4 mt-4 flex-1 min-h-0 flex flex-col overflow-hidden">
                         {!program?.id ? (
-                            <div className="text-center py-8 text-amber-600 bg-amber-50 border-2 border-dashed border-amber-200 rounded-lg">
-                                <AlertTriangle className="mx-auto mb-2" size={24} />
-                                <p className="text-sm font-medium">Önce programı kaydedin, ardından kurallarını düzenleyebilirsiniz.</p>
+                            <div className="text-center py-8 text-slate-500">
+                                Kuralları yönetmek için önce programı kaydedin.
                             </div>
-                        ) : rulesLoading ? (
-                            <div className="flex items-center justify-center py-8">
-                                <Loader2 className="animate-spin" />
+                        ) : rulesLoading && displayRules.length === 0 ? (
+                            <div className="flex justify-center py-8">
+                                <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
                             </div>
                         ) : (
                             <>
-                                {/* Header badge */}
-                                <div className="flex items-center justify-between gap-2 mb-2 shrink-0">
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-sm font-medium text-slate-700">Planlama Kuralları</span>
-                                        {hasProgramRules ? (
-                                            <Badge variant="default" className="bg-purple-600">🏷️ Programa Özel</Badge>
-                                        ) : (
-                                            <Badge variant="secondary">🌐 {inheritedRulesSourceLabel} (miras)</Badge>
-                                        )}
-                                    </div>
-                                    <div className="flex items-center gap-2 shrink-0">
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            className="h-8 text-xs"
-                                            onClick={handleImportProgramRulesClick}
-                                            disabled={rulesLoading}
-                                            title="Global / program / hasta JSON kurallarını programa yükle"
-                                        >
-                                            <Upload size={12} className="mr-1" />
-                                            Kuralları Yükle
-                                        </Button>
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            className="h-8 text-xs"
-                                            onClick={handleExportProgramRules}
-                                            disabled={!hasProgramRules || rulesLoading}
-                                            title={!hasProgramRules ? "Önce kuralları programa kopyalayın" : "Programa özel kuralları JSON olarak indir"}
-                                        >
-                                            <Download size={12} className="mr-1" />
-                                            Kuralları Dışa Aktar
-                                        </Button>
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            className="h-8 text-xs"
-                                            onClick={handleOpenCopyDialog}
-                                            disabled={copyTargetsLoading || !program?.id || programRules.filter((r) => !r.is_ignored).length === 0}
-                                            title="Bu programın kurallarını başka programa kopyala"
-                                        >
-                                            <Copy size={12} className="mr-1" />
-                                            Başka Programa Kopyala
-                                        </Button>
-                                    </div>
-                                </div>
                                 <p className="text-xs text-slate-500 mb-3">
-                                    {hasProgramRules
-                                        ? "Bu programa özel kurallar aktif. Değişiklikler sadece bu programı ve atanan hastaları etkiler."
-                                        : `${inheritedRulesSourceLabel} kuralları görüntüleniyor. Özelleştirmek için \"Programa Kopyala\" butonuna basın.`
-                                    }
+                                    {`${inheritedRulesSourceLabel} katmanından gelen kurallar ve bu programa özel kurallar birlikte görüntüleniyor. Düzenlenen her kural programa özel olarak kaydedilir.`}
                                 </p>
 
-                                {hasProgramRules && newGlobalRules.length > 0 ? (
-                                    <div ref={splitContainerRef} className="flex-1 min-h-0 flex flex-col">
-                                        <div
-                                            className="mb-1 border border-blue-200 rounded-lg bg-white overflow-hidden shadow-sm shrink-0 flex flex-col min-h-[150px]"
-                                            style={{ height: `${Math.round(upperRulesPanelRatio * 100)}%` }}
-                                        >
-                                            <div className="bg-blue-50/50 px-4 py-2.5 border-b border-blue-100 flex items-center justify-between shrink-0">
-                                                <span className="text-xs font-semibold text-blue-700">Yeni {inheritedRulesSourceLabel} Kuralları ({newGlobalRules.length})</span>
-                                                <Button size="sm" variant="ghost" className="h-7 text-xs text-blue-600" onClick={handleAddAllNewGlobalRules}>
-                                                    <Download size={12} className="mr-1" /> Tümünü Ekle
-                                                </Button>
-                                            </div>
-                                            <div className="divide-y divide-blue-50 overflow-y-auto min-h-0">
-                                                {newGlobalRules.map((rule, idx) => (
-                                                    <div key={`${rule.id ?? 'new-global'}-${idx}`} className="flex items-center justify-between gap-3 p-2.5 hover:bg-blue-50/30 min-h-[54px]">
-                                                        <div className="flex-1 min-w-0 mr-3">
-                                                            <span className="text-sm font-semibold text-slate-900 block truncate">
+                                <>
+                                    {displayRules.length === 0 ? (
+                                        <div className="text-center py-8 text-gray-400 border-2 border-dashed rounded-lg">
+                                            Henüz kural tanımlanmamış.
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-2 flex-1 min-h-0 overflow-y-auto pr-2 pb-2">
+                                            {displayRules.map((rule, index) => {
+                                                const isOverriddenOrProgram = rule.scope === 'program'
+                                                const isDeleted = (rule.definition as any)?._is_deleted
+                                                
+                                                return (
+                                                <div
+                                                    key={rule.id}
+                                                    className={`border rounded-lg p-2.5 shadow-sm transition-all ${rule.is_active ? 'bg-white' : 'bg-slate-50 opacity-60'}`}
+                                                >
+                                                    <div className="flex items-center justify-between gap-2">
+                                                        <div className="flex-1 min-w-0">
+                                                            <span className="font-semibold text-sm text-slate-900 block truncate">
                                                                 {getResolvedRuleName(rule)}
                                                             </span>
                                                             <div className="mt-1 flex items-center gap-2 flex-wrap">
-                                                                <Badge variant="outline" className={`text-[10px] font-normal ${getScopeBadgeClass(getActiveScopeForRule(rule))}`}>
+                                                                <Badge variant="outline" className={`text-[10px] shrink-0 font-normal ${getScopeBadgeClass(getActiveScopeForRule(rule))}`}>
                                                                     {getScopeLabel(getActiveScopeForRule(rule))}
                                                                 </Badge>
-                                                                <Badge variant="outline" className="text-[10px] font-normal">
+                                                                <Badge variant="outline" className="text-[10px] shrink-0 font-normal">
                                                                     {getRuleTypeLabel(rule.rule_type)}
                                                                 </Badge>
-                                                                {getSourceScopeForRule(rule) && (
-                                                                    <Badge variant="outline" className={`text-[10px] font-normal ${getScopeBadgeClass(getSourceScopeForRule(rule)!)} opacity-80`}>
-                                                                        Kaynak: {getScopeLabel(getSourceScopeForRule(rule)!)}
+                                                                {getInheritanceChain(rule).length > 1 && (
+                                                                    <Badge variant="outline" className={`text-[10px] shrink-0 font-normal text-muted-foreground opacity-80 border-dashed`}>
+                                                                        Kaynak: {getInheritanceChain(rule).map(s => getScopeLabel(s)).join(' → ')}
                                                                     </Badge>
                                                                 )}
-                                                            </div>
-                                                            <span className="text-[11px] text-slate-600 mt-0.5 block truncate">{getRuleDisplayDescription(rule)}</span>
-                                                            <span className="text-[11px] text-slate-500 mt-0.5 block">Öncelik {rule.priority ?? 0}</span>
-                                                        </div>
-                                                        <div className="flex items-center gap-2 shrink-0">
-                                                            <Button
-                                                                size="sm"
-                                                                variant="outline"
-                                                                className="h-7 text-xs border-blue-200 text-blue-700 hover:bg-blue-100"
-                                                                onClick={() => openRuleDialogForNew(rule)}
-                                                            >
-                                                                <Pencil size={12} className="mr-1" /> Düzenle
-                                                            </Button>
-                                                            <Button size="sm" className="h-7 text-xs bg-blue-600 hover:bg-blue-700 text-white" onClick={() => handleAddGlobalRuleToProgram(rule)}>
-                                                                <Plus size={12} className="mr-1" /> Ekle
-                                                            </Button>
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-
-                                        <div
-                                            onMouseDown={handleSplitDragStart}
-                                            className="h-2 mb-2 shrink-0 cursor-row-resize rounded bg-slate-200 hover:bg-slate-300"
-                                            title="Panellerin yüksekliğini ayarla"
-                                        />
-
-                                        <div className="flex-1 min-h-0">
-                                            {displayRules.length === 0 ? (
-                                                <div className="text-center py-8 text-gray-400 border-2 border-dashed rounded-lg">
-                                                    Henüz kural tanımlanmamış.
-                                                </div>
-                                            ) : (
-                                                <div className="space-y-2 h-full overflow-y-auto pr-2 pb-2 min-h-0">
-                                                    {displayRules.map((rule, index) => (
-                                                        <div
-                                                            key={rule.id}
-                                                            className={`border rounded-lg p-2.5 shadow-sm transition-all ${rule.is_active ? 'bg-white' : 'bg-slate-50 opacity-60'}`}
-                                                        >
-                                                            <div className="flex items-center justify-between gap-2">
-                                                                <div className="flex-1 min-w-0">
-                                                                    <span className="font-semibold text-sm text-slate-900 block truncate">
-                                                                        {getResolvedRuleName(rule)}
-                                                                    </span>
-                                                                    <div className="mt-1 flex items-center gap-2 flex-wrap">
-                                                                        <Badge variant="outline" className={`text-[10px] shrink-0 font-normal ${getScopeBadgeClass(getActiveScopeForRule(rule))}`}>
-                                                                            {getScopeLabel(getActiveScopeForRule(rule))}
-                                                                        </Badge>
-                                                                        <Badge variant="outline" className="text-[10px] shrink-0 font-normal">
-                                                                            {getRuleTypeLabel(rule.rule_type)}
-                                                                        </Badge>
-                                                                        {getSourceScopeForRule(rule) && (
-                                                                            <Badge variant="outline" className={`text-[10px] shrink-0 font-normal ${getScopeBadgeClass(getSourceScopeForRule(rule)!)} opacity-80`}>
-                                                                                Kaynak: {getScopeLabel(getSourceScopeForRule(rule)!)}
-                                                                            </Badge>
-                                                                        )}
-                                                                        {rule.source_rule_id && (
-                                                                            <Badge variant="secondary" className="text-[10px] shrink-0 font-normal">Klonlanmış</Badge>
-                                                                        )}
-                                                                    </div>
-                                                                    <p className="text-xs text-slate-500 mt-0.5 truncate">{getRuleDisplayDescription(rule)}</p>
-                                                                    <p className="text-[11px] text-slate-400 mt-1">
-                                                                        Sıra #{(rule.sort_order ?? (index + 1))} · Öncelik {rule.priority ?? 0}
-                                                                    </p>
-                                                                </div>
-                                                                {hasProgramRules && (
-                                                                    <div className="flex items-center gap-1 shrink-0">
-                                                                        <Switch
-                                                                            checked={rule.is_active}
-                                                                            onCheckedChange={() => handleToggleRuleActive(rule)}
-                                                                            className="scale-75"
-                                                                        />
-                                                                        <Button size="icon" variant="ghost" className="h-7 w-7 text-slate-400 hover:text-blue-600"
-                                                                            onClick={() => openRuleDialogForEdit(rule)}>
-                                                                            <Pencil size={12} />
-                                                                        </Button>
-                                                                        <Button size="icon" variant="ghost" className="h-7 w-7 text-slate-400 hover:text-red-600"
-                                                                            onClick={() => handleDeleteProgramRule(rule)}>
-                                                                            <Trash2 size={12} />
-                                                                        </Button>
-                                                                    </div>
+{getInheritanceChain(rule).length > 1 && getInheritanceChain(rule)[getInheritanceChain(rule).length - 1] === rule.scope && (
+                                                                    <Badge variant="secondary" className="text-[10px] shrink-0 font-normal bg-emerald-50 text-emerald-600 hover:bg-emerald-100 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400">
+                                                                        Özelleştirilmiş
+                                                                    </Badge>
+                                                                )}
+                                                                {isOverriddenOrProgram && rule.source_rule_id && (
+                                                                    <Badge variant="secondary" className="text-[10px] shrink-0 font-normal">Özelleştirilmiş</Badge>
                                                                 )}
                                                             </div>
+                                                            <p className="text-xs text-slate-500 mt-0.5 truncate">{getRuleDisplayDescription(rule)}</p>
+                                                            <p className="text-[11px] text-slate-400 mt-1">
+                                                                Sıra #{(rule.sort_order ?? (index + 1))} • Öncelik {rule.priority ?? 0}
+                                                            </p>
                                                         </div>
-                                                    ))}
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <>
-                                        {displayRules.length === 0 ? (
-                                            <div className="text-center py-8 text-gray-400 border-2 border-dashed rounded-lg">
-                                                Henüz kural tanımlanmamış.
-                                            </div>
-                                        ) : (
-                                            <div className="space-y-2 flex-1 min-h-0 overflow-y-auto pr-2 pb-2">
-                                                {displayRules.map((rule, index) => (
-                                                    <div
-                                                        key={rule.id}
-                                                        className={`border rounded-lg p-2.5 shadow-sm transition-all ${rule.is_active ? 'bg-white' : 'bg-slate-50 opacity-60'}`}
-                                                    >
-                                                        <div className="flex items-center justify-between gap-2">
-                                                            <div className="flex-1 min-w-0">
-                                                                <span className="font-semibold text-sm text-slate-900 block truncate">
-                                                                    {getResolvedRuleName(rule)}
-                                                                </span>
-                                                                <div className="mt-1 flex items-center gap-2 flex-wrap">
-                                                                    <Badge variant="outline" className={`text-[10px] shrink-0 font-normal ${getScopeBadgeClass(getActiveScopeForRule(rule))}`}>
-                                                                        {getScopeLabel(getActiveScopeForRule(rule))}
-                                                                    </Badge>
-                                                                    <Badge variant="outline" className="text-[10px] shrink-0 font-normal">
-                                                                        {getRuleTypeLabel(rule.rule_type)}
-                                                                    </Badge>
-                                                                    {getSourceScopeForRule(rule) && (
-                                                                        <Badge variant="outline" className={`text-[10px] shrink-0 font-normal ${getScopeBadgeClass(getSourceScopeForRule(rule)!)} opacity-80`}>
-                                                                            Kaynak: {getScopeLabel(getSourceScopeForRule(rule)!)}
-                                                                        </Badge>
-                                                                    )}
-                                                                    {rule.source_rule_id && (
-                                                                        <Badge variant="secondary" className="text-[10px] shrink-0 font-normal">Klonlanmış</Badge>
-                                                                    )}
-                                                                </div>
-                                                                <p className="text-xs text-slate-500 mt-0.5 truncate">{getRuleDisplayDescription(rule)}</p>
-                                                                <p className="text-[11px] text-slate-400 mt-1">
-                                                                    Sıra #{(rule.sort_order ?? (index + 1))} · Öncelik {rule.priority ?? 0}
-                                                                </p>
-                                                            </div>
-                                                            {hasProgramRules && (
-                                                                <div className="flex items-center gap-1 shrink-0">
-                                                                    <Switch
-                                                                        checked={rule.is_active}
-                                                                        onCheckedChange={() => handleToggleRuleActive(rule)}
-                                                                        className="scale-75"
-                                                                    />
-                                                                    <Button size="icon" variant="ghost" className="h-7 w-7 text-slate-400 hover:text-blue-600"
-                                                                        onClick={() => openRuleDialogForEdit(rule)}>
-                                                                        <Pencil size={12} />
-                                                                    </Button>
-                                                                    <Button size="icon" variant="ghost" className="h-7 w-7 text-slate-400 hover:text-red-600"
-                                                                        onClick={() => handleDeleteProgramRule(rule)}>
-                                                                        <Trash2 size={12} />
-                                                                    </Button>
-                                                                </div>
+                                                        <div className="flex items-center gap-1 shrink-0">
+                                                            <Switch
+                                                                checked={rule.is_active}
+                                                                onCheckedChange={() => handleToggleRuleActive(rule)}
+                                                                className="scale-75"
+                                                            />
+                                                            <Button size="icon" variant="ghost" className="h-7 w-7 text-slate-400 hover:text-blue-600"
+                                                                onClick={() => openRuleDialogForEdit(rule)}>
+                                                                <Pencil size={12} />
+                                                            </Button>
+                                                            {isOverriddenOrProgram && rule.source_rule_id ? (
+                                                                <Button size="icon" variant="ghost" className="h-7 w-7 text-orange-400 hover:text-orange-600 hover:bg-orange-50"
+                                                                    onClick={() => handleRestoreOriginal(rule)} title="Orijinale Dön (Özelleştirmeyi Kaldır)">
+                                                                    <RotateCcw size={12} />
+                                                                </Button>
+                                                            ) : (
+                                                                <Button size="icon" variant="ghost" className="h-7 w-7 text-slate-400 hover:text-red-600"
+                                                                    onClick={() => handleDeleteProgramRule(rule)}>
+                                                                    <Trash2 size={12} />
+                                                                </Button>
                                                             )}
                                                         </div>
                                                     </div>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </>
-                                )}
+                                                </div>
+                                            )})}
+                                        </div>
+                                    )}
+                                </>
 
                                 {/* Footer Actions */}
-                                <div className="flex gap-2 pt-2 border-t shrink-0">
-                                    {!hasProgramRules ? (
-                                        <Button onClick={() => handleCloneGlobalRules(program!.id!)} disabled={rulesLoading || baseRules.length === 0} className="gap-2 bg-purple-600 hover:bg-purple-700">
-                                            {rulesLoading && <Loader2 className="h-4 w-4 animate-spin" />}
-                                            🏷️ Programa Kopyala
-                                        </Button>
-                                    ) : (
-                                        <>
-                                            <Button variant="outline" onClick={() => handleRevertRules(program!.id!)} disabled={rulesLoading}
-                                                className="text-orange-600 hover:text-orange-700 hover:bg-orange-50 border-orange-200">
-                                                <RotateCcw size={14} className="mr-1" /> {inheritedFromTeam ? "Takıma Dön" : "Global'e Dön"}
-                                            </Button>
-                                            <Button variant="outline" onClick={() => openRuleDialogForNew()}>
-                                                <Plus size={14} className="mr-1" /> Yeni Kural
-                                            </Button>
-                                        </>
-                                    )}
+                                <div className="flex gap-2 justify-end pt-2 border-t shrink-0">
+                                    <Button variant="outline" onClick={() => openRuleDialogForNew()}>
+                                        <Plus size={14} className="mr-1" /> Yeni Kural Ekle
+                                    </Button>
                                 </div>
                             </>
                         )}

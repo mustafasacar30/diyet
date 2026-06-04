@@ -171,6 +171,36 @@ export function FrequencyEditor({ value, onChange, categories = [], roles = [] }
                 </div>
             </div>
 
+            {/* Alt Limitler */}
+            {(value.period === 'weekly' || value.period === 'daily') && (
+                <div className="grid grid-cols-2 gap-4 border-t pt-4">
+                    {value.period === 'weekly' && (
+                        <div className="space-y-2">
+                            <Label className="text-purple-700">Günlük Max Limit</Label>
+                            <Input 
+                                type="number" 
+                                min={0} 
+                                value={value.daily_limit || ''} 
+                                placeholder="Örn: 2"
+                                onChange={(e) => handleChange('daily_limit', e.target.value ? parseInt(e.target.value) : undefined)} 
+                            />
+                            <p className="text-[10px] text-muted-foreground">Haftalık kuralın günlük tavan limiti.</p>
+                        </div>
+                    )}
+                    <div className="space-y-2">
+                        <Label className="text-purple-700">Öğünlük Max Limit</Label>
+                        <Input 
+                            type="number" 
+                            min={0} 
+                            value={value.per_meal_limit || ''} 
+                            placeholder="Örn: 1"
+                            onChange={(e) => handleChange('per_meal_limit', e.target.value ? parseInt(e.target.value) : undefined)} 
+                        />
+                        <p className="text-[10px] text-muted-foreground">Bu kuralın aynı öğündeki tavan limiti.</p>
+                    </div>
+                </div>
+            )}
+
             <div className="flex items-center space-x-2 border rounded-md p-3 bg-red-50 border-red-100">
                 <Checkbox
                     id={forceInclusionId}

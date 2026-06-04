@@ -27,6 +27,8 @@ export interface FrequencyDefinition {
     force_inclusion?: boolean // If true, rule ignores calorie limits to ensure minimum count
     scope_weeks?: ScopeWeeks  // Which weeks this rule applies to
     exclusive_scope?: boolean // If true, completely forbid this target during inactive weeks/days
+    daily_limit?: number // Maximum occurrences per day (useful for weekly rules)
+    per_meal_limit?: number // Maximum occurrences per meal (useful for daily/weekly rules)
 }
 
 // 2. Affinity Logic Definition

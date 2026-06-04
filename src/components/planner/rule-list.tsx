@@ -211,6 +211,11 @@ function SortableRuleCard({ rule, viewMode, programs, onEdit, onDelete }: Sortab
         >
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <div className="flex items-center gap-2">
+                    {((rule.definition as any)?._source === 'pattern_insights') && (
+                        <Badge className="text-[10px] bg-indigo-50 text-indigo-600 border-indigo-200 shrink-0 font-normal hover:bg-indigo-100 dark:bg-indigo-900/30 dark:text-indigo-400">
+                            🧠 Örüntü Analizi
+                        </Badge>
+                    )}
                     {getTypeIcon(rule.rule_type)}
                     <Badge variant="outline" className="text-xs font-normal">
                         {getTypeLabel(rule.rule_type)}

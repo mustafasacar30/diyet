@@ -532,60 +532,30 @@ export class Planner {
         const programRules = allRules.filter(r => r.scope === 'program')
         const teamRules = allRules.filter(r => r.scope === 'team')
         const globalRules = allRules.filter(r => !r.scope || r.scope === 'global')
-        // Sentinel detection: if patient has a '__use_global__' sentinel marker,
-        // skip program/team inheritance and use global rules directly.
-        const hasGlobalSentinel = patientRules.some(r => r.name === '__use_global__')
 
-        const activePatientRules = patientRules.filter(r => r.is_active && r.name !== '__use_global__')
-        const activeProgramRules = programRules.filter(r => r.is_active)
-        const activeTeamRules = teamRules.filter(r => r.is_active)
-        const activeGlobalRules = globalRules.filter(r => r.is_active)
+        const mergedRulesMap = new Map<string, PlanningRule>()
 
-        const inheritConsistencyRules = (
-            baseRules: PlanningRule[],
-            fallbackRules: PlanningRule[]
-        ): PlanningRule[] => {
-            const merged = [...baseRules]
-            const existingKeys = new Set<string>()
-            for (const rule of baseRules) {
-                const key = this.getConsistencyRuleKey(rule)
-                if (key) existingKeys.add(key)
-            }
+        // 1. Base: Global Rules
+        globalRules.forEach(r => mergedRulesMap.set(r.id, r))
 
-            for (const rule of fallbackRules) {
-                const key = this.getConsistencyRuleKey(rule)
-                if (!key) continue
-                if (existingKeys.has(key)) continue
-                existingKeys.add(key)
-                merged.push(rule)
-            }
-            return merged
-        }
+        // 2. Override with Team Rules
+        teamRules.forEach(r => mergedRulesMap.set(r.source_rule_id || r.id, r))
 
-        let effectiveRules: PlanningRule[]
-        if (hasGlobalSentinel) {
-            // Sentinel forces global rules, skipping program/team
-            effectiveRules = activeGlobalRules
-            console.log(`[Engine] Using GLOBAL rules via sentinel (${effectiveRules.length} active / ${globalRules.length} total)`)
-        } else if (patientRules.length > 0) {
-            effectiveRules = inheritConsistencyRules(
-                activePatientRules,
-                [...activeProgramRules, ...activeTeamRules, ...activeGlobalRules]
-            )
-            const inheritedCount = Math.max(0, effectiveRules.length - activePatientRules.length)
-            console.log(`[Engine] Using PATIENT rules (${activePatientRules.length} active / ${patientRules.length} total, +${inheritedCount} inherited consistency)`)
-        } else if (programRules.length > 0) {
-            effectiveRules = inheritConsistencyRules(activeProgramRules, [...activeTeamRules, ...activeGlobalRules])
-            const inheritedCount = Math.max(0, effectiveRules.length - activeProgramRules.length)
-            console.log(`[Engine] Using PROGRAM rules (${activeProgramRules.length} active / ${programRules.length} total, +${inheritedCount} inherited consistency)`)
-        } else if (teamRules.length > 0) {
-            effectiveRules = inheritConsistencyRules(activeTeamRules, activeGlobalRules)
-            const inheritedCount = Math.max(0, effectiveRules.length - activeTeamRules.length)
-            console.log(`[Engine] Using TEAM rules (${activeTeamRules.length} active / ${teamRules.length} total, +${inheritedCount} inherited consistency)`)
-        } else {
-            effectiveRules = activeGlobalRules
-            console.log(`[Engine] Using GLOBAL rules (${effectiveRules.length} active / ${globalRules.length} total)`)
-        }
+        // 3. Override with Program Rules
+        programRules.forEach(r => mergedRulesMap.set(r.source_rule_id || r.id, r))
+
+        // 4. Override with Patient Rules
+        patientRules.forEach(r => mergedRulesMap.set(r.source_rule_id || r.id, r))
+
+        // Convert to array and filter out inactive or deleted rules (tombstones)
+        let effectiveRules = Array.from(mergedRulesMap.values()).filter(r => {
+            if (!r.is_active) return false
+            const def = r.definition as any
+            if (def && def._is_deleted === true) return false
+            return true
+        })
+
+        console.log(`[Engine] Sparse Override applied. Effective rules: ${effectiveRules.length} (Global: ${globalRules.length}, Team: ${teamRules.length}, Program: ${programRules.length}, Patient: ${patientRules.length})`)
 
         // Sort by priority
         effectiveRules.sort((a, b) => b.priority - a.priority)
@@ -3620,7 +3590,9 @@ export class Planner {
         if (!isMandatoryEmergency) {
             const consistencyLockedFood = this.getLockedFood(category, role, context)
             if (consistencyLockedFood) {
-                if (excludeIds.has(consistencyLockedFood.id)) {
+                // BUGFIX: Consistency rules should bypass strict_weekly_variety. 
+                // Only block if it violates strict_daily_variety (already eaten today).
+                if (context.dailySelectedIds?.has(consistencyLockedFood.id)) {
                     return null
                 }
                 const isSeasonal = this.checkSeasonalityHard(consistencyLockedFood, context.currentDate)
@@ -5016,15 +4988,26 @@ export class Planner {
                 const period = def.period || 'weekly'
                 const count = this.countOccurrences(def.target, context, period)
 
-            if (def.max_count && count >= def.max_count) {
-                // Log rejection due to frequency cap
-                // Note: We can't log easily here without day/slot, but calculateScore caller will see negative infinity
-                return Number.NEGATIVE_INFINITY
+                if (def.max_count && count >= def.max_count) {
+                    // Log rejection due to frequency cap
+                    // Note: We can't log easily here without day/slot, but calculateScore caller will see negative infinity
+                    return Number.NEGATIVE_INFINITY
+                }
+
+                if (def.daily_limit && period === 'weekly') {
+                    const dailyCount = this.countOccurrences(def.target, context, 'daily')
+                    if (dailyCount >= def.daily_limit) return Number.NEGATIVE_INFINITY
+                }
+
+                if (def.per_meal_limit && (period === 'weekly' || period === 'daily')) {
+                    const mealCount = this.countOccurrences(def.target, context, 'per_meal')
+                    if (mealCount >= def.per_meal_limit) return Number.NEGATIVE_INFINITY
+                }
+
+                if (def.min_count && count < def.min_count) {
+                    return 20000 // Boost score to ensure selection
+                }
             }
-            if (def.min_count && count < def.min_count) {
-                return 20000 // Boost score to ensure selection
-            }
-        }
         return 0
     }
 
@@ -5551,7 +5534,7 @@ export class Planner {
 
             // Strict consistency: if a lock exists for this target, do not allow
             // a different food when locked one cannot be used in current slot.
-            if (excludeIds.has(locked.id)) return { __consistencyBlocked: true }
+            if (context.dailySelectedIds?.has(locked.id)) return { __consistencyBlocked: true }
             if (!this.checkSeasonalityHard(locked, context.currentDate)) return { __consistencyBlocked: true }
             if (!isMealTypeCompatible(locked)) return { __consistencyBlocked: true }
             if (this.hasTagConflict(locked, slotTags)) return { __consistencyBlocked: true }
