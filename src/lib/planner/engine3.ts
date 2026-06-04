@@ -226,19 +226,33 @@ export class Planner {
                                 this.weeklyBannedTargets.push({ type: 'food_id', value: fId })
                             }
                         }
-                    } else if (def.scope_days && Array.isArray(def.scope_days) && def.scope_days.length > 0) {
-                        // Week is active, but check days
-                        for (let d = 1; d <= 7; d++) {
-                            if (!def.scope_days.includes(d)) {
-                                if (!this.dailyBannedTargetsMap.has(d)) {
-                                    this.dailyBannedTargetsMap.set(d, [])
-                                }
-                                const targetArr = this.dailyBannedTargetsMap.get(d)!
-                                if (rule.rule_type === 'frequency' && def.target) {
-                                    targetArr.push(def.target)
-                                } else if (rule.rule_type === 'fixed_meal' && Array.isArray(def.foods)) {
-                                    for (const fId of def.foods) {
-                                        targetArr.push({ type: 'food_id', value: fId })
+                    } else {
+                        // Week is active, check specific days or random days
+                        const period = def.period || 'weekly'
+                        const useImplicitRandomDays = period !== 'per_meal' && (!def.scope_days || def.scope_days.length === 0) && def.max_count
+                        const randomDaysTarget = def.random_day_count || (useImplicitRandomDays ? def.max_count : null)
+                        
+                        let activeDays: number[] | null = null
+                        if (randomDaysTarget) {
+                            const count = typeof randomDaysTarget === 'number' ? randomDaysTarget : Number(randomDaysTarget)
+                            activeDays = this.getRandomDaysForRule(rule.id, count)
+                        } else if (def.scope_days && Array.isArray(def.scope_days) && def.scope_days.length > 0) {
+                            activeDays = def.scope_days
+                        }
+
+                        if (activeDays) {
+                            for (let d = 1; d <= 7; d++) {
+                                if (!activeDays.includes(d)) {
+                                    if (!this.dailyBannedTargetsMap.has(d)) {
+                                        this.dailyBannedTargetsMap.set(d, [])
+                                    }
+                                    const targetArr = this.dailyBannedTargetsMap.get(d)!
+                                    if (rule.rule_type === 'frequency' && def.target) {
+                                        targetArr.push(def.target)
+                                    } else if (rule.rule_type === 'fixed_meal' && Array.isArray(def.foods)) {
+                                        for (const fId of def.foods) {
+                                            targetArr.push({ type: 'food_id', value: fId })
+                                        }
                                     }
                                 }
                             }

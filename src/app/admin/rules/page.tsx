@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { supabase } from "@/lib/supabase"
 import { Button } from "@/components/ui/button"
-import { Plus, Settings, ChevronUp, ChevronDown } from "lucide-react"
+import { Plus, Settings, ChevronUp, ChevronDown, LayoutGrid, List as ListIcon } from "lucide-react"
 import { RuleList } from "@/components/planner/rule-list"
 import { PlanningRule } from "@/types/planner"
 import { RuleDialog } from "@/components/planner/rule-dialog"
@@ -23,6 +23,8 @@ export default function RulesPage() {
     const [suggestions, setSuggestions] = useState<PlanningRule[]>([])
     const [showSuggestions, setShowSuggestions] = useState(true)
     const [loading, setLoading] = useState(true)
+    const [viewMode, setViewMode] = useState<'grid' | 'list'>('list')
+    const [ruleProgramMap, setRuleProgramMap] = useState<Record<string, string[]>>({})
     const [dialogOpen, setDialogOpen] = useState(false)
     const [settingsOpen, setSettingsOpen] = useState(false)
     const [editingRule, setEditingRule] = useState<PlanningRule | null>(null)
@@ -225,9 +227,28 @@ export default function RulesPage() {
                 }))
 
                 setSuggestions(suggestionsWithPatient as unknown as PlanningRule[])
-            } else {
                 setSuggestions([])
             }
+
+            // Fetch program overrides to see which global/team rules are used in which programs
+            const { data: programRulesData } = await supabase
+                .from('planning_rules')
+                .select('source_rule_id, program_templates(name)')
+                .eq('scope', 'program')
+                .not('source_rule_id', 'is', null)
+
+            const pMap: Record<string, string[]> = {}
+            if (programRulesData) {
+                programRulesData.forEach((pr: any) => {
+                    const sid = pr.source_rule_id
+                    const pName = pr.program_templates?.name
+                    if (sid && pName) {
+                        if (!pMap[sid]) pMap[sid] = []
+                        if (!pMap[sid].includes(pName)) pMap[sid].push(pName)
+                    }
+                })
+            }
+            setRuleProgramMap(pMap)
         } finally {
             setLoading(false)
         }
@@ -414,6 +435,7 @@ export default function RulesPage() {
         }
     }
 
+
     return (
         <div className="space-y-6">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -430,7 +452,6 @@ export default function RulesPage() {
                         variant="outline"
                         className="gap-2"
                         onClick={() => {
-                            // Export rules as JSON
                             if (rules.length === 0) {
                                 alert("Dışa aktarılacak kural yok!");
                                 return;
@@ -451,7 +472,6 @@ export default function RulesPage() {
                         variant="outline"
                         className="gap-2"
                         onClick={async () => {
-                            // Export foods as JSON
                             const { data: foods, error } = await supabase
                                 .from('foods')
                                 .select('id, name, category, role, meal_types, tags, calories')
@@ -477,7 +497,27 @@ export default function RulesPage() {
                     >
                         Yiyecekleri Dışa Aktar
                     </Button>
-                    <Button onClick={handleCreate} className="gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white">
+                    <div className="flex border rounded-md overflow-hidden bg-white shadow-sm">
+                        <Button 
+                            variant={viewMode === 'grid' ? 'default' : 'ghost'} 
+                            size="icon" 
+                            className={`rounded-none h-10 w-10 ${viewMode === 'grid' ? 'bg-slate-800 text-white hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-100'}`}
+                            onClick={() => setViewMode('grid')}
+                            title="Grid Görünümü"
+                        >
+                            <LayoutGrid size={18} />
+                        </Button>
+                        <Button 
+                            variant={viewMode === 'list' ? 'default' : 'ghost'} 
+                            size="icon" 
+                            className={`rounded-none h-10 w-10 ${viewMode === 'list' ? 'bg-slate-800 text-white hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-100'}`}
+                            onClick={() => setViewMode('list')}
+                            title="Liste Görünümü"
+                        >
+                            <ListIcon size={18} />
+                        </Button>
+                    </div>
+                    <Button onClick={handleCreate} className="gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white ml-2">
                         <Plus size={18} />
                         Yeni Kural
                     </Button>
@@ -563,6 +603,8 @@ export default function RulesPage() {
             <RuleList
                 rules={rules}
                 loading={loading}
+                viewMode={viewMode}
+                ruleProgramMap={ruleProgramMap}
                 onEdit={handleEdit}
                 onDragEnd={handleDragEnd}
                 onDelete={async (rule) => {

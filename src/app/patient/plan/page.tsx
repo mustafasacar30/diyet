@@ -5032,7 +5032,15 @@ export default function PatientPlanPage() {
                     </div>
 
                     {/* Right: Actions Menu */}
-                    <div className="flex items-center shrink-0">
+                    <div className="flex items-center gap-2 shrink-0">
+                        <Button
+                            onClick={() => window.dispatchEvent(new CustomEvent('trigger-autoplan'))}
+                            className="h-9 sm:h-10 px-3 sm:px-4 bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 text-white shadow-md shadow-indigo-200/50 rounded-xl font-bold text-xs sm:text-sm flex items-center gap-1.5 transition-all"
+                        >
+                            <Wand2 className="h-4 w-4" />
+                            <span className="hidden sm:inline">Otomatik Planla</span>
+                            <span className="sm:hidden">Planla</span>
+                        </Button>
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                                 <Button variant="ghost" className="h-9 w-9 sm:h-10 sm:w-10 rounded-xl bg-slate-50 hover:bg-emerald-50 border border-slate-100 hover:border-emerald-200 transition-all group p-0 shadow-sm">
