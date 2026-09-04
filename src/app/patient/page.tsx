@@ -1,18 +1,16 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
 import { useAuth } from "@/contexts/auth-context"
 import { supabase } from "@/lib/supabase"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { ArrowRight, Calendar, Droplets, Flame, Utensils, Scale, Activity, Save, Pencil, X, FileText, Target, Info, Camera, Beaker, Ruler, LayoutDashboard, Loader2 } from "lucide-react"
+import { ArrowRight, Calendar, Droplets, Flame, Utensils, Scale, Activity, Save, Pencil, X, FileText, Target, Info, Loader2 } from "lucide-react"
 import Link from "next/link"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import LabResultsGrid from "@/components/diet/LabResultsGrid"
-import PatientNotesEditor from "@/components/diet/PatientNotesEditor"
-import { PatientMeasurements } from "@/components/diet/patient-measurements"
+import { cn } from "@/lib/utils"
 import {
     Select,
     SelectContent,
@@ -31,6 +29,7 @@ const ACTIVITY_LEVELS = [
 
 export default function PatientDashboardPage() {
     const { profile, user } = useAuth()
+    const router = useRouter()
     const today = new Date().toLocaleDateString('tr-TR', { weekday: 'long', day: 'numeric', month: 'long' })
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
@@ -110,10 +109,10 @@ export default function PatientDashboardPage() {
     }
 
     async function fetchDashboardData() {
-        setLoading(true)
+        let shouldStopLoading = true;
         try {
             const targetId = profile?.id || user?.id
-            console.log("🔍 Dashboard: Looking for patient with ID:", targetId)
+            console.log("📍🛡 Dashboard: Looking for patient with ID:", targetId)
 
             if (!targetId) {
                 setLoading(false)
@@ -142,23 +141,23 @@ export default function PatientDashboardPage() {
             let patientRecord = legacyMatch || directMatch
             
             if (legacyMatch) {
-                console.log("📋 Dashboard: Found legacy patient via user_id:", patientRecord?.id)
+                console.log("📍🛡 Dashboard: Found legacy patient via user_id:", patientRecord?.id)
             } else if (directMatch) {
-                console.log("📋 Dashboard: Found patient via id:", patientRecord?.id)
+                console.log("📍🛡 Dashboard: Found patient via id:", patientRecord?.id)
             }
 
             if (!patientRecord) {
                 console.error("Patient not found for targetId:", targetId)
-                setLoading(false)
-                // Redirect if fully missing
-                window.location.href = '/register'
+                shouldStopLoading = false;
+                router.replace('/register')
                 return
             }
 
             // Also check here to avoid a split-second flicker of "Onay Bekliyor"
             if (!patientRecord.weight) {
-                console.log("⚠️ Incomplete profile detected, redirecting to registration.")
-                window.location.href = '/register?complete=true'
+                console.log("📍❓ Incomplete profile detected, redirecting to registration.")
+                shouldStopLoading = false;
+                router.replace('/register?complete=true')
                 return
             }
 
@@ -356,7 +355,9 @@ export default function PatientDashboardPage() {
         } catch (error) {
             console.error("Dashboard error:", error)
         } finally {
-            setLoading(false)
+            if (shouldStopLoading) {
+                setLoading(false)
+            }
         }
     }
 
@@ -441,322 +442,267 @@ export default function PatientDashboardPage() {
     }
 
     return (
-        <div className="space-y-6">
-            {/* Welcome Section */}
-            <div className="flex flex-col gap-2">
-                <h1 className="text-2xl md:text-3xl font-bold text-gray-900">
-                    Merhaba, {profile?.full_name?.split(' ')[0] || 'Danışan'}! 👋
-                </h1>
-                <p className="text-gray-500">
-                    Bugün kendin için harika bir gün yaratabilirsin.
-                </p>
+        <div className="space-y-6 pb-24">
+            {/* Welcome Section - Premium Gradient & Glassmorphism */}
+            <div className="relative overflow-hidden rounded-[2.5rem] bg-gradient-to-br from-emerald-600 via-teal-500 to-emerald-900 p-8 text-white shadow-2xl shadow-emerald-900/20 mt-2">
+                {/* Decorative Elements */}
+                <div className="absolute -right-10 -top-10 h-64 w-64 rounded-full bg-white/10 blur-3xl" />
+                <div className="absolute -left-10 -bottom-10 h-48 w-48 rounded-full bg-teal-400/20 blur-2xl" />
+                
+                <div className="relative z-10">
+                    <p className="text-sm font-semibold tracking-wide text-emerald-100/90 uppercase">{today}</p>
+                    <h1 className="text-3xl font-extrabold mt-2 tracking-tight leading-tight">
+                        Merhaba, {profile?.full_name?.split(' ')[0] || 'Danışan'}! 👋
+                    </h1>
+                    <div className="mt-4 flex items-center gap-2 bg-black/10 w-fit px-4 py-2 rounded-full border border-white/10 backdrop-blur-md">
+                        <Flame className="h-4 w-4 text-emerald-300" />
+                        <p className="text-sm font-medium text-emerald-50">
+                            {dietType?.name || 'Sağlıklı Beslenme'} • <span className="text-white font-bold">{weekNumber}. Hafta</span>
+                        </p>
+                    </div>
+                </div>
 
                 {showStartWarning && (
-                    <div className="bg-blue-50 border border-blue-200 text-blue-800 px-4 py-3 rounded-xl flex items-center gap-3 mt-2 shadow-sm">
-                        <Info className="h-5 w-5 shrink-0" />
-                        <p className="font-medium">Programınız <strong>{planStartDate}</strong> tarihinde başlayacaktır.</p>
+                    <div className="relative z-10 bg-white/10 border border-white/20 text-white px-5 py-4 rounded-2xl flex items-start gap-3 mt-6 shadow-lg backdrop-blur-md">
+                        <Info className="h-6 w-6 shrink-0 text-emerald-200" />
+                        <p className="font-medium text-sm leading-relaxed">Programınız <strong>{planStartDate}</strong> tarihinde başlayacaktır.</p>
                     </div>
                 )}
 
                 {showEndWarning && (
-                    <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-xl flex items-center gap-3 mt-2 shadow-sm">
-                        <Info className="h-5 w-5 shrink-0" />
-                        <p className="font-medium">Programınız tamamlanmıştır. Geçmiş haftaları görüntülüyorsunuz.</p>
+                    <div className="relative z-10 bg-amber-500/20 border border-amber-400/30 text-white px-5 py-4 rounded-2xl flex items-start gap-3 mt-6 shadow-lg backdrop-blur-md">
+                        <Info className="h-6 w-6 shrink-0 text-amber-200" />
+                        <p className="font-medium text-sm leading-relaxed">Programınız tamamlanmıştır. Geçmiş haftaları görüntülüyorsunuz.</p>
                     </div>
                 )}
             </div>
 
-            <Tabs defaultValue="overview" className="space-y-6">
-                <TabsList className="flex w-full overflow-x-auto justify-start lg:justify-center mb-4 bg-gray-100/50 p-1 rounded-xl [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-                    <TabsTrigger value="overview" className="shrink-0 text-xs sm:text-sm rounded-lg data-[state=active]:bg-emerald-500 data-[state=active]:text-white transition-colors px-3 py-2 sm:px-4"><LayoutDashboard className="h-3 w-3 sm:h-4 sm:w-4 mr-1.5 shrink-0" />Özet</TabsTrigger>
-                    <TabsTrigger value="labs" className="shrink-0 text-xs sm:text-sm rounded-lg data-[state=active]:bg-blue-500 data-[state=active]:text-white transition-colors px-3 py-2 sm:px-4"><Beaker className="h-3 w-3 sm:h-4 sm:w-4 mr-1.5 shrink-0" />Tahliller</TabsTrigger>
-                    <TabsTrigger value="imaging" className="shrink-0 text-xs sm:text-sm rounded-lg data-[state=active]:bg-purple-500 data-[state=active]:text-white transition-colors px-3 py-2 sm:px-4"><Camera className="h-3 w-3 sm:h-4 sm:w-4 mr-1.5 shrink-0" />Görüntüleme</TabsTrigger>
-                    <TabsTrigger value="measurements" className="shrink-0 text-xs sm:text-sm rounded-lg data-[state=active]:bg-orange-500 data-[state=active]:text-white transition-colors px-3 py-2 sm:px-4"><Ruler className="h-3 w-3 sm:h-4 sm:w-4 mr-1.5 shrink-0" />Ölçümler</TabsTrigger>
-                </TabsList>
-
-                <TabsContent value="overview" className="space-y-6">
-                    {/* Weight & Activity Card */}
-                    <Card className="border-purple-100 bg-gradient-to-br from-purple-50 to-white shadow-sm">
-                        <CardHeader className="pb-2">
-                            <div className="flex items-center justify-between">
+            {/* Giant "Bugün Ne Yemeliyim?" CTA - Hero Interaction */}
+            <div className="pt-2">
+                <Link href="/patient/plan" className="block group">
+                    <div className="relative overflow-hidden bg-white rounded-[2.5rem] p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] transition-all duration-300 transform group-hover:-translate-y-1">
+                        {/* Dynamic Background Pattern */}
+                        <div className="absolute inset-0 bg-gradient-to-br from-indigo-50/50 to-purple-50/50 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                        
+                        <div className="relative z-10 flex items-center justify-between">
+                            <div className="flex items-center gap-5">
+                                <div className="h-16 w-16 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-200 group-hover:scale-110 transition-transform duration-500">
+                                    <Utensils className="h-8 w-8 text-white" />
+                                </div>
                                 <div>
-                                    <CardTitle className="text-lg text-purple-900">Kilo & Aktivite</CardTitle>
-                                    <CardDescription className="text-purple-600">
-                                        Bu haftaki değerleriniz
-                                    </CardDescription>
+                                    <h2 className="text-2xl font-extrabold text-gray-900 tracking-tight">Bugün Ne Yemeliyim?</h2>
+                                    <p className="text-gray-500 font-medium mt-1">Öğünlerini ve planını gör</p>
                                 </div>
-                                {!isEditing ? (
-                                    <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="text-purple-600 hover:bg-purple-100"
-                                        onClick={() => setIsEditing(true)}
-                                    >
-                                        <Pencil className="h-4 w-4" />
-                                    </Button>
-                                ) : (
-                                    <div className="flex gap-1">
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="text-green-600 hover:bg-green-100"
-                                            onClick={handleSaveChanges}
-                                            disabled={saving}
-                                        >
-                                            <Save className="h-4 w-4" />
-                                        </Button>
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="text-gray-500 hover:bg-gray-100"
-                                            onClick={handleCancelEdit}
-                                        >
-                                            <X className="h-4 w-4" />
-                                        </Button>
-                                    </div>
-                                )}
                             </div>
-                        </CardHeader>
-                        <CardContent>
-                            {!isEditing ? (
-                                <div className="grid grid-cols-2 gap-4 mt-2">
-                                    <div className="flex flex-col items-center p-4 bg-white rounded-xl shadow-sm border border-purple-50">
-                                        <Scale className="h-6 w-6 text-purple-500 mb-2" />
-                                        <span className="text-2xl font-bold text-gray-900">{displayWeight}</span>
-                                        <span className="text-xs text-gray-500">kg</span>
+                            <div className="bg-gray-50 p-4 rounded-full group-hover:bg-indigo-50 group-hover:text-indigo-600 transition-colors duration-300">
+                                <ArrowRight className="h-6 w-6 text-gray-400 group-hover:text-indigo-600 transition-colors" />
+                            </div>
+                        </div>
+                    </div>
+                </Link>
+            </div>
+
+            {/* Stats & Info Grid */}
+            <div className="grid grid-cols-1 gap-6">
+                
+                {/* Today's Target Stats */}
+                <Card className="rounded-[2rem] border-gray-100 shadow-[0_8px_30px_rgb(0,0,0,0.04)] bg-white overflow-hidden">
+                    <CardHeader className="border-b border-gray-50 bg-gray-50/30 pb-4 pt-6 px-6">
+                        <CardTitle className="text-base font-bold text-gray-800 flex items-center gap-2">
+                            <Target className="h-5 w-5 text-indigo-500" />
+                            Günlük Hedeflerin
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent className="pt-8 px-6 pb-8">
+                        <div className="flex flex-col md:flex-row items-center gap-8">
+                            {/* Calorie Ring */}
+                            <div className="relative w-40 h-40 shrink-0">
+                                <svg className="w-full h-full -rotate-90 drop-shadow-md" viewBox="0 0 120 120">
+                                    <defs>
+                                        <linearGradient id="calorieGradientPremium" x1="0%" y1="0%" x2="100%" y2="100%">
+                                            <stop offset="0%" stopColor="#818cf8" />
+                                            <stop offset="100%" stopColor="#4f46e5" />
+                                        </linearGradient>
+                                    </defs>
+                                    <circle cx="60" cy="60" r="52" fill="none" stroke="#f1f5f9" strokeWidth="8" />
+                                    <circle cx="60" cy="60" r="52" fill="none" stroke="url(#calorieGradientPremium)"
+                                        strokeWidth="8" strokeLinecap="round"
+                                        strokeDasharray={`${2 * Math.PI * 52}`}
+                                        strokeDashoffset="0" 
+                                        className="animate-[dash_1.5s_ease-out_forwards]"
+                                    />
+                                </svg>
+                                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                                    <span className="text-4xl font-extrabold text-gray-900 tracking-tight">{stats.calories}</span>
+                                    <span className="text-xs font-bold text-gray-400 uppercase tracking-widest mt-1">KCAL</span>
+                                </div>
+                            </div>
+
+                            {/* Macros */}
+                            <div className="flex-1 w-full space-y-5">
+                                {[
+                                    { label: 'Protein', value: stats.protein, gradient: 'from-blue-400 to-blue-600', bg: 'bg-blue-50' },
+                                    { label: 'Karb.', value: stats.carbs, gradient: 'from-amber-400 to-amber-600', bg: 'bg-amber-50' },
+                                    { label: 'Yağ', value: stats.fat, gradient: 'from-rose-400 to-rose-600', bg: 'bg-rose-50' },
+                                ].map(m => (
+                                    <div key={m.label} className="group">
+                                        <div className="flex justify-between text-sm font-semibold mb-2">
+                                            <span className="text-gray-600">{m.label}</span>
+                                            <span className="text-gray-900">{m.value}g</span>
+                                        </div>
+                                        <div className={`h-3 ${m.bg} rounded-full overflow-hidden shadow-inner`}>
+                                            <div className={`h-full bg-gradient-to-r ${m.gradient} rounded-full transition-all duration-1000 ease-out`} style={{width: '100%'}} />
+                                        </div>
                                     </div>
-                                    <div className="flex flex-col items-center p-4 bg-white rounded-xl shadow-sm border border-purple-50">
-                                        <Activity className="h-6 w-6 text-purple-500 mb-2" />
-                                        <span className="text-lg font-bold text-gray-900">{currentActivityLabel}</span>
-                                        <span className="text-xs text-gray-500">Aktivite Seviyesi</span>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Water Goal */}
+                        <div className="mt-8 bg-gradient-to-br from-blue-50 to-cyan-50 border border-blue-100/50 rounded-[1.5rem] p-5 flex items-center justify-between shadow-sm">
+                            <div className="flex items-center gap-4">
+                                <div className="bg-white p-3 rounded-2xl shadow-sm">
+                                    <Droplets className="h-6 w-6 text-blue-500" />
+                                </div>
+                                <div>
+                                    <span className="text-sm font-bold text-blue-900 block">Günlük Su İhtiyacı</span>
+                                    <span className="text-xs font-medium text-blue-600/80">Hedeflenen miktar</span>
+                                </div>
+                            </div>
+                            <span className="text-2xl font-extrabold text-blue-700">{stats.water}L</span>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                {/* Weight & Activity Settings */}
+                <Card className="rounded-[2rem] border-gray-100 shadow-[0_8px_30px_rgb(0,0,0,0.04)] bg-white overflow-hidden">
+                    <CardHeader className="bg-gray-50/30 pb-4 pt-6 px-6 flex flex-row items-center justify-between border-b border-gray-50">
+                        <CardTitle className="text-base font-bold text-gray-800">Değerlerin</CardTitle>
+                        {!isEditing ? (
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-9 px-4 rounded-xl text-indigo-600 hover:bg-indigo-50 font-semibold"
+                                onClick={() => setIsEditing(true)}
+                            >
+                                <Pencil className="h-4 w-4 mr-2" />
+                                Düzenle
+                            </Button>
+                        ) : (
+                            <div className="flex gap-2">
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-9 w-9 p-0 rounded-xl text-gray-500 hover:bg-gray-100"
+                                    onClick={handleCancelEdit}
+                                >
+                                    <X className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                    size="sm"
+                                    className="h-9 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold shadow-sm"
+                                    onClick={handleSaveChanges}
+                                    disabled={saving}
+                                >
+                                    <Save className="h-4 w-4 mr-2" />
+                                    {saving ? '...' : 'Kaydet'}
+                                </Button>
+                            </div>
+                        )}
+                    </CardHeader>
+                    <CardContent className="pt-6 px-6 pb-6">
+                        {!isEditing ? (
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="flex flex-col gap-1 p-4 bg-gray-50 rounded-[1.5rem] border border-gray-100/50">
+                                    <span className="text-xs font-semibold text-gray-500 flex items-center gap-1.5"><Scale className="h-3.5 w-3.5" /> Kilon</span>
+                                    <span className="text-2xl font-extrabold text-gray-900 mt-1">{displayWeight} <span className="text-sm font-semibold text-gray-400">kg</span></span>
+                                </div>
+                                <div className="flex flex-col gap-1 p-4 bg-gray-50 rounded-[1.5rem] border border-gray-100/50">
+                                    <span className="text-xs font-semibold text-gray-500 flex items-center gap-1.5"><Activity className="h-3.5 w-3.5" /> Aktivite</span>
+                                    <span className="text-lg font-extrabold text-gray-900 mt-1 leading-tight">{currentActivityLabel}</span>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="space-y-5">
+                                <div className="space-y-2">
+                                    <Label htmlFor="weight" className="text-gray-700 font-semibold text-sm ml-1">Kilo (kg)</Label>
+                                    <Input
+                                        id="weight"
+                                        type="number"
+                                        step="0.1"
+                                        value={editWeight}
+                                        onChange={(e) => setEditWeight(e.target.value)}
+                                        className="border-gray-200 focus:border-indigo-400 h-12 rounded-xl px-4 text-base font-medium shadow-sm"
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="activity" className="text-gray-700 font-semibold text-sm ml-1">Aktivite Seviyesi</Label>
+                                    <Select value={editActivity} onValueChange={setEditActivity}>
+                                        <SelectTrigger className="border-gray-200 h-12 rounded-xl px-4 font-medium shadow-sm focus:ring-indigo-400">
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent className="rounded-xl">
+                                            {ACTIVITY_LEVELS.map(level => (
+                                                <SelectItem key={level.value} value={String(level.value)} className="rounded-lg py-3">
+                                                    <div className="flex flex-col">
+                                                        <span className="font-semibold">{level.label}</span>
+                                                        <span className="text-xs text-gray-500 mt-0.5">{level.description}</span>
+                                                    </div>
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                            </div>
+                        )}
+                    </CardContent>
+                </Card>
+
+                {/* Program Info */}
+                <Card className="rounded-[2rem] border-amber-100/50 shadow-[0_8px_30px_rgb(0,0,0,0.03)] bg-gradient-to-br from-amber-50/30 to-white overflow-hidden">
+                    <CardContent className="p-6">
+                        <div className="flex flex-col">
+                            <div className="flex items-center justify-between mb-4">
+                                <div className="flex items-center gap-2">
+                                    <div className="bg-amber-100 p-2.5 rounded-xl text-amber-600">
+                                        <FileText className="h-5 w-5" />
+                                    </div>
+                                    <div>
+                                        <span className="font-bold text-gray-900 text-sm block">{programName || 'Diyet Programı'}</span>
+                                        <span className="text-xs font-medium text-amber-700/80">{weekDateRange || today}</span>
                                     </div>
                                 </div>
-                            ) : (
-                                <div className="space-y-4 mt-2">
-                                    <div className="space-y-2">
-                                        <Label htmlFor="weight" className="text-purple-900">Kilo (kg)</Label>
-                                        <Input
-                                            id="weight"
-                                            type="number"
-                                            step="0.1"
-                                            value={editWeight}
-                                            onChange={(e) => setEditWeight(e.target.value)}
-                                            className="border-purple-200 focus:border-purple-400"
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label htmlFor="activity" className="text-purple-900">Aktivite Seviyesi</Label>
-                                        <Select value={editActivity} onValueChange={setEditActivity}>
-                                            <SelectTrigger className="border-purple-200">
-                                                <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {ACTIVITY_LEVELS.map(level => (
-                                                    <SelectItem key={level.value} value={String(level.value)}>
-                                                        <div className="flex flex-col">
-                                                            <span className="font-medium">{level.label}</span>
-                                                            <span className="text-xs text-gray-500">{level.description}</span>
-                                                        </div>
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
-                                    </div>
+                                <div className="bg-amber-100/80 text-amber-800 px-3 py-1.5 rounded-xl border border-amber-200/50 text-xs font-extrabold shadow-sm">
+                                    {weekNumber}/{totalWeeks}. Hf
+                                </div>
+                            </div>
+                            
+                            {(dietType || weekTitle) && (
+                                <div className="bg-white rounded-[1.5rem] p-4 shadow-sm border border-amber-50">
+                                    {dietType && (
+                                        <div className="flex items-start gap-3">
+                                            <div className="mt-0.5">
+                                                <Target className="h-4 w-4 text-amber-500" />
+                                            </div>
+                                            <div>
+                                                <span className="font-bold text-gray-900 text-sm block">{dietType.name}</span>
+                                                {dietType.description && (
+                                                    <span className="text-xs text-gray-500 font-medium leading-relaxed block mt-1">{dietType.description}</span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+                                    {weekTitle && (
+                                        <div className={cn("text-xs text-gray-600 font-semibold", dietType && "mt-3 pt-3 border-t border-gray-100")}>
+                                            {weekTitle}
+                                        </div>
+                                    )}
                                 </div>
                             )}
-                        </CardContent>
-                    </Card>
-
-                    {/* Program & Diet Type Info Card */}
-                    <Card className="border-amber-100 bg-gradient-to-br from-amber-50 to-white shadow-sm">
-                        <CardHeader className="pb-2">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <CardTitle className="text-lg text-amber-900 flex items-center gap-2">
-                                        <FileText className="h-5 w-5" />
-                                        {programName || 'Diyet Programı'}
-                                    </CardTitle>
-                                    <CardDescription className="text-amber-600">
-                                        {weekDateRange || today}
-                                    </CardDescription>
-                                </div>
-                                <div className="bg-amber-100 text-amber-800 px-3 py-1 rounded-full text-sm font-semibold">
-                                    {weekNumber}. Hafta / {totalWeeks}
-                                </div>
-                            </div>
-                        </CardHeader>
-                        <CardContent>
-                            <div className="flex flex-col gap-2 mt-2">
-                                {dietType && (
-                                    <div className="flex items-center gap-3 p-3 bg-white rounded-xl shadow-sm border border-amber-50">
-                                        <Target className="h-5 w-5 text-amber-600" />
-                                        <div>
-                                            <span className="font-semibold text-gray-900">{dietType.name}</span>
-                                            {dietType.description && (
-                                                <p className="text-xs text-gray-500">{dietType.description}</p>
-                                            )}
-                                        </div>
-                                    </div>
-                                )}
-                                {weekTitle && (
-                                    <div className="text-sm text-gray-600 px-1 font-medium">
-                                        {weekTitle}
-                                    </div>
-                                )}
-                                {dietType && (
-                                    <div className="grid grid-cols-3 gap-2 text-center text-xs mt-2">
-                                        <div className="bg-amber-50 rounded-lg p-2">
-                                            <span className="font-bold text-amber-800">K: {dietType.carb_factor}</span>
-                                            <p className="text-gray-500">g/kg</p>
-                                        </div>
-                                        <div className="bg-amber-50 rounded-lg p-2">
-                                            <span className="font-bold text-amber-800">P: {dietType.protein_factor}</span>
-                                            <p className="text-gray-500">g/kg</p>
-                                        </div>
-                                        <div className="bg-amber-50 rounded-lg p-2">
-                                            <span className="font-bold text-amber-800">Y: {dietType.fat_factor}</span>
-                                            <p className="text-gray-500">g/kg</p>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        </CardContent>
-                    </Card>
-
-                    {/* Today's Summary Card */}
-                    <Card className="border-green-100 bg-gradient-to-br from-green-50 to-white shadow-sm">
-                        <CardHeader className="pb-2">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <CardTitle className="text-lg text-green-900">{today}</CardTitle>
-                                    <CardDescription className="text-green-600">
-                                        {dietType ? `${dietType.name} Hedefleri` : 'Günlük Hedefler'}
-                                    </CardDescription>
-                                </div>
-                                <div className="h-10 w-10 bg-green-100 rounded-full flex items-center justify-center">
-                                    <Calendar className="h-5 w-5 text-green-700" />
-                                </div>
-                            </div>
-                        </CardHeader>
-                        <CardContent>
-                            <div className="grid grid-cols-3 gap-4 mt-2">
-                                <div className="flex flex-col items-center p-3 bg-white rounded-xl shadow-sm border border-green-50">
-                                    <Flame className="h-5 w-5 text-orange-500 mb-1" />
-                                    <span className="text-lg font-bold text-gray-900">{stats.calories}</span>
-                                    <span className="text-xs text-gray-500">Kcal Hedef</span>
-                                </div>
-                                <div className="flex flex-col items-center p-3 bg-white rounded-xl shadow-sm border border-blue-50">
-                                    <Droplets className="h-5 w-5 text-blue-500 mb-1" />
-                                    <span className="text-lg font-bold text-gray-900">{stats.water}L</span>
-                                    <span className="text-xs text-gray-500">Su Hedefi</span>
-                                </div>
-                                <div className="flex flex-col items-center p-3 bg-white rounded-xl shadow-sm border border-red-50">
-                                    <Utensils className="h-5 w-5 text-red-500 mb-1" />
-                                    <div className="text-lg font-bold text-gray-900 flex flex-col items-center leading-none gap-1 mt-1">
-                                        <span className="text-xs font-normal text-gray-400">P: {stats.protein}g</span>
-                                        <span className="text-xs font-normal text-gray-400">K: {stats.carbs}g</span>
-                                        <span className="text-xs font-normal text-gray-400">Y: {stats.fat}g</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </CardContent>
-                    </Card>
-
-                    {/* Quick Actions */}
-                    <div className="grid gap-4 md:grid-cols-2">
-                        <Link href="/patient/plan">
-                            <Card className="hover:border-green-200 transition-colors cursor-pointer h-full">
-                                <CardHeader>
-                                    <CardTitle className="flex items-center gap-2 text-lg">
-                                        <span className="p-2 bg-blue-50 rounded-lg text-blue-600">📅</span>
-                                        Diyet Planım
-                                    </CardTitle>
-                                    <CardDescription>
-                                        Bu haftaki beslenme programını incele.
-                                    </CardDescription>
-                                </CardHeader>
-                                <CardContent>
-                                    <Button variant="ghost" className="w-full justify-between group px-0 hover:bg-transparent">
-                                        Plana Git
-                                        <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
-                                    </Button>
-                                </CardContent>
-                            </Card>
-                        </Link>
-
-                        <Link href="/patient/meals">
-                            <Card className="hover:border-green-200 transition-colors cursor-pointer h-full">
-                                <CardHeader>
-                                    <CardTitle className="flex items-center gap-2 text-lg">
-                                        <span className="p-2 bg-orange-50 rounded-lg text-orange-600">🍽️</span>
-                                        Öğün Takibi
-                                    </CardTitle>
-                                    <CardDescription>
-                                        Yediğin öğünleri işaretle ve takip et.
-                                    </CardDescription>
-                                </CardHeader>
-                                <CardContent>
-                                    <Button variant="ghost" className="w-full justify-between group px-0 hover:bg-transparent">
-                                        Öğünleri Gör
-                                        <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
-                                    </Button>
-                                </CardContent>
-                            </Card>
-                        </Link>
-
-                        <Link href="/patient/messages">
-                            <Card className="hover:border-blue-200 transition-colors cursor-pointer h-full">
-                                <CardHeader>
-                                    <CardTitle className="flex items-center gap-2 text-lg">
-                                        <span className="p-2 bg-purple-50 rounded-lg text-purple-600">💬</span>
-                                        Mesajlar
-                                    </CardTitle>
-                                    <CardDescription>
-                                        Diyetisyeninle iletişime geç.
-                                    </CardDescription>
-                                </CardHeader>
-                                <CardContent>
-                                    <Button variant="ghost" className="w-full justify-between group px-0 hover:bg-transparent">
-                                        Sohbete Git
-                                        <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
-                                    </Button>
-                                </CardContent>
-                            </Card>
-                        </Link>
-                    </div>
-                </TabsContent>
-
-                <TabsContent value="labs" className="space-y-6">
-                    {patientId ? (
-                        <LabResultsGrid patientId={patientId} readOnly={true} />
-                    ) : (
-                        <div className="text-center py-8 text-gray-400 italic">Hastaya ait tahlil bulunamadı.</div>
-                    )}
-                </TabsContent>
-
-                <TabsContent value="imaging" className="space-y-6">
-                    {patientId ? (
-                        <PatientNotesEditor
-                            patientId={patientId}
-                            type="imaging"
-                            title="Görüntüleme Tetkikleri"
-                            icon={<Camera className="h-4 w-4 text-purple-600" />}
-                            readOnly={true}
-                            showTitle={true}
-                        />
-                    ) : (
-                        <div className="text-center py-8 text-gray-400 italic">Görüntüleme tetkiki bulunamadı.</div>
-                    )}
-                </TabsContent>
-
-                <TabsContent value="measurements" className="flex-1 flex flex-col min-h-[400px] mt-0 data-[state=active]:flex">
-                    {patientId ? (
-                        <PatientMeasurements patientId={patientId} readOnly={false} />
-                    ) : (
-                        <div className="text-center py-8 text-gray-400 italic">Ölçüm verisi bulunamadı.</div>
-                    )}
-                </TabsContent>
-            </Tabs>
+                        </div>
+                    </CardContent>
+                </Card>
+            </div>
         </div>
     )
 }

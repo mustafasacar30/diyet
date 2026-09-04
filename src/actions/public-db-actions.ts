@@ -240,3 +240,87 @@ export async function adminSaveProgramTemplateAction(payload: {
         return { error: e.message }
     }
 }
+
+// --- Recipe Manager Admin Actions (Bypass RLS) ---
+
+export async function adminAddManualMatchAction(payload: { food_pattern: string, card_filename: string, original_text?: string }) {
+    if (!supabaseServiceKey) return { error: "Sunucu hatası: Servis anahtarı eksik." }
+    try {
+        const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
+            auth: { autoRefreshToken: false, persistSession: false }
+        })
+        const { data, error } = await supabaseAdmin.from('recipe_manual_matches').insert({
+            food_pattern: payload.food_pattern,
+            card_filename: payload.card_filename,
+            original_text: payload.original_text || null
+        }).select().single()
+        if (error) throw new Error(error.message)
+        return { data }
+    } catch (e: any) {
+        return { error: e.message }
+    }
+}
+
+export async function adminUpdateManualMatchAction(payload: { id: string, food_pattern: string, card_filename: string, original_text?: string }) {
+    if (!supabaseServiceKey) return { error: "Sunucu hatası: Servis anahtarı eksik." }
+    try {
+        const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
+            auth: { autoRefreshToken: false, persistSession: false }
+        })
+        const { data, error } = await supabaseAdmin.from('recipe_manual_matches').update({
+            food_pattern: payload.food_pattern,
+            card_filename: payload.card_filename,
+            original_text: payload.original_text || null
+        }).eq('id', payload.id).select().single()
+        if (error) throw new Error(error.message)
+        return { data }
+    } catch (e: any) {
+        return { error: e.message }
+    }
+}
+
+export async function adminDeleteManualMatchAction(id: string) {
+    if (!supabaseServiceKey) return { error: "Sunucu hatası: Servis anahtarı eksik." }
+    try {
+        const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
+            auth: { autoRefreshToken: false, persistSession: false }
+        })
+        const { error } = await supabaseAdmin.from('recipe_manual_matches').delete().eq('id', id)
+        if (error) throw new Error(error.message)
+        return { success: true }
+    } catch (e: any) {
+        return { error: e.message }
+    }
+}
+
+export async function adminAddRecipeBanAction(payload: { food_pattern: string, card_filename: string, original_text?: string }) {
+    if (!supabaseServiceKey) return { error: "Sunucu hatası: Servis anahtarı eksik." }
+    try {
+        const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
+            auth: { autoRefreshToken: false, persistSession: false }
+        })
+        const { data, error } = await supabaseAdmin.from('recipe_match_bans').insert({
+            food_pattern: payload.food_pattern,
+            card_filename: payload.card_filename,
+            original_text: payload.original_text || null
+        }).select().single()
+        if (error) throw new Error(error.message)
+        return { data }
+    } catch (e: any) {
+        return { error: e.message }
+    }
+}
+
+export async function adminDeleteRecipeBanAction(id: string) {
+    if (!supabaseServiceKey) return { error: "Sunucu hatası: Servis anahtarı eksik." }
+    try {
+        const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
+            auth: { autoRefreshToken: false, persistSession: false }
+        })
+        const { error } = await supabaseAdmin.from('recipe_match_bans').delete().eq('id', id)
+        if (error) throw new Error(error.message)
+        return { success: true }
+    } catch (e: any) {
+        return { error: e.message }
+    }
+}

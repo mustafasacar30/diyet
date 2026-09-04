@@ -56,6 +56,7 @@ interface FoodSearchSelectorProps {
     proteinGap?: number
     fatGap?: number
     patientId?: string
+    variant?: 'default' | 'inline'
 }
 
 // Utility to normalize text for searching (Turkish char support)
@@ -90,7 +91,8 @@ export function FoodSearchSelector({
     calorieGap,
     proteinGap,
     fatGap,
-    patientId
+    patientId,
+    variant = 'default'
 }: FoodSearchSelectorProps) {
     const [query, setQuery] = useState("")
     const [showFilters, setShowFilters] = useState(false)
@@ -98,6 +100,21 @@ export function FoodSearchSelector({
     const [activeFilterCategory, setActiveFilterCategory] = useState<string>("scope")
     const [searchScopes, setSearchScopes] = useState<string[]>(['name']) // Default only name
     const inputRef = useRef<HTMLInputElement>(null)
+    const triggerInputRef = useRef<HTMLInputElement>(null)
+    const scrollRestoreRef = useRef<{ node: Element | Window, top: number } | null>(null)
+    
+    useEffect(() => {
+        if (!open && scrollRestoreRef.current) {
+            const { node, top } = scrollRestoreRef.current;
+            if (node === window) {
+                window.scrollTo({ top, behavior: 'smooth' });
+            } else {
+                (node as Element).scrollTo({ top, behavior: 'smooth' });
+            }
+            scrollRestoreRef.current = null;
+        }
+    }, [open])
+
     const [aiSuggestions, setAiSuggestions] = useState<Food[]>([])
     const [aiLoading, setAiLoading] = useState(false)
     const aiTimerRef = useRef<NodeJS.Timeout | null>(null)
@@ -352,30 +369,101 @@ export function FoodSearchSelector({
     return (
         <Popover open={open} onOpenChange={onOpenChange}>
             <PopoverTrigger asChild>
-                {trigger}
-            </PopoverTrigger>
-            <PopoverContent className="p-0 w-[500px]" align="start">
-                <Command shouldFilter={false}>
-                    <div className="flex items-center border-b px-3 gap-2">
-                        <Search className="h-4 w-4 shrink-0 opacity-50" />
+                {variant === 'inline' ? (
+                    <div className="flex-1 w-full relative group cursor-text">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 group-focus-within:text-emerald-500 transition-colors" />
                         <input
-                            ref={inputRef}
-                            className="flex h-11 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground"
-                            placeholder="Yemek ara... (örn: pey yum)"
+                            ref={triggerInputRef}
+                            className="w-full bg-white ring-1 ring-gray-100 shadow-sm rounded-xl py-3 pl-9 pr-3 text-[13px] outline-none focus:bg-emerald-50/60 focus:ring-2 focus:ring-emerald-400 caret-emerald-600 transition-all placeholder:font-medium placeholder:text-gray-400 scroll-mt-32"
+                            placeholder="Yeni yemek ekle (örn: pey yum)"
                             value={query}
-                            onChange={(e) => setQuery(e.target.value)}
-                            autoFocus
+                            onChange={(e) => { setQuery(e.target.value); if (!open) onOpenChange(true); }}
+                            onClick={(e) => { 
+                                // Ensure scroll runs on click (safeguard for mobile touch events)
+                                if (!scrollRestoreRef.current) {
+                                    let scrollNode: Element | Window = window;
+                                    let node = e.currentTarget.parentElement;
+                                    while(node) {
+                                        const overflow = window.getComputedStyle(node).overflowY;
+                                        if (overflow === 'auto' || overflow === 'scroll') {
+                                            scrollNode = node;
+                                            break;
+                                        }
+                                        node = node.parentElement;
+                                    }
+                                    const top = scrollNode === window ? window.scrollY : (scrollNode as Element).scrollTop;
+                                    scrollRestoreRef.current = { node: scrollNode, top };
+                                }
+                                e.currentTarget.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                if (!open) onOpenChange(true); 
+                            }}
+                            onFocus={(e) => {
+                                // Record current scroll position before scrolling
+                                if (!scrollRestoreRef.current) {
+                                    let scrollNode: Element | Window = window;
+                                    let node = e.target.parentElement;
+                                    while(node) {
+                                        const overflow = window.getComputedStyle(node).overflowY;
+                                        if (overflow === 'auto' || overflow === 'scroll') {
+                                            scrollNode = node;
+                                            break;
+                                        }
+                                        node = node.parentElement;
+                                    }
+                                    const top = scrollNode === window ? window.scrollY : (scrollNode as Element).scrollTop;
+                                    scrollRestoreRef.current = { node: scrollNode, top };
+                                }
+                                e.target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                if (!open) onOpenChange(true);
+                            }}
                         />
-                        <Button
-                            size="icon"
-                            variant={showFilters ? "secondary" : "ghost"}
-                            className="h-8 w-8"
-                            onClick={() => setShowFilters(!showFilters)}
-                            title="Filtrele"
-                        >
-                            <Filter size={16} className={(Object.keys(selectedFilters).length > 0 || searchScopes.length > 1) ? "text-blue-600" : ""} />
-                        </Button>
                     </div>
+                ) : trigger}
+            </PopoverTrigger>
+            <PopoverContent 
+                className="p-0 w-[min(500px,calc(100vw-2rem))] bg-slate-50 border border-indigo-100 shadow-[0_15px_50px_-12px_rgba(0,0,0,0.25)] rounded-2xl overflow-hidden" 
+                align="start" 
+                side="bottom"
+                avoidCollisions={false}
+                sideOffset={8}
+                onOpenAutoFocus={e => variant === 'inline' ? e.preventDefault() : undefined}
+            >
+                <Command shouldFilter={false}>
+                    {variant !== 'inline' && (
+                        <div className="flex items-center border-b px-3 gap-2">
+                            <Search className="h-4 w-4 shrink-0 opacity-50" />
+                            <input
+                                ref={inputRef}
+                                className="flex h-11 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground"
+                                placeholder="Yemek ara... (örn: pey yum)"
+                                value={query}
+                                onChange={(e) => setQuery(e.target.value)}
+                                autoFocus
+                            />
+                            <Button
+                                size="icon"
+                                variant={showFilters ? "secondary" : "ghost"}
+                                className="h-8 w-8"
+                                onClick={() => setShowFilters(!showFilters)}
+                                title="Filtrele"
+                            >
+                                <Filter size={16} className={(Object.keys(selectedFilters).length > 0 || searchScopes.length > 1) ? "text-blue-600" : ""} />
+                            </Button>
+                        </div>
+                    )}
+                    {variant === 'inline' && (
+                        <div className="flex justify-end p-1 border-b bg-gray-50/50">
+                            <Button
+                                size="sm"
+                                variant={showFilters ? "secondary" : "ghost"}
+                                className="h-7 text-[10px]"
+                                onClick={() => setShowFilters(!showFilters)}
+                            >
+                                <Filter size={12} className={(Object.keys(selectedFilters).length > 0 || searchScopes.length > 1) ? "text-blue-600 mr-1" : "mr-1"} />
+                                Filtreler
+                            </Button>
+                        </div>
+                    )}
 
                     {showFilters && (
                         <div className="flex h-64 border-b text-xs">

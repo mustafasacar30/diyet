@@ -1,6 +1,13 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
-import { getPublicRecipeData } from '@/actions/public-db-actions'
+import { 
+    getPublicRecipeData, 
+    adminAddManualMatchAction, 
+    adminDeleteManualMatchAction, 
+    adminAddRecipeBanAction, 
+    adminDeleteRecipeBanAction,
+    adminUpdateManualMatchAction 
+} from '@/actions/public-db-actions'
 
 export type ManualMatch = {
     id: string
@@ -111,15 +118,10 @@ export function useRecipeManager() {
 
     async function addManualMatch(food_pattern: string, card_filename: string, original_text?: string) {
         try {
-            const { data, error } = await supabase.from('recipe_manual_matches').insert({
-                food_pattern,
-                card_filename,
-                original_text: original_text || null
-            }).select().single()
+            const res = await adminAddManualMatchAction({ food_pattern, card_filename, original_text })
+            if (res.error) throw new Error(res.error)
 
-            if (error) throw error
-
-            setManualMatches([data, ...manualMatches])
+            setManualMatches([res.data, ...manualMatches])
             recipeCache = null
             return true
         } catch (error: any) {
@@ -132,31 +134,28 @@ export function useRecipeManager() {
     async function deleteManualMatch(id: string) {
 
         try {
-            const { error } = await supabase.from('recipe_manual_matches').delete().eq('id', id)
-            if (error) throw error
+            const res = await adminDeleteManualMatchAction(id)
+            if (res.error) throw new Error(res.error)
 
             setManualMatches(manualMatches.filter(m => m.id !== id))
             recipeCache = null
         } catch (error: any) {
             console.error('Error deleting match:', error)
+            alert('Hata: ' + error.message)
         }
     }
 
     async function addBan(food_pattern: string, card_filename: string, original_text?: string) {
         try {
-            const { data, error } = await supabase.from('recipe_match_bans').insert({
-                food_pattern,
-                card_filename,
-                original_text: original_text || null
-            }).select().single()
+            const res = await adminAddRecipeBanAction({ food_pattern, card_filename, original_text })
+            if (res.error) throw new Error(res.error)
 
-            if (error) throw error
-
-            setBans([data, ...bans])
+            setBans([res.data, ...bans])
             recipeCache = null
             return true
         } catch (error: any) {
             console.error('Error adding ban:', error)
+            alert('Hata: ' + error.message)
             return false
         }
     }
@@ -164,13 +163,14 @@ export function useRecipeManager() {
     async function deleteBan(id: string) {
 
         try {
-            const { error } = await supabase.from('recipe_match_bans').delete().eq('id', id)
-            if (error) throw error
+            const res = await adminDeleteRecipeBanAction(id)
+            if (res.error) throw new Error(res.error)
 
             setBans(bans.filter(b => b.id !== id))
             recipeCache = null
         } catch (error: any) {
             console.error('Error deleting ban:', error)
+            alert('Hata: ' + error.message)
         }
     }
 
@@ -185,15 +185,10 @@ export function useRecipeManager() {
         deleteBan,
         updateManualMatch: async (id: string, food_pattern: string, card_filename: string, original_text?: string) => {
             try {
-                const { data, error } = await supabase.from('recipe_manual_matches').update({
-                    food_pattern,
-                    card_filename,
-                    original_text: original_text || null
-                }).eq('id', id).select().single()
+                const res = await adminUpdateManualMatchAction({ id, food_pattern, card_filename, original_text })
+                if (res.error) throw new Error(res.error)
 
-                if (error) throw error
-
-                setManualMatches(manualMatches.map(m => m.id === id ? data : m))
+                setManualMatches(manualMatches.map(m => m.id === id ? res.data : m))
                 recipeCache = null
                 return true
             } catch (error: any) {

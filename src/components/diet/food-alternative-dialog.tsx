@@ -889,7 +889,7 @@ export function FoodAlternativeDialog({ isOpen, onClose, originalFood, onSelect,
 
                 <div className={`flex flex-1 relative ${prefs.showSettingsPanel && !hideSettings ? 'min-h-[450px]' : 'min-h-[400px]'}`}>
                     {prefs.showSettingsPanel && !hideSettings && (
-                        <div className="w-[360px] border-r bg-gray-50 p-4 max-h-[calc(85vh-4rem)] overflow-y-auto shrink-0 space-y-3 text-sm [&::-webkit-scrollbar]:hidden">
+                        <div className="w-full md:w-[360px] border-r bg-gray-50 p-4 max-h-[calc(85vh-4rem)] overflow-y-auto shrink-0 space-y-3 text-sm [&::-webkit-scrollbar]:hidden">
                             <div className="space-y-2">
                                 <h4 className="font-semibold text-xs text-gray-900 uppercase tracking-wider">Genel</h4>
                                 <div className="p-3 bg-white rounded-lg border shadow-sm">
@@ -1028,7 +1028,7 @@ export function FoodAlternativeDialog({ isOpen, onClose, originalFood, onSelect,
                     <div
                         className={`overflow-y-auto p-4 bg-white/50 [&::-webkit-scrollbar]:hidden 
                         ${prefs.showSettingsPanel && !hideSettings
-                                ? 'absolute top-0 right-0 bottom-0 left-[360px] border-l'
+                                ? 'absolute top-0 right-0 bottom-0 left-0 md:left-[360px] border-l'
                                 : 'flex-1 w-full max-h-[calc(85vh-4rem)]'
                             }`}
                     >

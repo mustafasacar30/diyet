@@ -246,6 +246,8 @@ function MacroDashboard({ totals, targets, isVisible, onClose, days, patientInfo
     const dCals = Math.round(totals.calories || 0), dCarb = Math.round(totals.carbs || 0), dProt = Math.round(totals.protein || 0), dFat = Math.round(totals.fat || 0)
     const [isDailyBalanceHintActive, setIsDailyBalanceHintActive] = useState(false)
     const [isWeeklyBalanceHintActive, setIsWeeklyBalanceHintActive] = useState(false)
+    const dailyHintShown = useRef(false)
+    const weeklyHintShown = useRef(false)
     const deviationThresholdPct = 10
 
     const getDeviationPercent = (actual: number, target: number) => {
@@ -263,13 +265,14 @@ function MacroDashboard({ totals, targets, isVisible, onClose, days, patientInfo
             return
         }
 
-        setIsDailyBalanceHintActive(true)
-        const timeoutId = window.setTimeout(() => {
-            setIsDailyBalanceHintActive(false)
-        }, 4200)
+        if (dailyHintShown.current) return;
+        dailyHintShown.current = true;
 
-        return () => window.clearTimeout(timeoutId)
-    }, [isVisible, targets, hasDailyLargeDeviation, dCals, tCals])
+        setIsDailyBalanceHintActive(true)
+        window.setTimeout(() => {
+            setIsDailyBalanceHintActive(false)
+        }, 2000)
+    }, [isVisible, targets, hasDailyLargeDeviation])
 
     const wAvg = (() => {
         if (!days || days.length === 0) return { calories: 0, protein: 0, carbs: 0, fat: 0 }
@@ -300,13 +303,14 @@ function MacroDashboard({ totals, targets, isVisible, onClose, days, patientInfo
             return
         }
 
-        setIsWeeklyBalanceHintActive(true)
-        const timeoutId = window.setTimeout(() => {
-            setIsWeeklyBalanceHintActive(false)
-        }, 4200)
+        if (weeklyHintShown.current) return;
+        weeklyHintShown.current = true;
 
-        return () => window.clearTimeout(timeoutId)
-    }, [isVisible, targets, hasWeeklyLargeDeviation, wAvg.calories, tCals])
+        setIsWeeklyBalanceHintActive(true)
+        window.setTimeout(() => {
+            setIsWeeklyBalanceHintActive(false)
+        }, 2000)
+    }, [isVisible, targets, hasWeeklyLargeDeviation])
 
     if (!isVisible || !targets) return null
 
@@ -330,15 +334,15 @@ function MacroDashboard({ totals, targets, isVisible, onClose, days, patientInfo
             <div className="flex items-center justify-between py-0.5">
                 <div className="flex items-center gap-1 sm:gap-1.5 w-[24px] sm:w-[42px] shrink-0">
                     <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full shrink-0" style={{ background: clr }} />
-                    <span className="text-[8px] sm:text-[11px] font-bold text-gray-600 tracking-tighter sm:tracking-normal">{lbl}</span>
+                    <span className="text-[11px] sm:text-[11px] font-bold text-gray-600 tracking-tighter sm:tracking-normal">{lbl}</span>
                 </div>
                 <div className="flex items-center justify-end gap-0.5 sm:gap-1 flex-1 min-w-0">
                     <div className="flex items-baseline gap-px sm:gap-0.5 min-w-0">
-                        <span className="text-[9px] sm:text-[11px] font-bold tabular-nums text-gray-800 leading-none">{act}</span>
-                        <span className="text-[7px] sm:text-[9px] text-gray-400">/</span>
-                        <span className="text-[8px] sm:text-[10px] text-gray-500 tabular-nums leading-none truncate">{Math.round(tgt)}<span className="hidden sm:inline">g</span></span>
+                        <span className="text-[12px] sm:text-[11px] font-bold tabular-nums text-gray-800 leading-none">{act}</span>
+                        <span className="text-[10px] sm:text-[12px] text-gray-400">/</span>
+                        <span className="text-[11px] sm:text-[10px] text-gray-500 tabular-nums leading-none truncate">{Math.round(tgt)}<span className="hidden sm:inline">g</span></span>
                     </div>
-                    <span className={cn("text-[8px] sm:text-[10px] font-black tabular-nums text-right ml-0.5 shrink-0", pct > 105 ? "text-red-500" : pct >= 95 ? "text-green-600" : "text-gray-400")}>
+                    <span className={cn("text-[11px] sm:text-[10px] font-black tabular-nums text-right ml-0.5 shrink-0", pct > 105 ? "text-red-500" : pct >= 95 ? "text-green-600" : "text-gray-400")}>
                         %{pct}
                     </span>
                 </div>
@@ -362,11 +366,11 @@ function MacroDashboard({ totals, targets, isVisible, onClose, days, patientInfo
                             </div>
                             <div className="flex-1 flex flex-col justify-center gap-0 sm:gap-1 min-w-0 -ml-1 sm:ml-0">
                                 <div className="flex items-center justify-between mb-0.5 sm:mb-1">
-                                    <span className="text-[8px] sm:text-[11px] font-black text-gray-400 uppercase tracking-tight sm:tracking-wide">Kalori</span>
+                                    <span className="text-[11px] sm:text-[11px] font-black text-gray-400 uppercase tracking-tight sm:tracking-wide">Kalori</span>
                                     <div className="flex items-baseline gap-0.5 min-w-0">
                                         <span className="text-[10px] sm:text-sm font-black text-gray-800 tabular-nums leading-none">{dCals}</span>
-                                        <span className="text-[7px] sm:text-[9px] text-gray-400">/</span>
-                                        <span className="text-[8px] sm:text-[11px] text-gray-500 tabular-nums leading-none truncate">{Math.round(tCals)}</span>
+                                        <span className="text-[10px] sm:text-[12px] text-gray-400">/</span>
+                                        <span className="text-[11px] sm:text-[11px] text-gray-500 tabular-nums leading-none truncate">{Math.round(tCals)}</span>
                                     </div>
                                 </div>
                                 <div className="w-full h-px bg-gray-200/50 my-0.5" />
@@ -383,11 +387,11 @@ function MacroDashboard({ totals, targets, isVisible, onClose, days, patientInfo
                             </div>
                             <div className="flex-1 flex flex-col justify-center gap-0 sm:gap-1 min-w-0 -ml-1 sm:ml-0">
                                 <div className="flex items-center justify-between mb-0.5 sm:mb-1">
-                                    <span className="text-[8px] sm:text-[11px] font-black text-gray-400 uppercase tracking-tight sm:tracking-wide">Kalori</span>
+                                    <span className="text-[11px] sm:text-[11px] font-black text-gray-400 uppercase tracking-tight sm:tracking-wide">Kalori</span>
                                     <div className="flex items-baseline gap-0.5 min-w-0">
                                         <span className="text-[10px] sm:text-sm font-black text-gray-800 tabular-nums leading-none">{wAvg.calories}</span>
-                                        <span className="text-[7px] sm:text-[9px] text-gray-400">/</span>
-                                        <span className="text-[8px] sm:text-[11px] text-gray-500 tabular-nums leading-none truncate">{Math.round(tCals)}</span>
+                                        <span className="text-[10px] sm:text-[12px] text-gray-400">/</span>
+                                        <span className="text-[11px] sm:text-[11px] text-gray-500 tabular-nums leading-none truncate">{Math.round(tCals)}</span>
                                     </div>
                                 </div>
                                 <div className="w-full h-px bg-gray-200/50 my-0.5" />
@@ -399,7 +403,7 @@ function MacroDashboard({ totals, targets, isVisible, onClose, days, patientInfo
                             <Button
                                 variant="ghost"
                                 size="icon"
-                                className="absolute top-1 right-1 h-6 w-6 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-full"
+                                className="absolute top-1 right-1 h-10 w-10 min-w-[40px] text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-full"
                                 onClick={onClose}
                             >
                                 <X size={12} />
@@ -444,7 +448,7 @@ function MacroDashboard({ totals, targets, isVisible, onClose, days, patientInfo
 
                                             {/* Centered Label - Faded */}
                                             <div className="absolute inset-0 flex items-center justify-center z-20 pointer-events-none">
-                                                <span className="text-[9px] font-black text-gray-800/20 tracking-widest uppercase">HAFTALIK ORTALAMA</span>
+                                                <span className="text-[12px] font-black text-gray-800/20 tracking-widest uppercase">HAFTALIK ORTALAMA</span>
                                             </div>
 
                                             <div className="absolute inset-0 flex items-center px-3 text-xs font-bold z-10 text-shadow-sm pointer-events-none">
@@ -482,18 +486,18 @@ function MacroDashboard({ totals, targets, isVisible, onClose, days, patientInfo
                                     window.dispatchEvent(event);
                                 }}
                                 className={cn(
-                                    "relative h-5 sm:h-4.5 px-3 rounded-md text-[10px] sm:text-xs font-bold transition-all flex justify-center items-center gap-1.5 shadow-[0_4px_20px_-2px_rgba(34,197,94,0.4)] hover:shadow-[0_6px_30px_-2px_rgba(34,197,94,0.6)] bg-gradient-to-br from-teal-500 via-green-500 to-emerald-500 hover:from-teal-600 hover:via-green-600 hover:to-emerald-600 text-white shrink-0 hover:scale-[1.02] active:scale-95",
+                                    "relative h-8 px-3 rounded-md text-xs font-bold transition-all flex justify-center items-center gap-1.5 shadow-[0_4px_20px_-2px_rgba(34,197,94,0.4)] hover:shadow-[0_6px_30px_-2px_rgba(34,197,94,0.6)] bg-gradient-to-br from-teal-500 via-green-500 to-emerald-500 hover:from-teal-600 hover:via-green-600 hover:to-emerald-600 text-white shrink-0 hover:scale-[1.02] active:scale-95",
                                     isWeeklyBalanceHintActive && "animate-bounce scale-110 ring-4 ring-emerald-300/90 ring-offset-2 ring-offset-white shadow-[0_0_0_5px_rgba(52,211,153,0.25),0_0_28px_8px_rgba(16,185,129,0.55)]"
                                 )}
                                 title="Haftalık Makro Dengele"
                             >
                                 {isWeeklyBalanceHintActive && (
-                                    <span className="absolute -top-1 -right-1 inline-flex h-2.5 w-2.5">
+                                    <span className="absolute -top-1 -right-1 inline-flex h-3.5 w-3.5">
                                         <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white/90"></span>
-                                        <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-white"></span>
+                                        <span className="relative inline-flex h-3.5 w-3.5 rounded-full bg-white"></span>
                                     </span>
                                 )}
-                                <Scale size={12} />
+                                <Scale size={16} />
                                 <span className={cn("sm:inline", isWeeklyBalanceHintActive ? "inline" : "hidden")}>DENGELE</span>
                             </button>
                             {showFlavorTune && (
@@ -502,10 +506,10 @@ function MacroDashboard({ totals, targets, isVisible, onClose, days, patientInfo
                                         const event = new CustomEvent('trigger-weekly-flavor');
                                         window.dispatchEvent(event);
                                     }}
-                                    className="relative h-5 sm:h-4.5 px-2.5 rounded-md text-[10px] sm:text-xs font-bold transition-all flex justify-center items-center gap-1.5 shadow-[0_4px_20px_-2px_rgba(249,115,22,0.35)] hover:shadow-[0_6px_30px_-2px_rgba(249,115,22,0.55)] bg-gradient-to-br from-amber-500 via-orange-500 to-red-500 hover:from-amber-600 hover:via-orange-600 hover:to-red-600 text-white shrink-0 hover:scale-[1.02] active:scale-95"
+                                    className="relative h-8 px-3 rounded-md text-xs font-bold transition-all flex justify-center items-center gap-1.5 shadow-[0_4px_20px_-2px_rgba(249,115,22,0.35)] hover:shadow-[0_6px_30px_-2px_rgba(249,115,22,0.55)] bg-gradient-to-br from-amber-500 via-orange-500 to-red-500 hover:from-amber-600 hover:via-orange-600 hover:to-red-600 text-white shrink-0 hover:scale-[1.02] active:scale-95"
                                     title="Haftalık Lezzet Ayarı"
                                 >
-                                    <UtensilsCrossed size={12} />
+                                    <UtensilsCrossed size={16} />
                                     <span className="hidden sm:inline">LEZZET</span>
                                 </button>
                             )}
@@ -584,18 +588,18 @@ function MacroDashboard({ totals, targets, isVisible, onClose, days, patientInfo
                                     window.dispatchEvent(event);
                                 }}
                                 className={cn(
-                                    "relative h-5 sm:h-4.5 px-3 rounded-md text-[10px] sm:text-xs font-bold transition-all flex justify-center items-center gap-1.5 shadow-[0_4px_20px_-2px_rgba(99,102,241,0.4)] hover:shadow-[0_6px_30px_-2px_rgba(99,102,241,0.6)] bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 hover:from-indigo-600 hover:via-purple-600 hover:to-pink-600 text-white shrink-0 hover:scale-[1.02] active:scale-95",
+                                    "relative h-8 px-3 rounded-md text-xs font-bold transition-all flex justify-center items-center gap-1.5 shadow-[0_4px_20px_-2px_rgba(99,102,241,0.4)] hover:shadow-[0_6px_30px_-2px_rgba(99,102,241,0.6)] bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 hover:from-indigo-600 hover:via-purple-600 hover:to-pink-600 text-white shrink-0 hover:scale-[1.02] active:scale-95",
                                     isDailyBalanceHintActive && "animate-bounce scale-110 ring-4 ring-fuchsia-300/90 ring-offset-2 ring-offset-white shadow-[0_0_0_5px_rgba(232,121,249,0.25),0_0_28px_8px_rgba(168,85,247,0.55)]"
                                 )}
                                 title="Günlük Makro Dengele"
                             >
                                 {isDailyBalanceHintActive && (
-                                    <span className="absolute -top-1 -right-1 inline-flex h-2.5 w-2.5">
+                                    <span className="absolute -top-1 -right-1 inline-flex h-3.5 w-3.5">
                                         <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white/90"></span>
-                                        <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-white"></span>
+                                        <span className="relative inline-flex h-3.5 w-3.5 rounded-full bg-white"></span>
                                     </span>
                                 )}
-                                <Scale size={12} />
+                                <Scale size={16} />
                                 <span className={cn("sm:inline", isDailyBalanceHintActive ? "inline" : "hidden")}>DENGELE</span>
                             </button>
                             {showFlavorTune && (
@@ -604,10 +608,10 @@ function MacroDashboard({ totals, targets, isVisible, onClose, days, patientInfo
                                         const event = new CustomEvent('trigger-daily-flavor');
                                         window.dispatchEvent(event);
                                     }}
-                                    className="relative h-5 sm:h-4.5 px-2.5 rounded-md text-[10px] sm:text-xs font-bold transition-all flex justify-center items-center gap-1.5 shadow-[0_4px_20px_-2px_rgba(249,115,22,0.35)] hover:shadow-[0_6px_30px_-2px_rgba(249,115,22,0.55)] bg-gradient-to-br from-amber-500 via-orange-500 to-red-500 hover:from-amber-600 hover:via-orange-600 hover:to-red-600 text-white shrink-0 hover:scale-[1.02] active:scale-95"
+                                    className="relative h-8 px-3 rounded-md text-xs font-bold transition-all flex justify-center items-center gap-1.5 shadow-[0_4px_20px_-2px_rgba(249,115,22,0.35)] hover:shadow-[0_6px_30px_-2px_rgba(249,115,22,0.55)] bg-gradient-to-br from-amber-500 via-orange-500 to-red-500 hover:from-amber-600 hover:via-orange-600 hover:to-red-600 text-white shrink-0 hover:scale-[1.02] active:scale-95"
                                     title="Günlük Lezzet Ayarı"
                                 >
-                                    <UtensilsCrossed size={12} />
+                                    <UtensilsCrossed size={16} />
                                     <span className="hidden sm:inline">LEZZET</span>
                                 </button>
                             )}
@@ -721,7 +725,7 @@ function WeeklyPerformanceReport({ days, patientInfo, activeWeek, activeDietType
                     {/* Y-Axis Target Label */}
                     {targetBaseline > 0 && (
                         <div
-                            className="absolute -left-10 px-1 py-0.5 bg-green-50 text-green-700 text-[9px] font-bold rounded border border-green-100 whitespace-nowrap z-30"
+                            className="absolute -left-10 px-1 py-0.5 bg-green-50 text-green-700 text-[12px] font-bold rounded border border-green-100 whitespace-nowrap z-30"
                             style={{ bottom: `${(targetBaseline / maxVal) * 100}%`, transform: 'translateY(50%)' }}
                         >
                             {Math.round(targetBaseline)}{selectedMetric.unit}
@@ -814,6 +818,29 @@ function formatDateISO(date: Date): string {
     return date.toISOString().split('T')[0]
 }
 
+function CascadeButton({ globalIndex, onClick, showSwapUI, className }: { globalIndex: number, onClick: (e: any) => void, showSwapUI: boolean, className?: string }) {
+    const [isSpinning, setIsSpinning] = useState(false);
+    useEffect(() => {
+        const startTimer = setTimeout(() => setIsSpinning(true), globalIndex * 150 + 100);
+        const endTimer = setTimeout(() => setIsSpinning(false), globalIndex * 150 + 1100);
+        return () => { clearTimeout(startTimer); clearTimeout(endTimer); }
+    }, [globalIndex]);
+
+    return (
+        <button
+            onClick={onClick}
+            className={cn(
+                className,
+                "absolute right-0 top-1/2 -translate-y-1/2 z-10 w-7 h-7 rounded-full flex items-center justify-center transition-all duration-1000 border",
+                isSpinning ? "bg-emerald-500 text-white border-emerald-500 rotate-[360deg] shadow-lg shadow-emerald-500/40" : "bg-white/50 border-slate-200 text-slate-500 hover:bg-white/80 hover:text-slate-700 shadow-[0_2px_8px_-2px_rgba(0,0,0,0.05)] rotate-0",
+                showSwapUI && "text-amber-500 border-amber-200/50 hover:bg-amber-50/80 hover:text-amber-600"
+            )}
+        >
+            {showSwapUI ? <RotateCcw size={13} strokeWidth={2.5} /> : <RefreshCw size={13} strokeWidth={2.5} className={cn(isSpinning && "animate-spin")} />}
+        </button>
+    );
+}
+
 export default function PatientPlanPage() {
     const { user, profile, signOut } = useAuth()
     const scalableUnits = useScalableUnits()
@@ -839,6 +866,46 @@ export default function PatientPlanPage() {
     const [patientMedicationRules, setPatientMedicationRules] = useState<any[]>([])
     const initialDaySelected = useRef(false)
 
+    // Swipe to change day
+    const touchStartX = useRef<number | null>(null)
+    const touchStartY = useRef<number | null>(null)
+
+    const onTouchStart = (e: React.TouchEvent) => {
+        touchStartX.current = e.targetTouches[0].clientX
+        touchStartY.current = e.targetTouches[0].clientY
+    }
+
+    const onTouchMove = (e: React.TouchEvent) => {
+        if (touchStartX.current === null || touchStartY.current === null) return
+        const touchEndX = e.targetTouches[0].clientX
+        const touchEndY = e.targetTouches[0].clientY
+        
+        const distanceX = touchStartX.current - touchEndX
+        const distanceY = Math.abs(touchStartY.current - touchEndY)
+        
+        if (distanceY > Math.abs(distanceX)) {
+            touchStartX.current = null
+            touchStartY.current = null
+            return
+        }
+    }
+
+    const onTouchEnd = (e: React.TouchEvent) => {
+        if (touchStartX.current === null || touchStartY.current === null) return
+        
+        const touchEndX = e.changedTouches[0].clientX
+        const distanceX = touchStartX.current - touchEndX
+        
+        if (distanceX > 60) {
+            setSelectedDayIndex(prev => prev < weekDays.length - 1 ? prev + 1 : 0)
+        } else if (distanceX < -60) {
+            setSelectedDayIndex(prev => prev > 0 ? prev - 1 : weekDays.length - 1)
+        }
+        
+        touchStartX.current = null
+        touchStartY.current = null
+    }
+
     // Recipe Integration
     const { manualMatches, bans, cards } = useRecipeManager()
     const [selectedRecipe, setSelectedRecipe] = useState<{ url: string, name: string } | null>(null)
@@ -848,6 +915,8 @@ export default function PatientPlanPage() {
     // We need the WHOLE meal (slot) context for Main Dish detection
     const [swapSheetOpen, setSwapSheetOpen] = useState(false)
     const [foodToSwap, setFoodToSwap] = useState<{ mealId: string, food: DietFood, slotFoods?: DietFood[] } | null>(null)
+
+    let globalFoodIdx = 0;
     const [smartSwapData, setSmartSwapData] = useState<{ isOpen: boolean, matchCount: number, slotName: string, newFood: any, oldFoodName: string, targetIds: string[], originalId: string | null, matchingCoords: any[] } | null>(null)
     // Store original custom food state before swapping (for revert)
     const [originalCustomFoods, setOriginalCustomFoods] = useState<Map<string, DietFood>>(new Map())
@@ -1260,6 +1329,7 @@ export default function PatientPlanPage() {
     // Foods database for adding new meals
     const [allFoods, setAllFoods] = useState<any[]>([])
     const [inlineSearchOpen, setInlineSearchOpen] = useState<string | null>(null)
+    const [expandedFoodId, setExpandedFoodId] = useState<string | null>(null)
     const [isMealTemplateModalOpen, setIsMealTemplateModalOpen] = useState(false)
     const [isEditingWeek, setIsEditingWeek] = useState(false)
     const macroPrioritiesCacheRef = useRef<{
@@ -4951,7 +5021,7 @@ export default function PatientPlanPage() {
                                                 {activeWeek?.week_number || 1}. Hafta
                                             </span>
                                             {activeWeek?.start_date && (
-                                                <span className="text-[9px] sm:text-[10px] font-medium text-slate-500 whitespace-nowrap">
+                                                <span className="text-[12px] sm:text-[10px] font-medium text-slate-500 whitespace-nowrap">
                                                     {new Date(activeWeek.start_date).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' })}
                                                     {activeWeek.end_date ? ` - ${new Date(activeWeek.end_date).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' })}` : ''}
                                                 </span>
@@ -4981,10 +5051,10 @@ export default function PatientPlanPage() {
                                                 <div className="flex items-center gap-2">
                                                     <span className="text-sm font-bold">{w.week_number}. Hafta</span>
                                                     {w.id === currentWeekId && (
-                                                        <span className="text-[9px] font-black bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-md uppercase tracking-tighter">Mevcut</span>
+                                                        <span className="text-[12px] font-black bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-md uppercase tracking-tighter">Mevcut</span>
                                                     )}
                                                     {currentWeekNumber !== null && w.week_number === currentWeekNumber + 1 && (
-                                                        <span className="text-[9px] font-black bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-md uppercase tracking-tighter">Gelecek</span>
+                                                        <span className="text-[12px] font-black bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-md uppercase tracking-tighter">Gelecek</span>
                                                     )}
                                                 </div>
                                                 {activeWeek?.id === w.id && <Check className="h-3 w-3 text-emerald-600" />}
@@ -5035,11 +5105,10 @@ export default function PatientPlanPage() {
                     <div className="flex items-center gap-2 shrink-0">
                         <Button
                             onClick={() => window.dispatchEvent(new CustomEvent('trigger-autoplan'))}
-                            className="h-9 sm:h-10 px-3 sm:px-4 bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 text-white shadow-md shadow-indigo-200/50 rounded-xl font-bold text-xs sm:text-sm flex items-center gap-1.5 transition-all"
+                            className="hidden sm:flex h-9 sm:h-10 px-3 sm:px-4 bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 text-white shadow-md shadow-indigo-200/50 rounded-xl font-bold text-xs sm:text-sm items-center gap-1.5 transition-all"
                         >
                             <Wand2 className="h-4 w-4" />
-                            <span className="hidden sm:inline">Otomatik Planla</span>
-                            <span className="sm:hidden">Planla</span>
+                            <span>Otomatik Planla</span>
                         </Button>
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
@@ -5188,7 +5257,7 @@ export default function PatientPlanPage() {
                     <>
 
                         {/* â”€â”€ STICKY TOP REGION (Day Selector + Dashboard + Menu Header) â”€â”€ */}
-                        <div className="sticky top-[73px] sm:top-[74px] z-[40] bg-gray-50 flex flex-col shadow-[0_4px_10px_-5px_rgba(0,0,0,0.1)] rounded-b-xl border-b border-gray-200/60 pb-1.5 transition-all">
+                        <div className="relative sm:sticky sm:top-[74px] z-[40] bg-gray-50 flex flex-col shadow-[0_4px_10px_-5px_rgba(0,0,0,0.1)] rounded-b-xl border-b border-gray-200/60 pb-1.5 transition-all">
                             
                             {/* Day Selector & Action Buttons (Combined) */}
                             <div className="bg-white border-b border-gray-100 px-2 py-1.5 flex items-center justify-between shadow-sm z-50 rounded-t-xl sm:rounded-none">
@@ -5325,11 +5394,17 @@ export default function PatientPlanPage() {
                         </div>
 
                         {/* Meals List - Contents */}
-                        <div className="space-y-3 px-1.5 pb-24 mt-3" style={{ zIndex: 1, position: 'relative' }}>
+                        <div 
+                            className="space-y-6 px-1.5 pb-[60vh] mt-4" 
+                            style={{ zIndex: 1, position: 'relative' }}
+                            onTouchStart={onTouchStart}
+                            onTouchMove={onTouchMove}
+                            onTouchEnd={onTouchEnd}
+                        >
 
                             {currentDay?.diet_meals.map((meal: any, mealIdx) => (
                                 <Card key={meal.id} className="overflow-hidden border border-gray-200 shadow-sm bg-white mb-0 p-0 gap-0">
-                                    <div className="pt-1 px-1.5 pb-1">
+                                    <div className="pt-2 px-1.5 pb-2">
                                         {/* Unified Header & Content */}
                                         <div className="flex flex-col gap-0.5">
                                             {/* Meal Badge Header */}
@@ -5342,26 +5417,10 @@ export default function PatientPlanPage() {
                                                 )}>
                                                     {meal.meal_name}
                                                     <span className="w-1 h-1 rounded-full bg-current opacity-50" />
-                                                    <span className="text-[8px] opacity-70 font-bold">{meal.time}</span>
+                                                    <span className="text-[11px] opacity-70 font-bold">{meal.time}</span>
                                                 </div>
 
-                                                <PhotoMealLogModal
-                                                    dayId={currentDay.id}
-                                                    mealTime={meal.meal_time}
-                                                    patientDietType={activeDietType?.name || patientInfo?.diet_type}
-                                                    patientId={patientInfo?.id}
-                                                    onSave={() => setRefreshTrigger(prev => prev + 1)}
-                                                    trigger={
-                                                        <span className="relative flex h-6 w-6 ml-2">
-                                                            {(meal.diet_foods.length === 0 || (highlightSequence.isActive && highlightSequence.activeIndex === mealIdx)) && (
-                                                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-300 opacity-75"></span>
-                                                            )}
-                                                            <button className={cn("relative h-6 w-6 flex items-center justify-center rounded-full bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all border border-blue-100 shadow-sm", (meal.diet_foods.length === 0 || (highlightSequence.isActive && highlightSequence.activeIndex === mealIdx)) ? "animate-pulse ring-2 ring-blue-200 ring-offset-1" : "")} title="Fotoğraf ile Ekle">
-                                                                <Camera size={14} />
-                                                            </button>
-                                                        </span>
-                                                    }
-                                                />
+
 
                                                 {/* Removed Daily Total Calories Badge from here */}
                                             </div>
@@ -5386,14 +5445,12 @@ export default function PatientPlanPage() {
                                                         } catch (e) { }
 
                                                         const isAiSearch = source === 'ai_text' || source === 'patient_ai_search'
-                                                        // Handle various ways a photo log might be represented:
-                                                        // 1. Explicitly marked in notes (latest method)
-                                                        // 2. Legacy photo flag in notes
-                                                        // 3. Fallback for older items that were custom but we don't know the exact source
-                                                        const isPhoto = source === 'ai_photo' || source === 'legacy_photo' ||
-                                                            (f.is_custom && !isAiSearch && (f.swapped_by === 'patient' && f.original_food_id === null))
 
-                                                        const isPatientSwap = f.swapped_by === 'patient' && f.original_food_id !== null
+                                                        // Handle various ways a photo log might be represented:
+                                                        const isPhoto = source === 'ai_photo' || source === 'legacy_photo' ||
+                                                            (food.is_custom && !isAiSearch && (food.swapped_by === 'patient' && food.original_food_id === null))
+
+                                                        const isPatientSwap = food.swapped_by === 'patient' && food.original_food_id !== null
 
                                                         if (isAiSearch) return 'ai_search'
                                                         if (isPhoto) return 'photo'
@@ -5403,11 +5460,135 @@ export default function PatientPlanPage() {
 
                                                     const sourceType = getSourceType(food)
 
+                                                    const currentGlobalIdx = globalFoodIdx++;
+
                                                     return (
+                                                        <div key={food.id} className="contents">
+                                                        {/* === MOBILE FOOD ROW === */}
+                                                        <div className={cn(
+                                                            "md:hidden relative rounded-xl transition-all duration-200 mt-2 ml-3",
+                                                            food.swapped_by === 'patient' && "ring-1 ring-blue-100/50",
+                                                            idx !== meal.diet_foods.length - 1 && "mb-3"
+                                                        )}>
+
+                                                            {/* Main Card Content */}
+                                                            <div 
+                                                                className={cn(
+                                                                    "py-3 pl-2 pr-2 rounded-xl cursor-pointer active:scale-[0.99] transition-all min-h-[3rem]",
+                                                                    expandedFoodId === food.id ? "bg-slate-50/80 shadow-md ring-1 ring-slate-200/80" : "bg-white shadow-sm ring-1 ring-gray-100 hover:bg-gray-50/50",
+                                                                    !food.is_consumed && "opacity-60 grayscale-[0.2]",
+                                                                    food.swapped_by === 'patient' && "bg-blue-50/30"
+                                                                )}
+                                                                onClick={() => setExpandedFoodId(prev => prev === food.id ? null : food.id)}
+                                                            >
+                                                                <div className="flex items-center gap-2.5 relative">
+                                                                    {/* Toggle Consumed Button */}
+                                                                    <button
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation()
+                                                                            toggleMealConsumed(food.id, food.is_consumed || false)
+                                                                        }}
+                                                                        className={cn(
+                                                                            "w-6 h-6 shrink-0 rounded-full flex items-center justify-center shadow-sm transition-colors border -ml-5",
+                                                                            food.is_consumed 
+                                                                                ? "bg-emerald-500 text-white border-emerald-600" 
+                                                                                : "bg-white text-gray-300 border-gray-200 hover:bg-gray-50"
+                                                                        )}
+                                                                    >
+                                                                        {food.is_consumed && <Check size={12} strokeWidth={3} />}
+                                                                    </button>
+
+                                                                    {/* Food Name */}
+                                                                    <span className="text-[13px] font-medium leading-snug text-gray-800 flex-1">
+                                                                        {food.swapped_by === 'patient' && (
+                                                                            <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-blue-100 text-blue-600 mr-1.5 align-middle">
+                                                                                <User size={9} strokeWidth={3} />
+                                                                            </span>
+                                                                        )}
+                                                                        {capitalizeSentenceFirstTR(getScaledFoodName(food.food_name, food.amount || 1, scalableUnits))}
+                                                                    </span>
+
+                                                                    {/* Floating Alternative Button (Truly Transparent & Centered) */}
+                                                                    <CascadeButton
+                                                                        globalIndex={currentGlobalIdx}
+                                                                        showSwapUI={showSwapUI}
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation()
+                                                                            if (showSwapUI) {
+                                                                                handleRevert(meal.id, food)
+                                                                            } else {
+                                                                                handleSwapClick(meal.id, food, meal.diet_foods)
+                                                                            }
+                                                                        }}
+                                                                    />
+                                                                </div>
+
+                                                                {/* Expanded Detail Panel */}
+                                                                {expandedFoodId === food.id && (
+                                                                    <div className="w-full mt-3 animate-in slide-in-from-top-2 fade-in duration-200 flex flex-col gap-2">
+                                                                        {(() => {
+                                                                            const matchResults = findRecipeMatch(
+                                                                                food.food_name,
+                                                                                manualMatches || [],
+                                                                                bans || [],
+                                                                                cards || [],
+                                                                                !!(food.image_url || food.food_meta?.source === 'user_proposal' || food.is_custom)
+                                                                            )
+                                                                            
+                                                                            return (
+                                                                                <>
+                                                                                    {/* Recipe Card (if any) */}
+                                                                                    {matchResults.length > 0 && (
+                                                                                        <div 
+                                                                                            className="bg-emerald-50 rounded-xl p-3 flex items-center justify-between border border-emerald-100 cursor-pointer hover:bg-emerald-100 transition-colors shadow-sm"
+                                                                                            onClick={(e) => {
+                                                                                                e.stopPropagation()
+                                                                                                setSelectedRecipe({ url: matchResults[0].url, name: matchResults[0].filename })
+                                                                                                setRecipeDialogOpen(true)
+                                                                                            }}
+                                                                                        >
+                                                                                            <div className="flex flex-col gap-0.5">
+                                                                                                <span className="text-sm font-bold text-emerald-700">Tarifi Görüntüle</span>
+                                                                                                <span className="text-[11px] font-medium text-emerald-600/80">{matchResults[0].filename}</span>
+                                                                                            </div>
+                                                                                            <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600">
+                                                                                                <BookOpenText size={16} />
+                                                                                            </div>
+                                                                                        </div>
+                                                                                    )}
+
+                                                                                    {/* Simple Macros with Delete Button */}
+                                                                                    <div className="flex justify-between items-center w-full pt-2 border-t border-gray-100/80">
+                                                                                        <div className="flex flex-wrap justify-center items-center gap-x-3 gap-y-1 text-[11px] font-medium text-gray-500 flex-1">
+                                                                                            <span><strong className="text-gray-800 font-bold">{Math.round((food.calories || 0) * (food.amount || food.portion_multiplier || 1))}</strong> kcal</span>
+                                                                                            <span>P: <strong className="text-gray-800 font-bold">{Math.round((food.protein || 0) * (food.amount || food.portion_multiplier || 1))}g</strong></span>
+                                                                                            <span>K: <strong className="text-gray-800 font-bold">{Math.round((food.carbs || 0) * (food.amount || food.portion_multiplier || 1))}g</strong></span>
+                                                                                            <span>Y: <strong className="text-gray-800 font-bold">{Math.round((food.fat || (food as any).fats || 0) * (food.amount || food.portion_multiplier || 1))}g</strong></span>
+                                                                                        </div>
+                                                                                        <button 
+                                                                                            onClick={(e) => {
+                                                                                                e.stopPropagation()
+                                                                                                handleDeleteMeal(food.id)
+                                                                                            }}
+                                                                                            className="shrink-0 ml-2 w-7 h-7 bg-red-50 hover:bg-red-100 text-red-500 border border-red-100 rounded-full flex items-center justify-center shadow-sm transition-colors"
+                                                                                            title="Yemeği Sil"
+                                                                                        >
+                                                                                            <Trash2 size={13} strokeWidth={2.5} />
+                                                                                        </button>
+                                                                                    </div>
+                                                                                </>
+                                                                            )
+                                                                        })()}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+
+                                                        {/* === DESKTOP FOOD ROW === */}
                                                         <div key={food.id} className={cn(
-                                                            "flex items-center justify-between px-1 py-1.5 hover:bg-gray-50 transition-colors group rounded-md -mx-1",
+                                                            "hidden md:flex items-center justify-between px-1 py-1.5 hover:bg-gray-50 transition-colors group rounded-md -mx-1",
                                                             food.swapped_by === 'patient' && "bg-blue-50/50 hover:bg-blue-100/50 border-blue-100/30 ring-1 ring-blue-100/20",
-                                                            idx === meal.diet_foods.length - 1 && "pb-0", // Zero padding for last item
+                                                            idx === meal.diet_foods.length - 1 && "pb-0",
                                                             idx !== meal.diet_foods.length - 1 && "border-b border-gray-50"
                                                         )}>
                                                             <div className="flex items-center gap-2 pr-1">
@@ -5479,7 +5660,6 @@ export default function PatientPlanPage() {
                                                                             <User size={10} strokeWidth={3} />
                                                                         </div>
                                                                     )}
-                                                                    {/* Recipe Icons Logic */}
                                                                     {(() => {
                                                                         const hasCustomImage = !!food.image_url
                                                                         const isUserProposal = food.food_meta?.source === 'user_proposal'
@@ -5495,7 +5675,7 @@ export default function PatientPlanPage() {
                                                                         if (matchResults.length > 0) {
                                                                             return (
                                                                                 <div className="flex -space-x-1 shrink-0">
-                                                                                    {matchResults.map((match, idx) => (
+                                                                                    {matchResults.map((match, mIdx) => (
                                                                                         <Button
                                                                                             key={match.id}
                                                                                             variant="ghost"
@@ -5511,7 +5691,7 @@ export default function PatientPlanPage() {
                                                                                             <BookOpenText className="h-3 w-3" />
                                                                                             {matchResults.length > 1 && (
                                                                                                 <span className="absolute bottom-0 right-0 text-[6px] font-bold bg-white/80 rounded-full px-0.5 leading-none border border-amber-200">
-                                                                                                    {idx + 1}
+                                                                                                    {mIdx + 1}
                                                                                                 </span>
                                                                                             )}
                                                                                         </Button>
@@ -5553,16 +5733,15 @@ export default function PatientPlanPage() {
                                                                 <div className="flex flex-col items-end justify-center h-full min-w-[3rem]">
                                                                     <span className="text-[11px] font-bold text-gray-700 tabular-nums leading-none">
                                                                         {Math.round((food.calories || 0) * (food.amount || food.portion_multiplier || 1))}
-                                                                        <span className="text-[8px] text-gray-400">kcal</span>
+                                                                        <span className="text-[11px] text-gray-400">kcal</span>
                                                                     </span>
-                                                                    <div className="flex gap-1 text-[8px] text-gray-400 font-medium leading-none mt-1">
+                                                                    <div className="flex gap-1 text-[11px] text-gray-400 font-medium leading-none mt-1">
                                                                         <span>P{Math.round((food.protein || 0) * (food.amount || food.portion_multiplier || 1))}</span>
                                                                         <span>K{Math.round((food.carbs || 0) * (food.amount || food.portion_multiplier || 1))}</span>
                                                                         <span>Y{Math.round((food.fat || (food as any).fats || 0) * (food.amount || food.portion_multiplier || 1))}</span>
                                                                     </div>
                                                                 </div>
 
-                                                                {/* Swap / Revert Button */}
                                                                 <Button
                                                                     variant="ghost"
                                                                     size="icon"
@@ -5575,17 +5754,16 @@ export default function PatientPlanPage() {
                                                                         }
                                                                     }}
                                                                     className={cn(
-                                                                        "h-6 w-6 rounded-full transition-all ml-1",
+                                                                        "h-8 w-8 min-w-[32px] rounded-full transition-all ml-1",
                                                                         showSwapUI
                                                                             ? "bg-amber-50 text-amber-600 hover:bg-amber-100 ring-1 ring-amber-200"
                                                                             : "text-gray-300 hover:text-green-600 hover:bg-green-50"
                                                                     )}
                                                                     title={showSwapUI ? "Orijinale Dön" : "Alternatifiyle Değiştir"}
                                                                 >
-                                                                    {showSwapUI ? <RotateCcw size={12} className="animate-in fade-in zoom-in duration-300" /> : <ArrowRightLeft size={12} />}
+                                                                    {showSwapUI ? <RotateCcw size={16} className="animate-in fade-in zoom-in duration-300" /> : <ArrowRightLeft size={16} />}
                                                                 </Button>
 
-                                                                {/* Delete Button */}
                                                                 <Button
                                                                     variant="ghost"
                                                                     size="icon"
@@ -5593,14 +5771,16 @@ export default function PatientPlanPage() {
                                                                         e.stopPropagation()
                                                                         handleDeleteMeal(food.id)
                                                                     }}
-                                                                    className="h-6 w-6 rounded-full text-gray-300 hover:text-red-600 hover:bg-red-50 transition-all ml-1"
+                                                                    className="h-8 w-8 min-w-[32px] rounded-full text-gray-300 hover:text-red-600 hover:bg-red-50 transition-all ml-1"
                                                                     title="Yemeği Sil"
                                                                 >
-                                                                    <Trash2 size={12} />
+                                                                    <Trash2 size={16} />
                                                                 </Button>
                                                             </div>
                                                         </div>
+                                                        </div>
                                                     )
+
                                                 })}
                                             </div>
                                         </div>
@@ -5643,7 +5823,7 @@ export default function PatientPlanPage() {
                                             }, 0) || 0
                                             const fGap = Math.max(0, targetFat - dayFat)
                                             return (
-                                                <div className="mt-0 flex items-center gap-1">
+                                                <div className="mt-3 ml-3 md:mt-2 md:ml-0 flex items-center gap-1.5">
                                                     <FoodSearchSelector
                                                         open={inlineSearchOpen === `${currentDay!.id}-${meal.meal_time}`}
                                                         patientId={patientInfo?.id}
@@ -5761,31 +5941,44 @@ export default function PatientPlanPage() {
                                                                 else if (activeWeek) fetchWeekDays(activeWeek.id)
                                                             }
                                                         }}
-                                                        trigger={
-                                                            <button className={cn(
-                                                                "flex-1 py-1.5 px-3 rounded-lg border transition-all flex items-center gap-2 group",
-                                                                (meal.diet_foods.length === 0 || (highlightSequence.isActive && highlightSequence.activeIndex === mealIdx))
-                                                                    ? "border-yellow-400 bg-yellow-100/80 text-yellow-800 animate-pulse ring-2 ring-yellow-200 ring-offset-1 shadow-sm font-bold"
-                                                                    : "border-dashed border-gray-200 hover:border-green-400 hover:bg-green-50 text-gray-400 hover:text-green-600"
-                                                            )}>
-                                                                <Search size={14} className={cn("transition-transform", (meal.diet_foods.length === 0 || (highlightSequence.isActive && highlightSequence.activeIndex === mealIdx)) ? "text-yellow-700 animate-bounce" : "group-hover:scale-110")} />
-                                                                <span className={cn("text-xs", (meal.diet_foods.length === 0 || (highlightSequence.isActive && highlightSequence.activeIndex === mealIdx)) ? "font-bold" : "font-medium")}>
-                                                                    {meal.diet_foods.length === 0 ? "Buradan Yemek Ekleyebilirsiniz..." : "Yemek Ara..."}
-                                                                </span>
-                                                            </button>
-                                                        }
+                                                        trigger={null}
+                                                        variant="inline"
                                                     />
                                                     <button
                                                         onClick={() => setInlineSearchOpen(`${currentDay!.id}-${meal.meal_time}`)}
                                                         className={cn(
-                                                            "py-1.5 px-3 rounded-lg border transition-all flex items-center gap-2 group shrink-0",
+                                                            "py-3 px-3 rounded-xl transition-all flex items-center justify-center group shrink-0 bg-white shadow-sm ring-1 ring-gray-100 hover:bg-gray-50/50 cursor-pointer",
                                                             (meal.diet_foods.length === 0 || (highlightSequence.isActive && highlightSequence.activeIndex === mealIdx))
-                                                                ? "border-yellow-400 bg-yellow-100/80 text-yellow-800 animate-pulse ring-2 ring-yellow-200 ring-offset-1 shadow-sm"
-                                                                : "border-dashed border-gray-200 hover:border-green-400 hover:bg-green-50 text-gray-400 hover:text-green-600"
+                                                                ? "border-yellow-400 bg-yellow-100/80 text-yellow-800 animate-pulse ring-2 ring-yellow-200 ring-offset-1"
+                                                                : "text-gray-400 hover:text-green-600"
                                                         )}
+                                                        title="Metin ile Ara"
                                                     >
-                                                        <Plus size={14} className="group-hover:scale-110 transition-transform" />
+                                                        <Plus size={18} className="group-hover:scale-110 transition-transform" />
                                                     </button>
+                                                    <PhotoMealLogModal
+                                                        dayId={currentDay!.id}
+                                                        mealTime={meal.meal_time}
+                                                        patientDietType={activeDietType?.name || patientInfo?.diet_type}
+                                                        patientId={patientInfo?.id || ''}
+                                                        onSave={() => {
+                                                            setRefreshTrigger(prev => prev + 1)
+                                                            if (activeWeek) fetchWeekDays(activeWeek.id)
+                                                        }}
+                                                        trigger={
+                                                            <button 
+                                                                className={cn(
+                                                                    "py-3 px-3 rounded-xl transition-all flex items-center justify-center group shrink-0 bg-white shadow-sm ring-1 ring-gray-100 hover:bg-gray-50/50 cursor-pointer",
+                                                                    (meal.diet_foods.length === 0 || (highlightSequence.isActive && highlightSequence.activeIndex === mealIdx))
+                                                                        ? "border-blue-400 bg-blue-100/80 text-blue-800 animate-pulse ring-2 ring-blue-200 ring-offset-1"
+                                                                        : "text-gray-400 hover:text-blue-600"
+                                                                )}
+                                                                title="Fotoğraf ile Ekle"
+                                                            >
+                                                                <Camera size={18} className="group-hover:scale-110 transition-transform" />
+                                                            </button>
+                                                        }
+                                                    />
                                                 </div>
                                             )
                                         })()}

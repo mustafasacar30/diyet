@@ -63,7 +63,7 @@ export function ChatLayout({
     }
 
     return (
-        <div className={cn("flex h-[calc(100vh-8rem)] w-full overflow-hidden border rounded-xl bg-white shadow-sm", className)}>
+        <div className={cn("flex h-[calc(100dvh-8rem)] w-full overflow-hidden border rounded-xl bg-white shadow-sm", className)}>
             {activeConv && activeConv.type === 'group' && (
                 <GroupDetailsDialog
                     open={isGroupDetailsOpen}

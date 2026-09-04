@@ -226,7 +226,7 @@ export default function AdminUsersPage() {
                                                 <DropdownMenuItem onClick={() => handleImpersonate(user)}>
                                                     <UserCog className="mr-2 h-4 w-4" /> Kullanıcı Olarak Gir
                                                 </DropdownMenuItem>
-                                                <DropdownMenuItem onClick={() => router.push(/admin/messages?targetUserId=)}>
+                                                <DropdownMenuItem onClick={() => router.push(`/admin/messages?targetUserId=${user.id}`)}>
                                                     <MessageCircle className="mr-2 h-4 w-4" /> Mesaj Gönder
                                                 </DropdownMenuItem>
                                                 <DropdownMenuItem onClick={() => { setSelectedUser(user); setIsUpdateOpen(true); }}>
@@ -240,7 +240,7 @@ export default function AdminUsersPage() {
                                                 <DropdownMenuSeparator />
                                                 <DropdownMenuLabel className="text-xs text-gray-400 font-normal">Güvenlik</DropdownMenuLabel>
                                                 <DropdownMenuItem onClick={async () => {
-                                                    if (!confirm(${user.full_name} kullanıcısının kayıtlı cihazlarını sıfırlamak istiyor musunuz?)) return;
+                                                    if (!confirm(`"${user.full_name}" kullanıcısının kayıtlı cihazlarını sıfırlamak istiyor musunuz?`)) return;
                                                     const { error } = await supabase.rpc('admin_reset_devices', { _target_user_id: user.id });
                                                     if (error) alert("Hata: " + error.message);
                                                     else alert("Cihazlar sıfırlandı.");

@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'query (string) required' }, { status: 400 });
         }
 
-        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
         const calorieHint = calorieGap ? `\nKullanıcının kalori açığı yaklaşık ${Math.round(calorieGap)} kcal. Bulabilirsen bu kaloriye yakın porsiyonlar veya varyasyonlar öner, ancak asıl önceliğin "${query}" içeriğidir.` : '';
 

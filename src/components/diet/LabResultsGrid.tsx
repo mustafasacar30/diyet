@@ -451,8 +451,53 @@ export default function LabResultsGrid({ patientId, onClose, readOnly = false }:
                 </div>
             </div>
 
+            {/* Mobile Card View */}
+            <div className="md:hidden space-y-3 max-h-[55vh] overflow-y-auto px-1 mb-4">
+                {(() => {
+                    const allParams = [...mikrobesinler, ...kanTahlilleri]
+                    if (allParams.length === 0) return <p className="text-sm text-gray-500 text-center py-8">Henüz tahlil sonucu bulunmuyor.</p>
+                    return allParams.map((param) => {
+                        return (
+                            <div key={param.id} className="bg-white border border-gray-100 rounded-xl p-4 shadow-sm">
+                                <div className="flex items-center justify-between mb-2">
+                                    <span className="font-semibold text-sm text-gray-800">{param.name}</span>
+                                    {param.unit && <span className="text-xs text-gray-400">{param.unit}</span>}
+                                </div>
+                                <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+                                    {isAddingDate && (
+                                        <div className="flex-shrink-0 bg-indigo-50 rounded-lg px-3 py-2 min-w-[80px] text-center border border-indigo-100">
+                                            <div className="text-[10px] text-indigo-400 mb-1">{formatDate(newDate)} (Yeni)</div>
+                                            <div className="text-sm font-bold text-gray-800">
+                                                <Input
+                                                    type="number"
+                                                    step="any"
+                                                    value={newValues[param.id] || ''}
+                                                    onChange={e => setNewValues({ ...newValues, [param.id]: e.target.value })}
+                                                    className="h-7 w-full text-center text-sm"
+                                                    placeholder="-"
+                                                />
+                                            </div>
+                                        </div>
+                                    )}
+                                    {uniqueDates.map((date: string) => {
+                                        return (
+                                            <div key={date} className={`flex-shrink-0 rounded-lg px-3 py-2 min-w-[80px] text-center ${editingColumn === date ? 'bg-amber-50 border border-amber-100' : 'bg-gray-50'}`}>
+                                                <div className="text-[10px] text-gray-400 mb-1">{formatDate(date)}</div>
+                                                <div className="text-sm font-bold text-gray-800 flex justify-center items-center h-7">
+                                                    {renderCell(param, date)}
+                                                </div>
+                                            </div>
+                                        )
+                                    })}
+                                </div>
+                            </div>
+                        )
+                    })
+                })()}
+            </div>
+
             {/* Excel-like Table */}
-            <div className="border border-gray-300 rounded overflow-auto max-h-[55vh]">
+            <div className="hidden md:block border border-gray-300 rounded overflow-auto max-h-[55vh]">
                 <table className="w-full border-collapse text-sm">
                     <thead className="sticky top-0 z-10 bg-gray-100">
                         <tr>

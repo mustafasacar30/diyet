@@ -505,7 +505,40 @@ export function PatientMeasurements({ patientId, readOnly = false }: { patientId
                 </div>
             </CardHeader>
             <CardContent className="px-0 flex-1 min-h-0 overflow-hidden flex flex-col">
-                <div className="border rounded-md flex-1 overflow-hidden flex flex-col relative w-full">
+                {/* Mobile Card View */}
+                <div className="md:hidden space-y-4 px-4 pb-4 overflow-y-auto">
+                    {loading ? (
+                        <div className="p-8 flex justify-center"><Loader2 className="animate-spin text-gray-400" /></div>
+                    ) : logs.length === 0 ? (
+                        <div className="p-8 text-center text-muted-foreground">Kayıtlı ölçüm bulunamadı.</div>
+                    ) : (
+                        visibleDefs.map(def => (
+                            <div key={def.id} className="bg-white border border-gray-100 rounded-xl p-4 shadow-sm">
+                                <div className="flex items-center justify-between mb-2">
+                                    <span className="font-semibold text-sm text-gray-800">{def.name}</span>
+                                    <span className="text-xs text-gray-400">{def.unit}</span>
+                                </div>
+                                <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+                                    {(() => {
+                                        const sortedLogs = [...logs].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+                                        return sortedLogs.map(log => {
+                                            const val = log.values[def.id]
+                                            const logDate = new Date(log.date)
+                                            return (
+                                                <div key={`${log.id}-${def.id}`} className="flex-shrink-0 bg-gray-50 rounded-lg px-3 py-2 min-w-[80px] text-center">
+                                                    <div className="text-[10px] text-gray-400 mb-1">{format(logDate, 'dd.MM.yy')}</div>
+                                                    <div className="text-sm font-bold text-gray-800">{val !== undefined ? val : '-'}</div>
+                                                </div>
+                                            )
+                                        })
+                                    })()}
+                                </div>
+                            </div>
+                        ))
+                    )}
+                </div>
+
+                <div className="hidden md:flex border rounded-md flex-1 overflow-hidden flex-col relative w-full">
                     <ScrollArea className="flex-1 w-full max-w-[100vw] sm:max-w-none">
                         <div className="min-w-max pb-4">
                             {loading ? (
