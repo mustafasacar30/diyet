@@ -4971,7 +4971,7 @@ export default function PatientPlanPage() {
     return (
         <div className="flex flex-col h-full bg-gray-50 min-h-screen">
             {/* Custom Sticky Header - Redesigned Mobile-First Layout */}
-            <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-gray-100 shadow-sm px-4 py-4 shrink-0">
+            <header className="relative sm:sticky sm:top-0 z-30 bg-white/95 backdrop-blur-md border-b border-gray-100 shadow-sm px-4 py-4 shrink-0">
                 <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
 
                     <div className="flex flex-col min-w-0 flex-1">
@@ -5257,7 +5257,7 @@ export default function PatientPlanPage() {
                     <>
 
                         {/* â”€â”€ STICKY TOP REGION (Day Selector + Dashboard + Menu Header) â”€â”€ */}
-                        <div className="relative sm:sticky sm:top-[74px] z-[40] bg-gray-50 flex flex-col shadow-[0_4px_10px_-5px_rgba(0,0,0,0.1)] rounded-b-xl border-b border-gray-200/60 pb-1.5 transition-all">
+                        <div className="sticky top-0 sm:top-[74px] z-[40] bg-gray-50 flex flex-col shadow-[0_4px_10px_-5px_rgba(0,0,0,0.1)] rounded-b-xl border-b border-gray-200/60 pb-1.5 transition-all">
                             
                             {/* Day Selector & Action Buttons (Combined) */}
                             <div className="bg-white border-b border-gray-100 px-2 py-1.5 flex items-center justify-between shadow-sm z-50 rounded-t-xl sm:rounded-none">
@@ -5324,19 +5324,6 @@ export default function PatientPlanPage() {
                                         )
                                     })()}
 
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={toggleDashboard}
-                                        className={cn(
-                                            "h-8 px-2 sm:px-2.5 font-bold transition-all rounded-lg border flex items-center gap-1 text-[10px] sm:text-[11px] shadow-sm",
-                                            isDashboardVisible
-                                                ? "bg-white border-gray-200 text-gray-600 hover:bg-gray-50 border-solid"
-                                                : "bg-purple-600 border-purple-700 text-white hover:bg-purple-700 shadow-[0_2px_10px_-2px_rgba(147,51,234,0.4)]"
-                                        )}
-                                    >
-                                        <span>ÖZET</span>
-                                    </Button>
 
                                     {/* PDF Download Button */}
                                     <Button
@@ -5395,7 +5382,7 @@ export default function PatientPlanPage() {
 
                         {/* Meals List - Contents */}
                         <div 
-                            className="space-y-6 px-1.5 pb-[60vh] mt-4" 
+                            className="space-y-6 px-1.5 pb-32 mt-4" 
                             style={{ zIndex: 1, position: 'relative' }}
                             onTouchStart={onTouchStart}
                             onTouchMove={onTouchMove}
@@ -5403,7 +5390,7 @@ export default function PatientPlanPage() {
                         >
 
                             {currentDay?.diet_meals.map((meal: any, mealIdx) => (
-                                <Card key={meal.id} className="overflow-hidden border border-gray-200 shadow-sm bg-white mb-0 p-0 gap-0">
+                                <Card key={meal.id} className="meal-section-container overflow-hidden border border-gray-200 shadow-sm bg-white mb-0 p-0 gap-0">
                                     <div className="pt-2 px-1.5 pb-2">
                                         {/* Unified Header & Content */}
                                         <div className="flex flex-col gap-0.5">
@@ -5945,7 +5932,16 @@ export default function PatientPlanPage() {
                                                         variant="inline"
                                                     />
                                                     <button
-                                                        onClick={() => setInlineSearchOpen(`${currentDay!.id}-${meal.meal_time}`)}
+                                                        onClick={(e) => {
+                                                            setInlineSearchOpen(`${currentDay!.id}-${meal.meal_time}`);
+                                                            // Scroll the meal container into view
+                                                            setTimeout(() => {
+                                                                const mealContainer = e.currentTarget.closest('.meal-section-container');
+                                                                if (mealContainer) {
+                                                                    mealContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                                                }
+                                                            }, 100);
+                                                        }}
                                                         className={cn(
                                                             "py-3 px-3 rounded-xl transition-all flex items-center justify-center group shrink-0 bg-white shadow-sm ring-1 ring-gray-100 hover:bg-gray-50/50 cursor-pointer",
                                                             (meal.diet_foods.length === 0 || (highlightSequence.isActive && highlightSequence.activeIndex === mealIdx))
@@ -6515,6 +6511,20 @@ export default function PatientPlanPage() {
                     setBalanceModal(prev => ({ ...prev, isOpen: false }))
                 }}
             />
+
+            {/* Floating ÖZET Button */}
+            <Button
+                onClick={toggleDashboard}
+                className={cn(
+                    "fixed right-4 bottom-20 z-50 h-14 w-14 rounded-full shadow-[0_8px_30px_rgb(0,0,0,0.12)] flex flex-col items-center justify-center border-2 transition-all hover:scale-105 active:scale-95",
+                    isDashboardVisible
+                        ? "bg-white border-purple-100 text-gray-600 hover:bg-gray-50"
+                        : "bg-gradient-to-tr from-purple-600 to-indigo-500 border-purple-400/50 text-white shadow-[0_8px_30px_rgba(147,51,234,0.3)]"
+                )}
+            >
+                <BarChart3 className="h-6 w-6" />
+                <span className="text-[9px] font-bold mt-0.5">ÖZET</span>
+            </Button>
         </div>
     )
 }
