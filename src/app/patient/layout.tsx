@@ -161,7 +161,7 @@ export default function PatientLayout({
     }
 
     return (
-        <div className="flex flex-col h-[100dvh] overflow-y-auto bg-gray-50">
+        <div className="flex flex-col h-[100dvh] overflow-y-auto overflow-x-hidden w-full max-w-[100vw] bg-gray-50">
             {/* Listener Component - Isolated */}
             {targetUserId && (
                 <UnreadListener userId={targetUserId} onUpdate={setUnreadCount} />
