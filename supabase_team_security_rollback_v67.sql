@@ -16,8 +16,11 @@ DECLARE
     ];
 BEGIN
     FOREACH table_name_val IN ARRAY tables LOOP
-        EXECUTE format('DROP POLICY IF EXISTS "Restricted Access" ON public.%I', table_name_val);
-        EXECUTE format('CREATE POLICY "Public Access" ON public.%I FOR ALL USING (true)', table_name_val);
+        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = table_name_val) THEN
+            EXECUTE format('DROP POLICY IF EXISTS "Restricted Access" ON public.%I', table_name_val);
+            EXECUTE format('DROP POLICY IF EXISTS "Public Access" ON public.%I', table_name_val);
+            EXECUTE format('CREATE POLICY "Public Access" ON public.%I FOR ALL USING (true)', table_name_val);
+        END IF;
     END LOOP;
 END $$;
 

@@ -9,8 +9,7 @@ BEGIN
     DROP POLICY IF EXISTS "Staff Universal Identity v91" ON public.profiles;
 
     -- 2. HATA ALAN FONKSİYONU SİL VE YENİDEN OLUŞTUR (target_patient_id hatasını çözer)
-    -- Politika bağımlılıkları varsa diye politikayı önce uçurduk.
-    DROP FUNCTION IF EXISTS public.can_current_user_access_patient(uuid);
+    -- Politika bağımlılıkları varsa diye politikayı önce uçurduk (Skipped Drop Function)
     
     CREATE OR REPLACE FUNCTION public.can_current_user_access_patient(target_patient_id uuid)
     RETURNS boolean AS $inner$

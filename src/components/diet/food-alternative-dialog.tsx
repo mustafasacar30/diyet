@@ -769,9 +769,12 @@ export function FoodAlternativeDialog({ isOpen, onClose, originalFood, onSelect,
                         <div className="sr-only">Alternatif Seçenekleri</div>
                         <div className="flex items-center justify-between pointer-events-auto w-full">
                             <div className="flex flex-col lg:flex-row items-start lg:items-center gap-2 lg:gap-4 flex-1 min-w-0 pr-2">
-                                <div className="flex flex-wrap items-center gap-1 md:gap-2 leading-tight">
-                                    <span className="font-semibold whitespace-nowrap text-gray-700 text-sm md:text-base">Alternatif Bul:</span>
-                                    <span className="text-blue-600 bg-blue-50 px-2 py-1 rounded text-xs md:text-sm text-balance max-w-full">{originalFood?.name}</span>
+                                <div className="flex flex-col gap-0.5">
+                                    <div className="flex flex-wrap items-center gap-1 md:gap-2 leading-tight">
+                                        <span className="font-semibold whitespace-nowrap text-gray-700 text-sm md:text-base">Akıllı Alternatif Bul:</span>
+                                        <span className="text-blue-600 bg-blue-50 px-2 py-1 rounded text-[10px] sm:text-xs md:text-sm text-balance max-w-full">{originalFood?.name}</span>
+                                    </div>
+                                    <span className="text-[9px] sm:text-[10px] text-gray-400 font-medium leading-tight">Bu liste diyet uyumuna ve günlük makro hedeflerine göre özel olarak hesaplanmıştır.</span>
                                 </div>
 
                                 {/* Portion Selector */}
@@ -1065,6 +1068,10 @@ export function FoodAlternativeDialog({ isOpen, onClose, originalFood, onSelect,
                                     </Button>
                                 </PopoverTrigger>
                                 <PopoverContent className="w-[450px] p-0" align="start">
+                                    <div className="p-2 bg-blue-50/50 border-b border-blue-100 flex flex-col gap-0.5">
+                                        <span className="text-xs font-semibold text-blue-900">Spesifik Yemek Arama (Sadece Makro Eşleşmesi)</span>
+                                        <span className="text-[10px] text-blue-700/80 leading-tight">İstediğiniz yemeği arayın. Yüzdeler sadece hedefinize olan ham makro benzerliğini gösterir (diyet kurallarını yok sayar).</span>
+                                    </div>
                                     <Command shouldFilter={false}>
                                         <CommandInput
                                             placeholder="Yemek ara (Örn: 'tav sal')..."

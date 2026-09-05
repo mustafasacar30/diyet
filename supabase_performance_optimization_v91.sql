@@ -26,12 +26,12 @@ BEGIN
 
     -- 4. HASTALAR: Admin HERKESİ, Doktor sadece KENDİ TAKIMINI görür.
     -- Funkisyonu hızlandırılmış ve döngüsüz haliyle güncelliyoruz.
-    CREATE OR REPLACE FUNCTION public.can_current_user_access_patient(p_id uuid)
+    CREATE OR REPLACE FUNCTION public.can_current_user_access_patient(target_patient_id uuid)
     RETURNS boolean AS $inner$
     BEGIN
         RETURN EXISTS (
             SELECT 1 FROM public.patient_assignments pa
-            WHERE pa.patient_id = p_id
+            WHERE pa.patient_id = target_patient_id
             AND (
                 pa.dietitian_id = auth.uid()
                 OR pa.dietitian_id IN (

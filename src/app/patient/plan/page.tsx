@@ -5382,7 +5382,7 @@ export default function PatientPlanPage() {
 
                         {/* Meals List - Contents */}
                         <div 
-                            className="space-y-6 px-1.5 pb-32 mt-4" 
+                            className={cn("space-y-6 px-1.5 mt-4", inlineSearchOpen ? "pb-[50vh]" : "pb-24")} 
                             style={{ zIndex: 1, position: 'relative' }}
                             onTouchStart={onTouchStart}
                             onTouchMove={onTouchMove}
@@ -5390,7 +5390,7 @@ export default function PatientPlanPage() {
                         >
 
                             {currentDay?.diet_meals.map((meal: any, mealIdx) => (
-                                <Card key={meal.id} className="meal-section-container overflow-hidden border border-gray-200 shadow-sm bg-white mb-0 p-0 gap-0">
+                                <Card key={meal.id} className="meal-section-container scroll-mt-[130px] overflow-hidden border border-gray-200 shadow-sm bg-white mb-0 p-0 gap-0">
                                     <div className="pt-2 px-1.5 pb-2">
                                         {/* Unified Header & Content */}
                                         <div className="flex flex-col gap-0.5">

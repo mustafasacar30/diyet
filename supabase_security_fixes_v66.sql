@@ -81,11 +81,9 @@ GRANT SELECT ON public.user_management_view TO service_role;
 -- ------------------------------------------------------------------------------
 -- Apply SET search_path = public to all identified functions
 
-ALTER FUNCTION public.is_assigned_dietitian(uuid, uuid) SET search_path = public;
-ALTER FUNCTION public.is_patient_owner(uuid) SET search_path = public;
+ALTER FUNCTION public.is_assigned_dietitian(uuid) SET search_path = public;
 ALTER FUNCTION public.get_my_role() SET search_path = public;
 ALTER FUNCTION public.auto_assign_created_patient() SET search_path = public;
-ALTER FUNCTION public.protect_patient_fields() SET search_path = public;
 ALTER FUNCTION public.handle_profile_patient_sync() SET search_path = public;
 ALTER FUNCTION public.get_or_create_conversation(uuid, uuid) SET search_path = public;
 ALTER FUNCTION public.handle_new_message() SET search_path = public;

@@ -131,18 +131,7 @@ export function FoodSearchSelector({
 
     useEffect(() => {
         if (open && macroPreference === null) {
-            if (proteinGap !== undefined && fatGap !== undefined) {
-                const totalGap = Math.max(0, proteinGap) + Math.max(0, fatGap)
-                if (totalGap > 0) {
-                    const proteinWeight = Math.max(0, proteinGap) / totalGap
-                    const fatWeight = Math.max(0, fatGap) / totalGap
-                    setMacroPreference(Math.round((fatWeight - proteinWeight) * 100))
-                } else {
-                    setMacroPreference(0)
-                }
-            } else {
-                setMacroPreference(0)
-            }
+            setMacroPreference(0)
         }
         if (!open) {
             setMacroPreference(null) // Reset when closed

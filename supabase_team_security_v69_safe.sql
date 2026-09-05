@@ -102,7 +102,7 @@ BEGIN
             -- Apply the new safe policy
             IF table_name_val = 'patients' THEN
                 EXECUTE format('CREATE POLICY "Restricted Access" ON public.%I FOR ALL TO authenticated USING (can_current_user_access_patient(id))', table_name_val);
-            ELSE
+            ELSIF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = table_name_val AND column_name = 'patient_id') THEN
                 EXECUTE format('CREATE POLICY "Restricted Access" ON public.%I FOR ALL TO authenticated USING (can_current_user_access_patient(patient_id))', table_name_val);
             END IF;
         END IF;

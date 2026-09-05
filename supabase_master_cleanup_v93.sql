@@ -4,8 +4,7 @@
 DO $$ 
 BEGIN
     -- 1. ESKİ FONKSİYONU VE ONA BAĞLI TÜM POLİTİKALARI ZİNCİRLEME SİL (CASCADE)
-    -- HINT: Bu adım 'Restriction Access' gibi takılan tüm politikaları otomatik temizler.
-    DROP FUNCTION IF EXISTS public.can_current_user_access_patient(uuid) CASCADE;
+    -- 1. (Skipped Drop Function to prevent cascading destruction of policies)
 
     -- 2. YENİ, HIZLANDIRILMIŞ VE GÜVENLİ FONKSİYONU OLUŞTUR
     CREATE OR REPLACE FUNCTION public.can_current_user_access_patient(target_patient_id uuid)
@@ -46,24 +45,6 @@ BEGIN
         OR (auth.jwt() -> 'user_metadata' ->> 'role') = 'admin'
         OR can_current_user_access_patient(id)
     );
-
-    -- 5. DİĞER TABLOLARI YENİDEN KORUMA ALTINA AL (CASCADE ile silinenlerin yerine)
-    -- Notlar, Ölçümler, Diyet Planları vb.
-    
-    -- Patient Notes
-    DROP POLICY IF EXISTS "Note Security v93" ON public.patient_notes;
-    CREATE POLICY "Note Security v93" ON public.patient_notes FOR ALL TO authenticated 
-    USING (can_current_user_access_patient(patient_id));
-
-    -- Patient Measurements
-    DROP POLICY IF EXISTS "Measurement Security v93" ON public.patient_measurements;
-    CREATE POLICY "Measurement Security v93" ON public.patient_measurements FOR ALL TO authenticated 
-    USING (can_current_user_access_patient(patient_id));
-
-    -- Diet Plans
-    DROP POLICY IF EXISTS "Diet Plan Security v93" ON public.diet_plans;
-    CREATE POLICY "Diet Plan Security v93" ON public.diet_plans FOR ALL TO authenticated 
-    USING (can_current_user_access_patient(patient_id));
 
     RAISE NOTICE 'v93 Master Cleanup Tamamlandı. Sistem artık stabil ve hızlı.';
 END $$;
