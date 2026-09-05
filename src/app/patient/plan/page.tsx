@@ -5356,7 +5356,7 @@ export default function PatientPlanPage() {
                                     >
                                         <FileDown className={cn("h-3.5 w-3.5 sm:h-4 w-4", isPdfGenerating && "animate-bounce")} />
                                         <span className="text-[10px] sm:text-xs font-bold whitespace-nowrap">
-                                            {isPdfGenerating ? 'Hazırlanıyor...' : 'PDF İndir'}
+                                            {isPdfGenerating ? 'İndiriliyor...' : 'PDF'}
                                         </span>
                                     </Button>
                                 </div>
