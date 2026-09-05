@@ -479,27 +479,31 @@ function MacroDashboard({ totals, targets, isVisible, onClose, days, patientInfo
                                     )
                                 })()}
                             </div>
-                            <button
-                                onClick={() => {
-                                    setIsWeeklyBalanceHintActive(false);
-                                    const event = new CustomEvent('trigger-weekly-balance');
-                                    window.dispatchEvent(event);
-                                }}
-                                className={cn(
-                                    "relative h-8 px-3 rounded-md text-xs font-bold transition-all flex justify-center items-center gap-1.5 shadow-[0_4px_20px_-2px_rgba(34,197,94,0.4)] hover:shadow-[0_6px_30px_-2px_rgba(34,197,94,0.6)] bg-gradient-to-br from-teal-500 via-green-500 to-emerald-500 hover:from-teal-600 hover:via-green-600 hover:to-emerald-600 text-white shrink-0 hover:scale-[1.02] active:scale-95",
-                                    isWeeklyBalanceHintActive && "animate-bounce scale-110 ring-4 ring-emerald-300/90 ring-offset-2 ring-offset-white shadow-[0_0_0_5px_rgba(52,211,153,0.25),0_0_28px_8px_rgba(16,185,129,0.55)]"
-                                )}
-                                title="Haftalık Makro Dengele"
-                            >
-                                {isWeeklyBalanceHintActive && (
-                                    <span className="absolute -top-1 -right-1 inline-flex h-3.5 w-3.5">
-                                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white/90"></span>
-                                        <span className="relative inline-flex h-3.5 w-3.5 rounded-full bg-white"></span>
-                                    </span>
-                                )}
-                                <Scale size={16} />
-                                <span className={cn("sm:inline", isWeeklyBalanceHintActive ? "inline" : "hidden")}>DENGELE</span>
-                            </button>
+                                <button
+                                    disabled={!hasWeeklyLargeDeviation}
+                                    onClick={() => {
+                                        setIsWeeklyBalanceHintActive(false);
+                                        const event = new CustomEvent('trigger-weekly-balance');
+                                        window.dispatchEvent(event);
+                                    }}
+                                    className={cn(
+                                        "relative h-8 px-3 rounded-md text-xs font-bold transition-all flex justify-center items-center gap-1.5 shrink-0",
+                                        hasWeeklyLargeDeviation 
+                                            ? "shadow-[0_4px_20px_-2px_rgba(34,197,94,0.4)] hover:shadow-[0_6px_30px_-2px_rgba(34,197,94,0.6)] bg-gradient-to-br from-teal-500 via-green-500 to-emerald-500 hover:from-teal-600 hover:via-green-600 hover:to-emerald-600 text-white hover:scale-[1.02] active:scale-95" 
+                                            : "bg-gray-100 text-gray-400 cursor-not-allowed opacity-70",
+                                        isWeeklyBalanceHintActive && hasWeeklyLargeDeviation && "animate-bounce scale-110 ring-4 ring-emerald-300/90 ring-offset-2 ring-offset-white shadow-[0_0_0_5px_rgba(52,211,153,0.25),0_0_28px_8px_rgba(16,185,129,0.55)]"
+                                    )}
+                                    title={hasWeeklyLargeDeviation ? "Haftalık Makro Dengele" : "Haftalık Makrolar Dengeli"}
+                                >
+                                    {isWeeklyBalanceHintActive && hasWeeklyLargeDeviation && (
+                                        <span className="absolute -top-1 -right-1 inline-flex h-3.5 w-3.5">
+                                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white/90"></span>
+                                            <span className="relative inline-flex h-3.5 w-3.5 rounded-full bg-white"></span>
+                                        </span>
+                                    )}
+                                    <Scale size={16} />
+                                    <span className={cn("sm:inline", isWeeklyBalanceHintActive ? "inline" : "hidden")}>DENGELE</span>
+                                </button>
                             {showFlavorTune && (
                                 <button
                                     onClick={() => {
@@ -582,18 +586,22 @@ function MacroDashboard({ totals, targets, isVisible, onClose, days, patientInfo
                                 })()}
                             </div>
                             <button
+                                disabled={!hasDailyLargeDeviation}
                                 onClick={() => {
                                     setIsDailyBalanceHintActive(false);
                                     const event = new CustomEvent('trigger-daily-balance');
                                     window.dispatchEvent(event);
                                 }}
                                 className={cn(
-                                    "relative h-8 px-3 rounded-md text-xs font-bold transition-all flex justify-center items-center gap-1.5 shadow-[0_4px_20px_-2px_rgba(99,102,241,0.4)] hover:shadow-[0_6px_30px_-2px_rgba(99,102,241,0.6)] bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 hover:from-indigo-600 hover:via-purple-600 hover:to-pink-600 text-white shrink-0 hover:scale-[1.02] active:scale-95",
-                                    isDailyBalanceHintActive && "animate-bounce scale-110 ring-4 ring-fuchsia-300/90 ring-offset-2 ring-offset-white shadow-[0_0_0_5px_rgba(232,121,249,0.25),0_0_28px_8px_rgba(168,85,247,0.55)]"
+                                    "relative h-8 px-3 rounded-md text-xs font-bold transition-all flex justify-center items-center gap-1.5 shrink-0",
+                                    hasDailyLargeDeviation
+                                        ? "shadow-[0_4px_20px_-2px_rgba(99,102,241,0.4)] hover:shadow-[0_6px_30px_-2px_rgba(99,102,241,0.6)] bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 hover:from-indigo-600 hover:via-purple-600 hover:to-pink-600 text-white hover:scale-[1.02] active:scale-95"
+                                        : "bg-gray-100 text-gray-400 cursor-not-allowed opacity-70",
+                                    isDailyBalanceHintActive && hasDailyLargeDeviation && "animate-bounce scale-110 ring-4 ring-fuchsia-300/90 ring-offset-2 ring-offset-white shadow-[0_0_0_5px_rgba(232,121,249,0.25),0_0_28px_8px_rgba(168,85,247,0.55)]"
                                 )}
-                                title="Günlük Makro Dengele"
+                                title={hasDailyLargeDeviation ? "Günlük Makro Dengele" : "Günlük Makrolar Dengeli"}
                             >
-                                {isDailyBalanceHintActive && (
+                                {isDailyBalanceHintActive && hasDailyLargeDeviation && (
                                     <span className="absolute -top-1 -right-1 inline-flex h-3.5 w-3.5">
                                         <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white/90"></span>
                                         <span className="relative inline-flex h-3.5 w-3.5 rounded-full bg-white"></span>
@@ -5382,7 +5390,7 @@ export default function PatientPlanPage() {
 
                         {/* Meals List - Contents */}
                         <div 
-                            className={cn("space-y-6 px-1.5 mt-4", inlineSearchOpen ? "pb-[50vh]" : "pb-24")} 
+                            className={cn("space-y-6 px-1.5 mt-4", inlineSearchOpen ? "pb-[100vh]" : "pb-24")} 
                             style={{ zIndex: 1, position: 'relative' }}
                             onTouchStart={onTouchStart}
                             onTouchMove={onTouchMove}
@@ -5810,7 +5818,7 @@ export default function PatientPlanPage() {
                                             }, 0) || 0
                                             const fGap = Math.max(0, targetFat - dayFat)
                                             return (
-                                                <div className="inline-search-container scroll-mt-[130px] mt-3 ml-3 md:mt-2 md:ml-0 flex items-center gap-1.5">
+                                                <div className="inline-search-container scroll-mt-[70px] sm:scroll-mt-[130px] mt-3 ml-3 md:mt-2 md:ml-0 flex items-center gap-1.5">
                                                     <FoodSearchSelector
                                                         open={inlineSearchOpen === `${currentDay!.id}-${meal.meal_time}`}
                                                         patientId={patientInfo?.id}

@@ -363,7 +363,7 @@ export function FoodSearchSelector({
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 group-focus-within:text-emerald-500 transition-colors" />
                         <input
                             ref={triggerInputRef}
-                            className="w-full bg-white ring-1 ring-gray-100 shadow-sm rounded-xl py-3 pl-9 pr-3 text-[13px] outline-none focus:bg-emerald-50/60 focus:ring-2 focus:ring-emerald-400 caret-emerald-600 transition-all placeholder:font-medium placeholder:text-gray-400 scroll-mt-[140px]"
+                            className="w-full bg-white ring-1 ring-gray-100 shadow-sm rounded-xl py-3 pl-9 pr-3 text-[13px] outline-none focus:bg-emerald-50/60 focus:ring-2 focus:ring-emerald-400 caret-emerald-600 transition-all placeholder:font-medium placeholder:text-gray-400 scroll-mt-[70px] sm:scroll-mt-[130px]"
                             placeholder="Yeni yemek ekle (örn: pey yum)"
                             value={query}
                             onChange={(e) => { setQuery(e.target.value); if (!open) onOpenChange(true); }}
@@ -384,7 +384,7 @@ export function FoodSearchSelector({
                                     scrollRestoreRef.current = { node: scrollNode, top };
                                 }
                                 const target = e.currentTarget;
-                                setTimeout(() => target.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300);
+                                setTimeout(() => target.scrollIntoView({ behavior: 'smooth', block: 'start' }), 600);
                                 if (!open) onOpenChange(true); 
                             }}
                             onFocus={(e) => {
@@ -404,7 +404,7 @@ export function FoodSearchSelector({
                                     scrollRestoreRef.current = { node: scrollNode, top };
                                 }
                                 const target = e.target;
-                                setTimeout(() => target.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300);
+                                setTimeout(() => target.scrollIntoView({ behavior: 'smooth', block: 'start' }), 600);
                                 if (!open) onOpenChange(true);
                             }}
                         />
