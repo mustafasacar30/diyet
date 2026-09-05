@@ -384,7 +384,17 @@ export function FoodSearchSelector({
                                     scrollRestoreRef.current = { node: scrollNode, top };
                                 }
                                 const target = e.currentTarget;
-                                setTimeout(() => target.scrollIntoView({ behavior: 'smooth', block: 'start' }), 600);
+                                
+                                // Instant scroll to prevent iOS Safari from panning the whole window
+                                target.scrollIntoView({ behavior: 'auto', block: 'start' });
+                                window.scrollTo(0, 0);
+                                
+                                // Smooth scroll after keyboard settles
+                                setTimeout(() => {
+                                    window.scrollTo(0, 0); // Keep window at top
+                                    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                }, 300);
+                                
                                 if (!open) onOpenChange(true); 
                             }}
                             onFocus={(e) => {
@@ -404,7 +414,17 @@ export function FoodSearchSelector({
                                     scrollRestoreRef.current = { node: scrollNode, top };
                                 }
                                 const target = e.target;
-                                setTimeout(() => target.scrollIntoView({ behavior: 'smooth', block: 'start' }), 600);
+                                
+                                // Instant scroll to prevent iOS Safari from panning the whole window
+                                target.scrollIntoView({ behavior: 'auto', block: 'start' });
+                                window.scrollTo(0, 0);
+                                
+                                // Smooth scroll after keyboard settles
+                                setTimeout(() => {
+                                    window.scrollTo(0, 0); // Keep window at top
+                                    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                }, 300);
+                                
                                 if (!open) onOpenChange(true);
                             }}
                         />
