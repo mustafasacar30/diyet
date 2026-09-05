@@ -5810,7 +5810,7 @@ export default function PatientPlanPage() {
                                             }, 0) || 0
                                             const fGap = Math.max(0, targetFat - dayFat)
                                             return (
-                                                <div className="mt-3 ml-3 md:mt-2 md:ml-0 flex items-center gap-1.5">
+                                                <div className="inline-search-container scroll-mt-[130px] mt-3 ml-3 md:mt-2 md:ml-0 flex items-center gap-1.5">
                                                     <FoodSearchSelector
                                                         open={inlineSearchOpen === `${currentDay!.id}-${meal.meal_time}`}
                                                         patientId={patientInfo?.id}
@@ -5934,11 +5934,11 @@ export default function PatientPlanPage() {
                                                     <button
                                                         onClick={(e) => {
                                                             setInlineSearchOpen(`${currentDay!.id}-${meal.meal_time}`);
-                                                            // Scroll the meal container into view
+                                                            // Scroll the search container into view
                                                             setTimeout(() => {
-                                                                const mealContainer = e.currentTarget.closest('.meal-section-container');
-                                                                if (mealContainer) {
-                                                                    mealContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                                                const searchContainer = e.currentTarget.closest('.inline-search-container');
+                                                                if (searchContainer) {
+                                                                    searchContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
                                                                 }
                                                             }, 100);
                                                         }}
