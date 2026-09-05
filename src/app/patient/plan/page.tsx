@@ -5935,12 +5935,13 @@ export default function PatientPlanPage() {
                                                         onClick={(e) => {
                                                             setInlineSearchOpen(`${currentDay!.id}-${meal.meal_time}`);
                                                             // Scroll the search container into view
+                                                            const target = e.currentTarget;
                                                             setTimeout(() => {
-                                                                const searchContainer = e.currentTarget.closest('.inline-search-container');
+                                                                const searchContainer = target.closest('.inline-search-container');
                                                                 if (searchContainer) {
                                                                     searchContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
                                                                 }
-                                                            }, 100);
+                                                            }, 300); // 300ms to allow keyboard to show up on mobile
                                                         }}
                                                         className={cn(
                                                             "py-3 px-3 rounded-xl transition-all flex items-center justify-center group shrink-0 bg-white shadow-sm ring-1 ring-gray-100 hover:bg-gray-50/50 cursor-pointer",
