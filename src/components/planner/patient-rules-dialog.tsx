@@ -20,9 +20,17 @@ import {
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Switch } from "@/components/ui/switch"
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipProvider,
+    TooltipTrigger,
+} from "@/components/ui/tooltip"
 // import { ScrollArea } from "@/components/ui/scroll-area" 
 import { Loader2, Plus, Trash2, Eye, Pencil, RotateCcw, Upload, Download, AlertCircle, GripVertical, Copy, Undo2, ArchiveRestore } from "lucide-react"
 import { RuleDialog } from "./rule-dialog"
+import { AIRuleAssistant } from "./ai-rule-assistant"
+import { checkHealthConflictsForRule, HealthFlag, HealthContext } from "@/lib/ai/health-conflict-checker"
 import { PlanningRule } from "@/types/planner"
 import {
     DndContext,
@@ -173,6 +181,8 @@ export function PatientRulesDialog({ open, onOpenChange, patientId, programTempl
     const [teamOwnerId, setTeamOwnerId] = useState<string | null>(null)
     const [isTeamScopedContext, setIsTeamScopedContext] = useState(false)
     const [patientDisplayName, setPatientDisplayName] = useState<string>('hasta')
+    const [healthContext, setHealthContext] = useState<HealthContext | null>(null)
+    const [healthFlags, setHealthFlags] = useState<Map<string, HealthFlag[]>>(new Map())
     const importInputRef = useRef<HTMLInputElement | null>(null)
     const [importModeDialogOpen, setImportModeDialogOpen] = useState(false)
     const [pendingImportedRules, setPendingImportedRules] = useState<any[] | null>(null)
@@ -282,11 +292,50 @@ export function PatientRulesDialog({ open, onOpenChange, patientId, programTempl
         if (!silent) setLoading(false)
     }, [patientId, programTemplateId])
 
+    const fetchHealthContext = useCallback(async () => {
+        if (!patientId) return
+        try {
+            const [ { data: diseases }, { data: meds } ] = await Promise.all([
+                supabase.from('patient_diseases').select('id, disease:diseases (id, name, disease_rules (id, rule_type, keywords, match_name, match_tags, keyword_metadata))').eq('patient_id', patientId),
+                supabase.from('patient_medications').select('medication_id, medications (id, name)').eq('patient_id', patientId)
+            ])
+            
+            let medicationsWithInteractions: any[] = []
+            if (meds && meds.length > 0) {
+                const medIds = meds.map((m: any) => m.medication_id).filter(Boolean)
+                if (medIds.length > 0) {
+                    const { data: interactions } = await supabase.from('medication_interactions').select('*, medications(name)').in('medication_id', medIds)
+                    const medMap = new Map<string, any>()
+                    for (const m of meds) {
+                        const med = (m as any).medications
+                        if (med) medMap.set(med.id, { name: med.name, id: med.id, interactions: [] })
+                    }
+                    if (interactions) {
+                        for (const i of interactions) {
+                            if (medMap.has(i.medication_id)) medMap.get(i.medication_id).interactions.push(i)
+                        }
+                    }
+                    medicationsWithInteractions = Array.from(medMap.values())
+                }
+            }
+
+            const processedDiseases = (diseases || []).map((pd: any) => ({
+                name: pd.disease?.name || 'Bilinmeyen',
+                disease_rules: pd.disease?.disease_rules || []
+            }))
+
+            setHealthContext({ diseases: processedDiseases, medications: medicationsWithInteractions, labResults: [] })
+        } catch (e) {
+            console.error("Error fetching health context:", e)
+        }
+    }, [patientId])
+
     useEffect(() => {
         if (open && patientId) {
             fetchRules()
+            fetchHealthContext()
         }
-    }, [open, patientId, fetchRules])
+    }, [open, patientId, fetchRules, fetchHealthContext])
 
     const safeDialogPosition = clampPosition(dialogPosition, dialogSize)
 
@@ -701,6 +750,16 @@ const mergedRulesMap = new Map<string, PlanningRule>()
             return true
         })
         .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+
+    useEffect(() => {
+        if (!healthContext || mergedRules.length === 0) return
+        const flagMap = new Map<string, HealthFlag[]>()
+        for (const rule of mergedRules) {
+            const flags = checkHealthConflictsForRule(rule, healthContext)
+            if (flags.length > 0) flagMap.set(rule.id, flags)
+        }
+        setHealthFlags(flagMap)
+    }, [mergedRules, healthContext])
         
     const hasExplicitProgramRules = programRules.length > 0
     const hasExplicitTeamRules = teamRules.length > 0
@@ -1459,6 +1518,19 @@ const mergedRulesMap = new Map<string, PlanningRule>()
                     {/* Content Area - Scrollable */}
                     <div className="flex-1 min-h-0 overflow-y-auto p-6 bg-slate-50/50">
 
+                        <div className="mb-6">
+                            <AIRuleAssistant
+                                scope="patient"
+                                patientId={patientId}
+                                programTemplateId={programTemplateId || undefined}
+                                teamOwnerId={isTeamScopedContext ? teamOwnerId : undefined}
+                                onRuleCreated={() => {
+                                    fetchRules()
+                                    onRulesChanged?.()
+                                }}
+                            />
+                        </div>
+
                                                 {/* Rules List */}
                         {loading ? (
                             <div className="flex items-center justify-center py-8">
@@ -1484,8 +1556,9 @@ const mergedRulesMap = new Map<string, PlanningRule>()
                                                 key={rule.id}
                                                 rule={rule}
                                                 index={index}
+                                                healthFlags={healthFlags.get(rule.id) || []}
                                                 loading={loading}
-                                                canMutate={canMutateRules}
+                                                canMutate={rule.name !== USE_GLOBAL_SENTINEL && canMutateRules}
                                                 activeScope={getActiveScopeForRule(rule)}
                                                 inheritanceChain={getInheritanceChain(rule)}
                                                 onToggleActive={handleToggleActive}
@@ -1719,6 +1792,7 @@ interface SortableRuleItemProps {
     onRestoreDeleted?: (rule: PlanningRule) => void;
     onRestoreDefault?: (rule: PlanningRule) => void;
     onSuggest: (rule: PlanningRule) => void;
+    healthFlags?: HealthFlag[];
 }
 
 function SortableRuleItem({
@@ -1733,7 +1807,8 @@ function SortableRuleItem({
     onDelete,
     onSuggest,
     onRestoreDeleted,
-    onRestoreDefault
+    onRestoreDefault,
+    healthFlags
 }: SortableRuleItemProps) {
     const {
         attributes,
@@ -1792,9 +1867,27 @@ function SortableRuleItem({
                             </Badge>
                         )}
                         {(rule as any).pending_global_approval && (
-                            <Badge className="text-[10px] bg-amber-500 shrink-0">
+                            <Badge className="text-[10px] bg-amber-50 text-amber-600 border-amber-200 shrink-0 font-normal hover:bg-amber-100">
                                 Onay Bekliyor
                             </Badge>
+                        )}
+                        {healthFlags && healthFlags.length > 0 && (
+                            <TooltipProvider>
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <span className="text-red-500 animate-pulse cursor-help ml-1">🚩</span>
+                                    </TooltipTrigger>
+                                    <TooltipContent className="max-w-sm">
+                                        <div className="space-y-2">
+                                            {healthFlags.map((f: HealthFlag, i: number) => (
+                                                <div key={i} className="text-xs">
+                                                    {f.icon} <strong className="font-semibold">{f.sourceName}:</strong> {f.message}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </TooltipContent>
+                                </Tooltip>
+                            </TooltipProvider>
                         )}
 
                     </div>

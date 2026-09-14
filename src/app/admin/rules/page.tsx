@@ -8,6 +8,7 @@ import { Plus, Settings, ChevronUp, ChevronDown, LayoutGrid, List as ListIcon } 
 import { RuleList } from "@/components/planner/rule-list"
 import { PlanningRule } from "@/types/planner"
 import { RuleDialog } from "@/components/planner/rule-dialog"
+import { AIRuleAssistant } from "@/components/planner/ai-rule-assistant"
 import { SettingsDialog } from "@/components/planner/settings-dialog"
 import { DragEndEvent } from "@dnd-kit/core"
 import { arrayMove } from "@dnd-kit/sortable"
@@ -565,7 +566,7 @@ export default function RulesPage() {
 
             {/* Suggestions Section */}
             {!hasTeamScope && suggestions.length > 0 && (
-                <div className="bg-amber-50 border border-amber-200 rounded-lg overflow-hidden">
+                <div className="bg-amber-50 border border-amber-200 rounded-lg overflow-hidden mb-6">
                     <div
                         className="p-4 flex items-center justify-between cursor-pointer hover:bg-amber-100/50 transition-colors"
                         onClick={() => setShowSuggestions(!showSuggestions)}
@@ -609,6 +610,14 @@ export default function RulesPage() {
                     )}
                 </div>
             )}
+
+            <div className="mb-6">
+                <AIRuleAssistant
+                    scope={scopeMode === 'team' ? 'team' : 'global'}
+                    teamOwnerId={scopeMode === 'team' ? effectiveTeamOwnerId || undefined : undefined}
+                    onRuleCreated={() => fetchRules()}
+                />
+            </div>
 
             <RuleList
                 rules={rules}
