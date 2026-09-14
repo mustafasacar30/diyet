@@ -501,7 +501,6 @@ export default function FoodsPage() {
         { value: 'supplement', label: 'Takviye' }
     ]
     const dietOptions = [
-        { value: 'elimination_diet', label: 'E.Keto' },
         { value: 'keto', label: 'Keto' },
         { value: 'vegan', label: 'Vegan' },
         { value: 'lowcarb', label: 'Düşük Karb' },
@@ -983,7 +982,7 @@ export default function FoodsPage() {
                 updates = { filler_lunch: hasLunch, filler_dinner: hasDinner }
             } else if (field === 'diet_complex') {
                 // value is array ['keto', 'vegan'...]
-                const dietKeys = ['keto', 'vegan', 'lowcarb', 'vejeteryan', 'elimination_diet']
+                const dietKeys = ['keto', 'vegan', 'lowcarb', 'vejeteryan']
                 dietKeys.forEach(k => {
                     updates[k] = (value as string[]).includes(k)
                 })
