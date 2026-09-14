@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import { useState, useEffect, useMemo } from "react"
 import { supabase } from "@/lib/supabase"
@@ -46,11 +46,11 @@ type FilterFieldConfig = {
 
 
 const DEFAULT_FILTER_FIELDS: FilterFieldConfig[] = [
-    { value: 'name', label: 'Ä°sim', type: 'text' },
+    { value: 'name', label: 'İsim', type: 'text' },
     { value: 'category', label: 'Kategori', type: 'select', options: [...FOOD_CATEGORIES, 'KAYITSIZLAR'] },
     { value: 'role', label: 'Rol', type: 'select', options: FOOD_ROLES.map(r => r.value) },
 
-    { value: 'dietType', label: 'Diyet TÃ¼rÃ¼', type: 'select', options: ['ketojenik', 'lowcarb', 'vegan', 'vejeteryan'] },
+    { value: 'dietType', label: 'Diyet Türü', type: 'select', options: ['ketojenik', 'lowcarb', 'vegan', 'vejeteryan'] },
     { value: 'tags', label: 'Etiket', type: 'text' },
     { value: 'minCalories', label: 'Min Kalori', type: 'number' },
     { value: 'maxCalories', label: 'Max Kalori', type: 'number' },
@@ -58,8 +58,8 @@ const DEFAULT_FILTER_FIELDS: FilterFieldConfig[] = [
     { value: 'maxProtein', label: 'Max Protein', type: 'number' },
     { value: 'minCarbs', label: 'Min Karb', type: 'number' },
     { value: 'maxCarbs', label: 'Max Karb', type: 'number' },
-    { value: 'minFat', label: 'Min YaÄŸ', type: 'number' },
-    { value: 'maxFat', label: 'Max YaÄŸ', type: 'number' },
+    { value: 'minFat', label: 'Min Yağ', type: 'number' },
+    { value: 'maxFat', label: 'Max Yağ', type: 'number' },
 ]
 
 
@@ -74,7 +74,7 @@ function containsDislikedWord(foodName: string, dislikedFoods: string[]): boolea
     return dislikedFoods.some(disliked => lowerName.includes(disliked.toLowerCase()))
 }
 
-const MONTH_NAMES = ['Ocak', 'Åubat', 'Mart', 'Nisan', 'MayÄ±s', 'Haziran', 'Temmuz', 'AÄŸustos', 'EylÃ¼l', 'Ekim', 'KasÄ±m', 'AralÄ±k']
+const MONTH_NAMES = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık']
 
 function checkSeasonality(food: any, targetDate?: Date): { inSeason: boolean, reason?: string } {
     if (!targetDate) return { inSeason: true }
@@ -97,7 +97,7 @@ function checkSeasonality(food: any, targetDate?: Date): { inSeason: boolean, re
     }
 
     if (!inSeason) {
-        return { inSeason: false, reason: `Sezon DÄ±ÅŸÄ± (${MONTH_NAMES[sStart - 1]} - ${MONTH_NAMES[sEnd - 1]})` }
+        return { inSeason: false, reason: `Sezon Dışı (${MONTH_NAMES[sStart - 1]} - ${MONTH_NAMES[sEnd - 1]})` }
     }
     return { inSeason: true }
 }
@@ -164,7 +164,7 @@ export function FoodSidebar({
 
     // ... migrateFromJSON ...
     async function migrateFromJSON() {
-        if (!confirm('TÃ¼m yemek veritabanÄ± JSON dosyasÄ±ndaki verilerle gÃ¼ncellenecek. Bu iÅŸlem biraz sÃ¼rebilir. Devam edilsin mi?')) return
+        if (!confirm('Tüm yemek veritabanı JSON dosyasındaki verilerle güncellenecek. Bu işlem biraz sürebilir. Devam edilsin mi?')) return
         // ... implementation ...
         setLoading(true)
         try {
@@ -231,7 +231,7 @@ export function FoodSidebar({
                     }
                 }
             }
-            alert(`Ä°ÅŸlem tamamlandÄ±!\nGÃ¼ncellenen: ${updatedCount}\nYeni Eklenen: ${insertedCount}`)
+            alert(`İşlem tamamlandı!\nGüncellenen: ${updatedCount}\nYeni Eklenen: ${insertedCount}`)
             fetchFoods()
         } catch (e: any) {
             alert('Hata: ' + e.message)
@@ -344,7 +344,7 @@ export function FoodSidebar({
         if (data) {
             let allFoods = [...data]
 
-            // If viewing all categories or specifically "KayÄ±tsÄ±zlar", include custom foods
+            // If viewing all categories or specifically "Kayıtsızlar", include custom foods
             const categoryFilter = filters.find(f => f.field === 'category')
             const shouldShowCustom = !categoryFilter?.value || categoryFilter.value === 'KAYITSIZLAR'
 
@@ -477,10 +477,10 @@ export function FoodSidebar({
     return (
         <div className="w-full border-r bg-white flex flex-col h-full overflow-hidden">
             
-            {/* LÄ°PODEM MERKEZÄ° Branding Header */}
+            {/* LİPODEM MERKEZİ Branding Header */}
             {!isSidebarCollapsed && (
                 <div className="p-4 border-b flex items-center justify-center font-bold tracking-widest text-[#1a5f7a] bg-slate-50">
-                    LÄ°PODEM MERKEZÄ°
+                    LİPODEM MERKEZİ
                 </div>
             )}
 
@@ -490,7 +490,7 @@ export function FoodSidebar({
                     <div className="group font-bold text-xs text-gray-500/80 flex items-center justify-between gap-2 px-1">
                     <span className="uppercase tracking-wider">Hasta Tercihleri</span>
                     {onEditProfile && (
-                        <button onClick={onEditProfile} className="opacity-0 group-hover:opacity-100 p-1 hover:bg-gray-200 rounded transition-opacity" title="Profili DÃ¼zenle">
+                        <button onClick={onEditProfile} className="opacity-0 group-hover:opacity-100 p-1 hover:bg-gray-200 rounded transition-opacity" title="Profili Düzenle">
                             <Edit2 size={14} className="text-gray-500" />
                         </button>
                     )}
@@ -502,7 +502,7 @@ export function FoodSidebar({
                             title={likedFoods.join(', ')}
                             onClick={onEditProfile}
                         >
-                            <span className="shrink-0 text-red-500">â¤ï¸</span>
+                            <span className="shrink-0 text-red-500">❤️</span>
                             <div className="text-gray-600 truncate">
                                 {likedFoods.join(', ')}
                             </div>
@@ -514,7 +514,7 @@ export function FoodSidebar({
                             title={dislikedFoods.join(', ')}
                             onClick={onEditProfile}
                         >
-                            <span className="shrink-0 text-gray-500">ğŸš«</span>
+                            <span className="shrink-0 text-gray-500">🚫</span>
                             <div className="text-gray-400 truncate decoration-1">
                                 {dislikedFoods.join(', ')}
                             </div>
@@ -544,14 +544,14 @@ export function FoodSidebar({
                                 <Button variant="ghost" size="icon" className="h-7 w-7"><Settings size={14} /></Button>
                             </DialogTrigger>
                             <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-                                <DialogHeader><DialogTitle>Filtre AyarlarÄ±</DialogTitle></DialogHeader>
+                                <DialogHeader><DialogTitle>Filtre Ayarları</DialogTitle></DialogHeader>
                                 <FilterSettingsPanel fields={filterFields} onSave={(f) => { saveFilterFieldsToDB(f); setSettingsOpen(false); }} />
 
                                 <div className="border-t pt-4 mt-6">
-                                    <h4 className="text-sm font-medium mb-3">Veri YÃ¶netimi (Admin)</h4>
+                                    <h4 className="text-sm font-medium mb-3">Veri Yönetimi (Admin)</h4>
                                     <div className="p-3 bg-yellow-50 border border-yellow-100 rounded-md">
                                         <p className="text-xs text-yellow-800 mb-3">
-                                            Bu iÅŸlem <b>food_list.json</b> dosyasÄ±ndaki tÃ¼m yemekleri ve Ã¶zellikleri veritabanÄ±na aktarÄ±r.
+                                            Bu işlem <b>food_list.json</b> dosyasındaki tüm yemekleri ve özellikleri veritabanına aktarır.
                                             Eksik alanlar (keto, lowcarb, mevsim vb.) doldurulur.
                                         </p>
                                         <Button
@@ -561,7 +561,7 @@ export function FoodSidebar({
                                             disabled={loading}
                                             className="w-full bg-white hover:bg-yellow-100 border-yellow-200 text-yellow-900"
                                         >
-                                            JSON Verileriyle VeritabanÄ±nÄ± GÃ¼ncelle
+                                            JSON Verileriyle Veritabanını Güncelle
                                         </Button>
                                     </div>
                                 </div>
@@ -601,7 +601,7 @@ export function FoodSidebar({
                         )}
                         {filterFields.find(f => f.value === filter.field)?.type === 'select' && (
                             <select className="flex-1 text-[10px] border rounded px-1 py-1 bg-white" value={filter.value} onChange={e => updateFilter(filter.id, { value: e.target.value })}>
-                                <option value="">SeÃ§in...</option>
+                                <option value="">Seçin...</option>
                                 <option value="">Hepsi</option>
                                 {filterFields.find(f => f.value === filter.field)?.options?.map(opt => (
                                     <option key={opt} value={opt}>{ROLE_LABELS[opt] || opt}</option>
@@ -621,21 +621,21 @@ export function FoodSidebar({
                 <button
                     className={`flex-1 text-[10px] py-1 rounded border transition-colors ${sortByCount === 'asc' ? 'bg-blue-100 text-blue-700 border-blue-300' : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'}`}
                     onClick={() => handleSortChange(sortByCount === 'asc' ? null : 'asc')}
-                    title="En az kullanÄ±landan baÅŸla (0 kullanÄ±lanlar sonda)"
+                    title="En az kullanılandan başla (0 kullanılanlar sonda)"
                 >
-                    â†‘ En Az
+                    ↑ En Az
                 </button>
                 <button
                     className={`flex-1 text-[10px] py-1 rounded border transition-colors ${sortByCount === 'desc' ? 'bg-blue-100 text-blue-700 border-blue-300' : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'}`}
                     onClick={() => handleSortChange(sortByCount === 'desc' ? null : 'desc')}
-                    title="En Ã§ok kullanÄ±landan baÅŸla (0 kullanÄ±lanlar sonda)"
+                    title="En çok kullanılandan başla (0 kullanılanlar sonda)"
                 >
-                    â†“ En Ã‡ok
+                    ↓ En Çok
                 </button>
             </div>
 
             <div className="flex-1 overflow-auto p-1.5 space-y-1">
-                {loading && <div className="text-center text-xs text-gray-400 py-2">AranÄ±yor...</div>}
+                {loading && <div className="text-center text-xs text-gray-400 py-2">Aranıyor...</div>}
 
                 {sortedFoods.map(food => {
                     const countKey = food.id || food.name?.toLowerCase().trim()
@@ -658,14 +658,14 @@ export function FoodSidebar({
                 })}
 
                 {!loading && sortedFoods.length === 0 && filters.some(f => f.value && f.value.length >= 3) && (
-                    <div className="text-center text-xs text-gray-400 py-2">SonuÃ§ bulunamadÄ±</div>
+                    <div className="text-center text-xs text-gray-400 py-2">Sonuç bulunamadı</div>
                 )}
                 {!loading && sortedFoods.length === 0 && !filters.some(f => f.value && f.value.length >= 3) && (
-                    <div className="text-center text-xs text-gray-400 py-2">3+ karakter yazÄ±n</div>
+                    <div className="text-center text-xs text-gray-400 py-2">3+ karakter yazın</div>
                 )}
 
                 {!loading && sortedFoods.length > 0 && (
-                    <div className="text-center text-[10px] text-gray-300 pt-1">{displayedFoods.length} sonuÃ§</div>
+                    <div className="text-center text-[10px] text-gray-300 pt-1">{displayedFoods.length} sonuç</div>
                 )}
             </div>
         </div>
@@ -692,11 +692,11 @@ function DraggableFoodItem({ food, onUpdate, dislikedFoods = [], activeDietRules
     // Build hover tooltip (Base info)
     const buildTooltip = () => {
         const parts: string[] = []
-        if (isDisliked) parts.push('ğŸš« HastanÄ±n sevmediÄŸi besin')
+        if (isDisliked) parts.push('🚫 Hastanın sevmediği besin')
 
-        if (!isCompatible && compatibility.reason && !compatibility.warnings?.length) parts.push(`âš ï¸ ${compatibility.reason}`)
-        if (isRecommended && compatibility.diseaseName && !compatibility.warnings?.length) parts.push(`ğŸ’™ Ã–nerilen: ${compatibility.diseaseName}`)
-        if (!seasonality.inSeason) parts.push(`ğŸ‚ ${seasonality.reason}`)
+        if (!isCompatible && compatibility.reason && !compatibility.warnings?.length) parts.push(`⚠️ ${compatibility.reason}`)
+        if (isRecommended && compatibility.diseaseName && !compatibility.warnings?.length) parts.push(`💙 Önerilen: ${compatibility.diseaseName}`)
+        if (!seasonality.inSeason) parts.push(`🍂 ${seasonality.reason}`)
         return parts.join('\n') || food.name
     }
 
@@ -732,20 +732,20 @@ function DraggableFoodItem({ food, onUpdate, dislikedFoods = [], activeDietRules
                                 <div className="flex-1 min-w-0">
                                     <div className={`font-medium text-xs truncate flex items-center gap-0.5 ${isDisliked ? 'text-red-600' : ''}`} title={food.name}>
                                         {/* Icons - same order as meal render */}
-                                        {!seasonality.inSeason && <span className="text-[10px]" title={seasonality.reason}>ğŸ‚</span>}
+                                        {!seasonality.inSeason && <span className="text-[10px]" title={seasonality.reason}>🍂</span>}
 
                                         {/* Medication Icons */}
                                         {compatibility.medicationWarning && compatibility.medicationWarning.type === 'negative' && (
-                                            <span className="text-[10px]">ğŸ’ŠğŸš«</span>
+                                            <span className="text-[10px]">💊🚫</span>
                                         )}
                                         {compatibility.medicationWarning && compatibility.medicationWarning.type === 'warning' && (
-                                            <span className="text-[10px]">ğŸ’Šâš ï¸</span>
+                                            <span className="text-[10px]">💊⚠️</span>
                                         )}
                                         {compatibility.medicationWarning && compatibility.medicationWarning.type === 'positive' && (
-                                            <span className="text-[10px]">ğŸ’Šâœ…</span>
+                                            <span className="text-[10px]">💊✅</span>
                                         )}
 
-                                        {isDisliked && <span className="text-[10px]">ğŸš«</span>}
+                                        {isDisliked && <span className="text-[10px]">🚫</span>}
                                         {!isCompatible && (
                                             <span className="">
                                                 <AlertTriangle size={11} className="text-red-600" />
@@ -758,7 +758,7 @@ function DraggableFoodItem({ food, onUpdate, dislikedFoods = [], activeDietRules
                                         )}
                                         <span>{food.name}</span>
                                         {food.meta?.team_owner_id && (
-                                            <span className="ml-1 px-1 bg-indigo-100 text-indigo-700 text-[8px] font-bold tracking-widest rounded uppercase">TakÄ±m</span>
+                                            <span className="ml-1 px-1 bg-indigo-100 text-indigo-700 text-[8px] font-bold tracking-widest rounded uppercase">Takım</span>
                                         )}
                                     </div>
                                     <div className="text-[10px] text-gray-500 flex gap-1.5 mt-0.5">
@@ -799,31 +799,31 @@ function DraggableFoodItem({ food, onUpdate, dislikedFoods = [], activeDietRules
                                                             let cardBg = 'bg-white';
                                                             let cardBorder = 'border-slate-100';
                                                             let titleColor = 'text-slate-800';
-                                                            let icon = 'âš ï¸';
+                                                            let icon = '⚠️';
 
                                                             if (w.source === 'disease') {
-                                                                icon = 'ğŸ¥';
+                                                                icon = '🏥';
                                                                 if (w.type === 'negative') { cardBg = 'bg-red-50'; cardBorder = 'border-red-200'; titleColor = 'text-red-900'; }
                                                                 else if (w.type === 'positive') { cardBg = 'bg-blue-50'; cardBorder = 'border-blue-200'; titleColor = 'text-blue-900'; }
                                                             } else if (w.source === 'medication') {
-                                                                icon = 'ğŸ’Š';
+                                                                icon = '💊';
                                                                 cardBg = 'bg-amber-50'; cardBorder = 'border-amber-200'; titleColor = 'text-amber-900';
                                                                 if (w.type === 'positive') { cardBg = 'bg-green-50'; cardBorder = 'border-green-200'; titleColor = 'text-green-900'; }
                                                             } else if (w.source === 'lab') {
-                                                                icon = 'ğŸ”¬';
+                                                                icon = '🔬';
                                                                 cardBg = 'bg-purple-50'; cardBorder = 'border-purple-200'; titleColor = 'text-purple-900';
                                                             } else if (w.source === 'diet') {
-                                                                icon = 'ğŸ¥—';
+                                                                icon = '🥗';
                                                                 cardBg = 'bg-orange-50'; cardBorder = 'border-orange-200'; titleColor = 'text-orange-900';
                                                             }
 
 
                                                             // Determine status icon
-                                                            let statusIcon = 'âš ï¸';
-                                                            if (w.type === 'negative') statusIcon = 'â›”';
-                                                            if (w.type === 'positive') statusIcon = 'âœ…';
+                                                            let statusIcon = '⚠️';
+                                                            if (w.type === 'negative') statusIcon = '⛔';
+                                                            if (w.type === 'positive') statusIcon = '✅';
 
-                                                            const typeLabel = w.type === 'negative' ? 'UYUMSUZ' : w.type === 'positive' ? 'Ã–NERÄ°LEN' : 'UYARI';
+                                                            const typeLabel = w.type === 'negative' ? 'UYUMSUZ' : w.type === 'positive' ? 'ÖNERİLEN' : 'UYARI';
                                                             const typeColor = w.type === 'negative' ? 'text-red-700' : w.type === 'positive' ? 'text-green-700' : 'text-amber-700';
 
                                                             return (
@@ -859,7 +859,7 @@ function DraggableFoodItem({ food, onUpdate, dislikedFoods = [], activeDietRules
                                 })()}
                                 {seasonality.inSeason === false && (
                                     <div className="pt-2 border-t border-gray-200 text-orange-600 font-medium">
-                                        ğŸ‚ {seasonality.reason}
+                                        🍂 {seasonality.reason}
                                     </div>
                                 )}
                             </div>
@@ -899,7 +899,7 @@ export function FoodEditDialog({
 }) {
     // Basic info
     const [name, setName] = useState(food.name || '')
-    const [category, setCategory] = useState(food.category || 'Ã–ÄLEN')
+    const [category, setCategory] = useState(food.category || 'ÖĞLEN')
     const [role, setRole] = useState(food.role || 'mainDish')
 
     // Dynamic options state
@@ -919,7 +919,7 @@ export function FoodEditDialog({
     const [multiplier, setMultiplier] = useState(food.multiplier?.toString() || '1')
     const [portionFixed, setPortionFixed] = useState(food.portion_fixed || false)
 
-    // Diet types â€” dynamic from diet_types table
+    // Diet types — dynamic from diet_types table
     const [availableDietTypes, setAvailableDietTypes] = useState<any[]>([])
     // Map: diet_type.id -> boolean (checked or not)
     const [dietTypeChecks, setDietTypeChecks] = useState<Record<string, boolean>>({})
@@ -991,9 +991,9 @@ export function FoodEditDialog({
     const filteredCards = useMemo(() => {
         if (recipeSearch.length < 2) return []
         
-        const trNorm = (s: string) => s.toLowerCase().replace(/[Ä°Ä±ÄÄŸÃœÃ¼ÅÅŸÃ–Ã¶Ã‡Ã§]/g, (ch: string) => ({
-            'Ä°':'i','Ä±':'i','Ä':'g','ÄŸ':'g','Ãœ':'u','Ã¼':'u',
-            'Å':'s','ÅŸ':'s','Ã–':'o','Ã¶':'o','Ã‡':'c','Ã§':'c'
+        const trNorm = (s: string) => s.toLowerCase().replace(/[İıĞğÜüŞşÖöÇç]/g, (ch: string) => ({
+            'İ':'i','ı':'i','Ğ':'g','ğ':'g','Ü':'u','ü':'u',
+            'Ş':'s','ş':'s','Ö':'o','ö':'o','Ç':'c','ç':'c'
         } as any)[ch] || ch)
         
         const searchTokens = trNorm(recipeSearch).split(/\s+/).filter(t => t.length >= 2)
@@ -1006,7 +1006,6 @@ export function FoodEditDialog({
         }).slice(0, 15)
     }, [recipeSearch, cards])
 
-    // Compute the auto matched card separately so we can display it in the list
     const autoMatchedCard = useMemo(() => {
         if (!name || cards.length === 0) return null
         
@@ -1213,7 +1212,7 @@ export function FoodEditDialog({
     // Sync state when food prop changes (after save & refetch)
     useEffect(() => {
         setName(food.name || '')
-        setCategory(food.category || 'Ã–ÄLEN')
+        setCategory(food.category || 'ÖĞLEN')
         setRole(food.role || 'mainDish')
         setCalories(food.calories?.toString() || '0')
         setProtein(food.protein?.toString() || '0')
@@ -1262,7 +1261,7 @@ export function FoodEditDialog({
         setCalories(Math.round(calculatedCalories).toString())
     }, [protein, carbs, fat])
 
-    const MONTHS = ['Ocak', 'Åubat', 'Mart', 'Nisan', 'MayÄ±s', 'Haziran', 'Temmuz', 'AÄŸustos', 'EylÃ¼l', 'Ekim', 'KasÄ±m', 'AralÄ±k']
+    const MONTHS = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık']
 
 
     async function handleSave() {
@@ -1454,13 +1453,13 @@ export function FoodEditDialog({
                 {/* Fixed Header */}
                 <div className="px-6 py-4 border-b shrink-0 flex items-center justify-between">
                     <DialogHeader>
-                        <DialogTitle>{mode === 'create' ? 'Yeni Yemek Ekle' : 'Yemek DÃ¼zenle'}</DialogTitle>
+                        <DialogTitle>{mode === 'create' ? 'Yeni Yemek Ekle' : 'Yemek Düzenle'}</DialogTitle>
                     </DialogHeader>
                     {activeThumbnail && (
                         <div className="flex items-center gap-3">
                             <div className="text-right">
-                                <p className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">EÅŸleÅŸen Kart</p>
-                                <p className="text-[11px] font-semibold text-green-600">Otomatik BaÄŸlandÄ±</p>
+                                <p className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">Eşleşen Kart</p>
+                                <p className="text-[11px] font-semibold text-green-600">Otomatik Bağlandı</p>
                             </div>
                             <div 
                                 className="w-12 h-12 rounded-lg border-2 border-green-100 overflow-hidden shadow-sm hover:scale-110 transition-transform cursor-zoom-in"
@@ -1478,7 +1477,7 @@ export function FoodEditDialog({
                         {/* Left Column */}
                         <div className="space-y-4">
                             <div>
-                                <Label className="text-xs font-medium">Yemek AdÄ±</Label>
+                                <Label className="text-xs font-medium">Yemek Adı</Label>
                                 <Input value={name} onChange={e => setName(e.target.value)} className="h-9" />
                             </div>
 
@@ -1496,7 +1495,7 @@ export function FoodEditDialog({
                                     <Input type="number" value={carbs} onChange={e => setCarbs(e.target.value)} className="h-8" />
                                 </div>
                                 <div>
-                                    <Label className="text-xs">YaÄŸ (g)</Label>
+                                    <Label className="text-xs">Yağ (g)</Label>
                                     <Input type="number" value={fat} onChange={e => setFat(e.target.value)} className="h-8" />
                                 </div>
                             </div>
@@ -1504,14 +1503,14 @@ export function FoodEditDialog({
 
 
                             <div>
-                                <Label className="text-xs">Etiketler (virgÃ¼lle ayÄ±r)</Label>
-                                <Input value={tags} onChange={e => setTags(e.target.value)} placeholder="peynir, keto, kahvaltÄ±" className="h-8" />
+                                <Label className="text-xs">Etiketler (virgülle ayır)</Label>
+                                <Input value={tags} onChange={e => setTags(e.target.value)} placeholder="peynir, keto, kahvaltı" className="h-8" />
                             </div>
 
                             <div>
                                 <Label className="text-xs">Uyumluluk Etiketleri</Label>
-                                <Input value={compatibilityTags} onChange={e => setCompatibilityTags(e.target.value)} placeholder="yeÅŸillik, zeytin, domates" className="h-8" />
-                                <p className="text-[10px] text-gray-400 mt-0.5">Bu etiketler yemek uyumluluÄŸunu kontrol etmek iÃ§in kullanÄ±lÄ±r.</p>
+                                <Input value={compatibilityTags} onChange={e => setCompatibilityTags(e.target.value)} placeholder="yeşillik, zeytin, domates" className="h-8" />
+                                <p className="text-[10px] text-gray-400 mt-0.5">Bu etiketler yemek uyumluluğunu kontrol etmek için kullanılır.</p>
                             </div>
 
                             <div>
@@ -1520,34 +1519,34 @@ export function FoodEditDialog({
                             </div>
 
                             <div>
-                                <Label className="text-xs text-blue-600 flex items-center gap-1 mt-2"><span>ğŸ“</span> Malzemeler</Label>
+                                <Label className="text-xs text-blue-600 flex items-center gap-1 mt-2"><span>📝</span> Malzemeler</Label>
                                 <textarea 
                                     value={ingredients} 
                                     onChange={e => setIngredients(e.target.value)} 
                                     className="flex min-h-[60px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-xs shadow-sm mt-1 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500" 
-                                    placeholder="200g tavuk, 1 yk zeytinyaÄŸÄ±..." 
+                                    placeholder="200g tavuk, 1 yk zeytinyağı..." 
                                 />
                             </div>
                             
                             <div>
-                                <Label className="text-xs text-blue-600 flex items-center gap-1"><span>ğŸ‘¨â€ğŸ³</span> Tarif AdÄ±mlarÄ±</Label>
+                                <Label className="text-xs text-blue-600 flex items-center gap-1"><span>👨‍🍳</span> Tarif Adımları</Label>
                                 <textarea 
                                     value={recipeText} 
                                     onChange={e => setRecipeText(e.target.value)} 
                                     className="flex min-h-[100px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-xs shadow-sm mt-1 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500" 
-                                    placeholder="1. TavuÄŸu doÄŸrayÄ±n...&#10;2. Tavada soteleyin..." 
+                                    placeholder="1. Tavuğu doğrayın...&#10;2. Tavada soteleyin..." 
                                 />
-                                <p className="text-[10px] text-gray-400 mt-0.5">EÄŸer tarif kartÄ± yoksa hastaya bu metin gÃ¶sterilir.</p>
+                                <p className="text-[10px] text-gray-400 mt-0.5">Eğer tarif kartı yoksa hastaya bu metin gösterilir.</p>
                             </div>
 
                             {/* Recipe Card Match/Ban Controls */}
                             {name && (
                                 <div className="border-t pt-3">
                                     <Label className="text-xs text-indigo-600 flex items-center gap-1 mb-2">
-                                        <span>ğŸ“–</span> Tarif KartÄ± EÅŸleÅŸmeleri
+                                        <span>📖</span> Tarif Kartı Eşleşmeleri
                                     </Label>
 
-                                    {/* Auto Match */}
+                                    {/* Existing matches */}
                                     {autoMatchedCard && !foodMatches.some(m => m.card_filename === autoMatchedCard.filename) && (
                                         <div className="mb-2">
                                             <span className="text-[10px] text-gray-500">Otomatik Eşleşen Kart:</span>
@@ -1561,18 +1560,19 @@ export function FoodEditDialog({
                                             </div>
                                         </div>
                                     )}
+
                                     {/* Existing matches */}
                                     {foodMatches.length > 0 && (
                                         <div className="mb-2">
-                                            <span className="text-[10px] text-gray-500">EÅŸleÅŸen Kartlar:</span>
+                                            <span className="text-[10px] text-gray-500">Eşleşen Kartlar:</span>
                                             <div className="flex flex-wrap gap-1 mt-0.5">
                                                 {foodMatches.map(m => (
                                                     <span key={m.id} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] bg-green-100 text-green-800 border border-green-200">
-                                                        âœ… {m.card_filename.replace(/\..+$/, '')}
+                                                        ✅ {m.card_filename.replace(/\..+$/, '')}
                                                         <button
                                                             onClick={(e) => { e.preventDefault(); deleteManualMatch(m.id) }}
                                                             className="hover:text-red-600 ml-0.5"
-                                                            title="EÅŸleÅŸmeyi KaldÄ±r"
+                                                            title="Eşleşmeyi Kaldır"
                                                         >
                                                             <X size={10} />
                                                         </button>
@@ -1589,11 +1589,11 @@ export function FoodEditDialog({
                                             <div className="flex flex-wrap gap-1 mt-0.5">
                                                 {foodBans.map(b => (
                                                     <span key={b.id} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] bg-red-100 text-red-800 border border-red-200">
-                                                        ğŸš« {b.card_filename.replace(/\..+$/, '')}
+                                                        🚫 {b.card_filename.replace(/\..+$/, '')}
                                                         <button
                                                             onClick={(e) => { e.preventDefault(); deleteBan(b.id) }}
                                                             className="hover:text-red-900 ml-0.5"
-                                                            title="YasaÄŸÄ± KaldÄ±r"
+                                                            title="Yasağı Kaldır"
                                                         >
                                                             <X size={10} />
                                                         </button>
@@ -1608,7 +1608,7 @@ export function FoodEditDialog({
                                         <div className="flex-1 relative">
                                             <div className="flex items-center gap-1">
                                                 <Input
-                                                    placeholder="Tarif kartÄ± ara... (2+ karakter)"
+                                                    placeholder="Tarif kartı ara... (2+ karakter)"
                                                     value={recipeSearch}
                                                     onChange={e => setRecipeSearch(e.target.value)}
                                                     className="h-7 text-xs"
@@ -1625,7 +1625,7 @@ export function FoodEditDialog({
                                                         setIsSyncing(false)
                                                     }}
                                                     disabled={isSyncing}
-                                                    title="GitHub'dan yeni kartlarÄ± Ã§ek"
+                                                    title="GitHub'dan yeni kartları çek"
                                                 >
                                                     <RefreshCw size={14} className={isSyncing ? 'animate-spin' : ''} />
                                                 </Button>
@@ -1639,8 +1639,8 @@ export function FoodEditDialog({
                                                         return (
                                                             <div key={c.id} className="flex items-center gap-1 px-2 py-1 hover:bg-gray-50 text-xs border-b border-gray-50 last:border-0">
                                                                 <span className="flex-1 truncate" title={displayName}>{displayName}</span>
-                                                                {isAlreadyMatched && <span className="text-[9px] text-green-600 shrink-0">âœ… EÅŸleÅŸti</span>}
-                                                                {isAlreadyBanned && <span className="text-[9px] text-red-600 shrink-0">ğŸš« YasaklÄ±</span>}
+                                                                {isAlreadyMatched && <span className="text-[9px] text-green-600 shrink-0">✅ Eşleşti</span>}
+                                                                {isAlreadyBanned && <span className="text-[9px] text-red-600 shrink-0">🚫 Yasaklı</span>}
                                                                 {!isAlreadyMatched && !isAlreadyBanned && (
                                                                     <>
                                                                         <button
@@ -1650,9 +1650,9 @@ export function FoodEditDialog({
                                                                                 setRecipeSearch('')
                                                                             }}
                                                                             className="px-1.5 py-0.5 rounded text-[9px] bg-green-100 hover:bg-green-200 text-green-700 border border-green-200 shrink-0"
-                                                                            title="Bu kartÄ± eÅŸleÅŸtir"
+                                                                            title="Bu kartı eşleştir"
                                                                         >
-                                                                            âœ… EÅŸleÅŸtir
+                                                                            ✅ Eşleştir
                                                                         </button>
                                                                         <button
                                                                             onClick={async (e) => {
@@ -1661,9 +1661,9 @@ export function FoodEditDialog({
                                                                                 setRecipeSearch('')
                                                                             }}
                                                                             className="px-1.5 py-0.5 rounded text-[9px] bg-red-100 hover:bg-red-200 text-red-700 border border-red-200 shrink-0"
-                                                                            title="Bu kartÄ± yasakla"
+                                                                            title="Bu kartı yasakla"
                                                                         >
-                                                                            ğŸš« Yasakla
+                                                                            🚫 Yasakla
                                                                         </button>
                                                                     </>
                                                                 )}
@@ -1675,8 +1675,8 @@ export function FoodEditDialog({
                                         </div>
                                     </div>
                                     <p className="text-[10px] text-gray-400 mt-1">
-                                        <span className="text-green-600">EÅŸleÅŸtir:</span> Tarif kartÄ±nÄ± bu yemeÄŸe zorla baÄŸla.
-                                        <span className="text-red-600 ml-1">Yasakla:</span> Otomatik eÅŸleÅŸmeyi engelle.
+                                        <span className="text-green-600">Eşleştir:</span> Tarif kartını bu yemeğe zorla bağla.
+                                        <span className="text-red-600 ml-1">Yasakla:</span> Otomatik eşleşmeyi engelle.
                                     </p>
                                 </div>
                             )}
@@ -1704,58 +1704,58 @@ export function FoodEditDialog({
                             </div>
 
                             <div>
-                                <Label className="text-xs">Mevsim AralÄ±ÄŸÄ±</Label>
+                                <Label className="text-xs">Mevsim Aralığı</Label>
                                 <div className="grid grid-cols-2 gap-2 mt-1">
                                     <div>
-                                        <Label className="text-[10px] text-gray-400">BaÅŸlangÄ±Ã§ AyÄ±</Label>
+                                        <Label className="text-[10px] text-gray-400">Başlangıç Ayı</Label>
                                         <select className="w-full h-8 text-sm border rounded px-2" value={seasonStart} onChange={e => setSeasonStart(e.target.value)}>
                                             {MONTHS.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
                                         </select>
                                     </div>
                                     <div>
-                                        <Label className="text-[10px] text-gray-400">BitiÅŸ AyÄ±</Label>
+                                        <Label className="text-[10px] text-gray-400">Bitiş Ayı</Label>
                                         <select className="w-full h-8 text-sm border rounded px-2" value={seasonEnd} onChange={e => setSeasonEnd(e.target.value)}>
                                             {MONTHS.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
                                         </select>
                                     </div>
                                 </div>
-                                <p className="text-[10px] text-gray-400 mt-0.5">BoÅŸ bÄ±rakÄ±lÄ±rsa tÃ¼m yÄ±l kullanÄ±labilir.</p>
+                                <p className="text-[10px] text-gray-400 mt-0.5">Boş bırakılırsa tüm yıl kullanılabilir.</p>
                             </div>
 
-                            {/* PORSÄ°YON VE ESNEKLÄ°K AYARLARI */}
+                            {/* PORSİYON VE ESNEKLİK AYARLARI */}
                             <div className="bg-orange-50 border border-orange-100 rounded p-3">
                                 <Label className="text-xs font-semibold text-orange-800 mb-2 flex items-center gap-1.5">
-                                    <span>âš–ï¸</span> Porsiyon ve Otoplanlama SÄ±nÄ±rlarÄ±
+                                    <span>⚖️</span> Porsiyon ve Otoplanlama Sınırları
                                 </Label>
 
                                 <div className="flex flex-col gap-3">
                                     <div className="flex items-center gap-4">
                                         <label className="flex items-center gap-1.5 text-xs font-medium text-orange-900 select-none cursor-pointer p-1.5 bg-white border border-orange-200 rounded shadow-sm hover:bg-orange-50/50 transition-colors">
                                             <input type="checkbox" checked={portionFixed} onChange={e => setPortionFixed(e.target.checked)} className="rounded text-orange-600 focus:ring-orange-500" />
-                                            Porsiyon Sabit (DeÄŸiÅŸmez)
+                                            Porsiyon Sabit (Değişmez)
                                         </label>
                                         <div className="flex items-center gap-2">
-                                            <Label className="text-xs font-medium text-orange-900">VarsayÄ±lan Ã‡arpan:</Label>
-                                            <Input type="number" step="0.5" value={multiplier} onChange={e => setMultiplier(e.target.value)} className="h-8 w-16 text-center border-orange-200" title="Yemek plana eklendiÄŸinde ilk alacaÄŸÄ± porsiyon katsayÄ±sÄ±" />
+                                            <Label className="text-xs font-medium text-orange-900">Varsayılan Çarpan:</Label>
+                                            <Input type="number" step="0.5" value={multiplier} onChange={e => setMultiplier(e.target.value)} className="h-8 w-16 text-center border-orange-200" title="Yemek plana eklendiğinde ilk alacağı porsiyon katsayısı" />
                                         </div>
                                     </div>
 
                                     {!portionFixed && (
                                         <div className="flex items-center gap-3 bg-white p-2 rounded border border-orange-100 shadow-sm mt-1">
                                             <div className="flex flex-col gap-1">
-                                                <Label className="text-[10px] text-orange-800 font-medium" title="Otoplanlamada porsiyon en az bu kadar olabilir">Min KatsayÄ±</Label>
+                                                <Label className="text-[10px] text-orange-800 font-medium" title="Otoplanlamada porsiyon en az bu kadar olabilir">Min Katsayı</Label>
                                                 <Input type="number" step="0.5" value={minQuantity} onChange={e => setMinQuantity(e.target.value)} className="h-7 w-16 text-xs text-center border-orange-200" />
                                             </div>
                                             <div className="flex flex-col gap-1">
-                                                <Label className="text-[10px] text-orange-800 font-medium" title="Otoplanlamada porsiyon en fazla bu kadar olabilir">Maks KatsayÄ±</Label>
+                                                <Label className="text-[10px] text-orange-800 font-medium" title="Otoplanlamada porsiyon en fazla bu kadar olabilir">Maks Katsayı</Label>
                                                 <Input type="number" step="0.5" value={maxQuantity} onChange={e => setMaxQuantity(e.target.value)} className="h-7 w-16 text-xs text-center border-orange-200" />
                                             </div>
                                             <div className="flex flex-col gap-1">
-                                                <Label className="text-[10px] text-orange-800 font-medium" title="Porsiyonu artÄ±rÄ±p azaltÄ±rken kullanÄ±lacak birim (Ã¶rn 0.5)">ArtÄ±ÅŸ AdÄ±mÄ±</Label>
+                                                <Label className="text-[10px] text-orange-800 font-medium" title="Porsiyonu artırıp azaltırken kullanılacak birim (örn 0.5)">Artış Adımı</Label>
                                                 <Input type="number" step="0.1" value={step} onChange={e => setStep(e.target.value)} className="h-7 w-16 text-xs text-center border-orange-200" />
                                             </div>
                                             <p className="text-[9px] text-orange-600 ml-2 leading-tight flex-1">
-                                                Kalori dengesi saÄŸlanÄ±rken porsiyon bu aralÄ±kta, adÄ±m deÄŸeri kadar bÃ¼yÃ¼tÃ¼lÃ¼p kÃ¼Ã§Ã¼ltÃ¼lebilir.
+                                                Kalori dengesi sağlanırken porsiyon bu aralıkta, adım değeri kadar büyütülüp küçültülebilir.
                                             </p>
                                         </div>
                                     )}
@@ -1764,7 +1764,7 @@ export function FoodEditDialog({
 
                             <div className="bg-indigo-50 border border-indigo-100 rounded p-2">
                                 <Label className="text-xs font-semibold text-indigo-800 mb-1 flex items-center gap-1">
-                                    <span>ğŸ“…</span> HaftalÄ±k TÃ¼ketim Limiti
+                                    <span>📅</span> Haftalık Tüketim Limiti
                                 </Label>
                                 <div className="flex items-center gap-4 mt-2">
                                     <div className="flex items-center gap-2">
@@ -1777,11 +1777,11 @@ export function FoodEditDialog({
                                     </div>
                                     <span className="text-[10px] text-indigo-600 font-medium whitespace-nowrap">Kez / Hafta</span>
                                 </div>
-                                <p className="text-[9px] text-indigo-500 mt-1.5 leading-tight">Bu yemeÄŸin planda bir haftada en az/en Ã§ok kaÃ§ kez verileceÄŸini belirler. BoÅŸ bÄ±rakÄ±rsanÄ±z genel ayarlar geÃ§erli olur.</p>
+                                <p className="text-[9px] text-indigo-500 mt-1.5 leading-tight">Bu yemeğin planda bir haftada en az/en çok kaç kez verileceğini belirler. Boş bırakırsanız genel ayarlar geçerli olur.</p>
                             </div>
 
                             <div>
-                                <Label className="text-xs">Ã–ncelik Skoru</Label>
+                                <Label className="text-xs">Öncelik Skoru</Label>
                                 <div className="flex items-center gap-2 mt-1">
                                     <input
                                         type="range" min={0} max={10} step={1}
@@ -1793,11 +1793,11 @@ export function FoodEditDialog({
                                         {priorityScore}
                                     </span>
                                 </div>
-                                <p className="text-[9px] text-slate-400 mt-0.5">0=hiÃ§ verilmez, 1-3=az tercih, 5=normal, 8-10=Ã§ok tercih</p>
+                                <p className="text-[9px] text-slate-400 mt-0.5">0=hiç verilmez, 1-3=az tercih, 5=normal, 8-10=çok tercih</p>
                                 {patientId && (
                                     <div className="mt-1.5 flex items-center gap-2">
                                         <div className="flex items-center gap-1.5 bg-blue-50 border border-blue-200 rounded px-2 py-1">
-                                            <span className="text-[9px] text-blue-600">ğŸ”’ Bu skor hastaya Ã¶zel kaydedilir</span>
+                                            <span className="text-[9px] text-blue-600">🔒 Bu skor hastaya özel kaydedilir</span>
                                         </div>
                                         <label className="flex items-center gap-1.5 text-[10px] select-none cursor-pointer text-slate-500 hover:text-slate-700">
                                             <input
@@ -1813,39 +1813,39 @@ export function FoodEditDialog({
                             </div>
 
                             <div>
-                                <Label className="text-xs">Ã–ÄŸÃ¼n TÃ¼rÃ¼</Label>
+                                <Label className="text-xs">Öğün Türü</Label>
                                 <div className="flex gap-4 mt-1">
                                     <label className="flex items-center gap-1.5 text-sm select-none cursor-pointer">
                                         <input type="checkbox" checked={mealBreakfast} onChange={e => setMealBreakfast(e.target.checked)} className="rounded" />
-                                        KahvaltÄ±
+                                        Kahvaltı
                                     </label>
                                     <label className="flex items-center gap-1.5 text-sm select-none cursor-pointer">
                                         <input type="checkbox" checked={mealLunch} onChange={e => setMealLunch(e.target.checked)} className="rounded" />
-                                        Ã–ÄŸle
+                                        Öğle
                                     </label>
                                     <label className="flex items-center gap-1.5 text-sm select-none cursor-pointer">
                                         <input type="checkbox" checked={mealDinner} onChange={e => setMealDinner(e.target.checked)} className="rounded" />
-                                        AkÅŸam
+                                        Akşam
                                     </label>
                                 </div>
                             </div>
 
                             <div>
-                                <Label className="text-xs">Dolgu TÃ¼rÃ¼</Label>
+                                <Label className="text-xs">Dolgu Türü</Label>
                                 <div className="flex gap-4 mt-1">
                                     <label className="flex items-center gap-1.5 text-sm select-none cursor-pointer">
                                         <input type="checkbox" checked={fillerLunch} onChange={e => setFillerLunch(e.target.checked)} className="rounded" />
-                                        Ã–ÄŸlen
+                                        Öğlen
                                     </label>
                                     <label className="flex items-center gap-1.5 text-sm select-none cursor-pointer">
                                         <input type="checkbox" checked={fillerDinner} onChange={e => setFillerDinner(e.target.checked)} className="rounded" />
-                                        AkÅŸam
+                                        Akşam
                                     </label>
                                 </div>
                             </div>
 
                             <div>
-                                <Label className="text-xs">Diyet TÃ¼rÃ¼</Label>
+                                <Label className="text-xs">Diyet Türü</Label>
                                 <div className="flex flex-wrap gap-3 mt-1">
                                     {availableDietTypes.length > 0 ? availableDietTypes.map(dt => (
                                         <label key={dt.id} className="flex items-center gap-1.5 text-sm select-none cursor-pointer" title={dt.description || dt.name}>
@@ -1858,15 +1858,15 @@ export function FoodEditDialog({
                                             {dt.abbreviation || dt.name}
                                         </label>
                                     )) : (
-                                        <span className="text-xs text-gray-400">Diyet tÃ¼rleri yÃ¼kleniyor...</span>
+                                        <span className="text-xs text-gray-400">Diyet türleri yükleniyor...</span>
                                     )}
                                 </div>
                             </div>
 
-                            {/* Zengin OlduÄŸu Mikrobesinler */}
+                            {/* Zengin Olduğu Mikrobesinler */}
                             <div>
                                 <Label className="text-xs text-green-600 flex items-center gap-1">
-                                    <span>ğŸ§¬</span> Zengin OlduÄŸu Mikrobesinler
+                                    <span>🧬</span> Zengin Olduğu Mikrobesinler
                                 </Label>
                                 <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 mt-1 max-h-48 overflow-y-auto border rounded p-2 bg-gray-50">
                                     {allMicronutrients.map(micro => {
@@ -1916,8 +1916,8 @@ export function FoodEditDialog({
                                     })}
                                 </div>
                                 <p className="text-xs text-gray-400 mt-1">
-                                    <span className="text-green-600">Otomatik:</span> Admin panelden tanÄ±mlanan kelimeler ile eÅŸleÅŸti.
-                                    <span className="text-blue-600 ml-1">Manuel:</span> Elle iÅŸaretlendi.
+                                    <span className="text-green-600">Otomatik:</span> Admin panelden tanımlanan kelimeler ile eşleşti.
+                                    <span className="text-blue-600 ml-1">Manuel:</span> Elle işaretlendi.
                                 </p>
                             </div>
                         </div>
@@ -1927,7 +1927,7 @@ export function FoodEditDialog({
                 {/* Fixed Footer */}
                 <div className="p-4 border-t bg-gray-50 shrink-0">
                     <DialogFooter className="gap-2">
-                        <Button variant="outline" onClick={onClose} className="flex-1">Ä°ptal</Button>
+                        <Button variant="outline" onClick={onClose} className="flex-1">İptal</Button>
                         <Button onClick={handleSave} disabled={saving} className="flex-1 bg-green-500 hover:bg-green-600">
                             {saving ? 'Kaydediliyor...' : 'Kaydet'}
                         </Button>
@@ -1964,12 +1964,12 @@ function FilterSettingsPanel({ fields, onSave }: { fields: FilterFieldConfig[]; 
                 ))}
             </div>
             <div className="border-t pt-3 grid grid-cols-4 gap-2">
-                <Input placeholder="Alan adÄ±" value={newName} onChange={e => setNewName(e.target.value)} className="h-7 text-xs" />
+                <Input placeholder="Alan adı" value={newName} onChange={e => setNewName(e.target.value)} className="h-7 text-xs" />
                 <Input placeholder="Etiket" value={newLabel} onChange={e => setNewLabel(e.target.value)} className="h-7 text-xs" />
                 <select className="h-7 text-xs border rounded px-1" value={newType} onChange={e => setNewType(e.target.value as any)}>
                     <option value="text">Metin</option>
-                    <option value="select">SeÃ§enek</option>
-                    <option value="number">SayÄ±</option>
+                    <option value="select">Seçenek</option>
+                    <option value="number">Sayı</option>
                 </select>
                 <Button size="sm" className="h-7" onClick={addField}><Plus size={12} /></Button>
             </div>
@@ -1977,5 +1977,3 @@ function FilterSettingsPanel({ fields, onSave }: { fields: FilterFieldConfig[]; 
         </div>
     )
 }
-
-
