@@ -1539,7 +1539,7 @@ export function FoodEditDialog({
                             </div>
 
                             {/* Recipe Card Match/Ban Controls */}
-                            {mode !== 'create' && name && (
+                            {name && (
                                 <div className="border-t pt-3">
                                     <Label className="text-xs text-indigo-600 flex items-center gap-1 mb-2">
                                         <span>📖</span> Tarif Kartı Eşleşmeleri
