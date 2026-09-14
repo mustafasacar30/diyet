@@ -2550,7 +2550,9 @@ export class Planner {
 
         // ===== FIXED MEAL RULES - Check for locked foods first =====
         const fixedFoods = this.getFixedFoodsForSlot(slotName, context.dayIndex)
-        for (const foodName of fixedFoods) {
+        // Deduplicate fixed foods to prevent accidental duplicate insertions from overlapping rules
+        const uniqueFixedFoods = [...new Set(fixedFoods)]
+        for (const foodName of uniqueFixedFoods) {
             const food = this.allFoods.find(f => f.name === foodName)
             if (food) {
                 selectedFoods.push(food)
@@ -6126,9 +6128,36 @@ export class Planner {
 
                             if (addDev.isUnder) {
                                 const slotsInDay = Array.from(new Set(dayMeals.map((m: any) => m.slot))) as string[]
-                                const bestSlot = slotsInDay[slotsInDay.length - 1] || 'AKŞAM'
+                                
+                                // Find best slot that has room based on maxItems limit
+                                let bestSlot = slotsInDay[slotsInDay.length - 1] || 'AKŞAM'
+                                let bestSlotMeals = dayMeals.filter((m: any) => m.slot === bestSlot)
+                                
+                                if (this.settings?.slot_config && Array.isArray(this.settings.slot_config)) {
+                                    for (let i = slotsInDay.length - 1; i >= 0; i--) {
+                                        const candidateSlot = slotsInDay[i]
+                                        const match = this.settings.slot_config.find((c: any) => normalizeSlotName(c.name || '') === normalizeSlotName(candidateSlot))
+                                        const maxItems = match?.max_items ?? 4
+                                        const candidateMeals = dayMeals.filter((m: any) => m.slot === candidateSlot)
+                                        if (candidateMeals.length < maxItems) {
+                                            bestSlot = candidateSlot
+                                            bestSlotMeals = candidateMeals
+                                            break
+                                        }
+                                    }
+                                }
+
+                                // Skip if the chosen bestSlot is already at maxItems (prevents infinite growth)
+                                let isSlotFull = false
+                                if (this.settings?.slot_config && Array.isArray(this.settings.slot_config)) {
+                                    const match = this.settings.slot_config.find((c: any) => normalizeSlotName(c.name || '') === normalizeSlotName(bestSlot))
+                                    if (match && bestSlotMeals.length >= (match.max_items ?? 4)) {
+                                        isSlotFull = true
+                                    }
+                                }
+                                if (isSlotFull) continue;
+
                                 const excludeIds = new Set(dayMeals.map((m: any) => m.food?.id).filter(Boolean))
-                                const bestSlotMeals = dayMeals.filter((m: any) => m.slot === bestSlot)
                                 const uniqueRolesForAdd = new Set(
                                     bestSlotMeals
                                         .map((m: any) => this.getCanonicalLockRole(m?.food?.role || ''))
@@ -6141,12 +6170,18 @@ export class Planner {
                                     .filter((m: any) => m.slot === bestSlot)
                                     .map((m: any) => m.food)
                                     .filter(Boolean)
+                                    
+                                const slotTags = new Set<string>()
+                                for (const meal of bestSlotMeals) {
+                                    if (meal?.food) this.addFoodTags(slotTags, meal.food)
+                                }
 
                                 const addCandidates = this.eligibleFoods
                                     .filter(f => {
                                         if (excludeIds.has(f.id)) return false
                                         if (!this.isMealTypeCompatibleWithSlot(f, bestSlot)) return false
                                         if (!this.checkSeasonalityHard(f, this.today)) return false
+                                        if (this.hasTagConflict(f, slotTags)) return false
                                         const weekCount = this.currentWeekFoods.filter(wf => wf.id === f.id).length
                                         if (this.hasReachedWeeklyCap(f, weekCount)) return false
                                         if (getEffectivePriority(f) === 0) return false
