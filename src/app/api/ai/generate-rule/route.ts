@@ -248,7 +248,7 @@ export async function POST(request: Request) {
     } catch (parseError) {
       console.error('[AI Rule Generator] JSON parse error:', parseError, 'Raw:', responseText)
       return NextResponse.json(
-        { success: false, error: 'AI yanıtı ayrıştırılamadı. Lütfen farklı bir ifadeyle tekrar deneyin.' },
+        { success: false, error: `AI yanıtı ayrıştırılamadı. Hata: ${parseError.message}. Ham yanıt: ${responseText.slice(0, 200)}` },
         { status: 422 }
       )
     }
