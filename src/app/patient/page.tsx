@@ -69,6 +69,7 @@ export default function PatientDashboardPage() {
     const [showStartWarning, setShowStartWarning] = useState(false)
     const [showEndWarning, setShowEndWarning] = useState(false)
     const [planStartDate, setPlanStartDate] = useState<string | null>(null)
+    const [canUseAI, setCanUseAI] = useState(false)
 
     useEffect(() => {
         // Wait for profile to be loaded before fetching
@@ -123,7 +124,7 @@ export default function PatientDashboardPage() {
             // Priority 1: user_id match (legacy patients like HACER with existing plans)
             // Priority 2: id match (new patients created via portal)
             const patientQueryStr = `
-                id, status, weight, height, birth_date, gender, activity_level, patient_goals, visibility_settings,
+                id, status, weight, height, birth_date, gender, activity_level, patient_goals, visibility_settings, preferences,
                 program_templates (
                     id, name, default_activity_level,
                     program_template_weeks (week_start, week_end, diet_type_id)
@@ -172,6 +173,23 @@ export default function PatientDashboardPage() {
             setActivityLevel(patientActivity)
             setEditWeight(String(patientWeight))
             setEditActivity(String(patientActivity))
+
+            // Sera (AI Asistan) izin kontrolü
+            const prefs = (patient as any).preferences || {}
+            const patientAllowAI = prefs.allow_ai_rule_assistant
+            if (patientAllowAI === true) {
+                setCanUseAI(true)
+            } else if (patientAllowAI === false) {
+                setCanUseAI(false)
+            } else {
+                // null veya undefined = global ayarı kontrol et
+                const { data: globalRow } = await supabase
+                    .from('app_settings')
+                    .select('value')
+                    .eq('key', 'registration_settings')
+                    .maybeSingle()
+                setCanUseAI(Boolean(globalRow?.value?.allow_ai_rule_assistant))
+            }
 
             // Set program name if available
             const programData = patient.program_templates
@@ -501,6 +519,31 @@ export default function PatientDashboardPage() {
                     </div>
                 </Link>
             </div>
+
+            {/* Sera — Listeni Kişiselleştir Daveti */}
+            {canUseAI && (
+                <div className="pt-0">
+                    <Link href="/patient/settings#sera" className="block group">
+                        <div className="relative overflow-hidden bg-white rounded-[2.5rem] p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-emerald-100/50 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] transition-all duration-300 transform group-hover:-translate-y-1">
+                            <div className="absolute inset-0 bg-gradient-to-br from-emerald-50/50 to-teal-50/50 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                            <div className="relative z-10 flex items-center justify-between">
+                                <div className="flex items-center gap-5">
+                                    <div className="h-14 w-14 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl flex items-center justify-center shadow-lg shadow-emerald-200 group-hover:scale-110 transition-transform duration-500">
+                                        <span className="text-2xl">🌿</span>
+                                    </div>
+                                    <div>
+                                        <h2 className="text-lg font-extrabold text-gray-900 tracking-tight">Listeni Kişiselleştir</h2>
+                                        <p className="text-gray-500 font-medium mt-0.5 text-sm">Sera ile tercihlerini paylaş</p>
+                                    </div>
+                                </div>
+                                <div className="bg-emerald-50 p-3 rounded-full group-hover:bg-emerald-100 transition-colors duration-300">
+                                    <ArrowRight className="h-5 w-5 text-emerald-400 group-hover:text-emerald-600 transition-colors" />
+                                </div>
+                            </div>
+                        </div>
+                    </Link>
+                </div>
+            )}
 
             {/* Stats & Info Grid */}
             <div className="grid grid-cols-1 gap-6">

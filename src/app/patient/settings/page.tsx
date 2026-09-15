@@ -12,8 +12,8 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { MultiSelectCreatable, Option } from "@/components/ui/multi-select-creatable"
-import { Loader2, Save, User, Activity, AlertCircle, Info, Sparkles } from "lucide-react"
-import { AIRuleAssistant } from "@/components/planner/ai-rule-assistant"
+import { Loader2, Save, User, Activity, AlertCircle, Info, Leaf } from "lucide-react"
+import { SeraAssistant } from "@/components/sera/sera-assistant"
 
 export default function PatientSettingsPage() {
     const { user, profile } = useAuth()
@@ -542,7 +542,7 @@ export default function PatientSettingsPage() {
                                 </span>
                             </div>
                             <div className="p-3 bg-gray-50 border rounded-md flex flex-col items-center justify-center text-center gap-1">
-                                <span className="text-xs font-semibold text-gray-500 uppercase">✨ AI Asistan</span>
+                                <span className="text-xs font-semibold text-gray-500 uppercase">🌿 Sera</span>
                                 <span className={cn("text-sm font-bold", canUseAI ? "text-green-600" : "text-gray-400")}>
                                     {canUseAI ? "Açık" : "Kapalı"}
                                 </span>
@@ -558,26 +558,25 @@ export default function PatientSettingsPage() {
                 </CardFooter>
             </Card>
 
-            {/* AI Kural Asistanı — Sadece izin varsa göster */}
+            {/* Sera — Kişisel Asistanınız — Sadece izin varsa göster */}
             {canUseAI && patientId && (
-                <Card>
+                <Card id="sera">
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2">
-                            <Sparkles className="h-5 w-5 text-purple-500" />
-                            AI Kural Asistanı
+                            <Leaf className="h-5 w-5 text-emerald-600" />
+                            Sera — Kişisel Asistanınız
                         </CardTitle>
                         <CardDescription>
-                            Doğal dilde kural önerileri oluşturun. Önerdiğiniz kurallar diyetisyeninizin onayına sunulacaktır.
+                            Beslenme tercihlerinizi Sera&apos;ya anlatın. O sizin için en uygun düzenlemeyi yapar.
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
-                        <AIRuleAssistant
-                            scope="patient"
+                        <SeraAssistant
                             patientId={patientId}
-                            isPatientSelfService={true}
                             patientName={formData.full_name || undefined}
+                            requireApproval={true}
                             onRuleCreated={() => {
-                                setSuccess("Kural öneriniz diyetisyeninize iletildi! Onaylandığında aktif olacaktır.")
+                                setSuccess("Tercihiniz kaydedildi! Diyetisyeniniz onayladığında aktif olacaktır.")
                                 setTimeout(() => setSuccess(null), 5000)
                             }}
                         />
