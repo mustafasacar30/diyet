@@ -515,6 +515,7 @@ export default function GeneralSettingsPage() {
                 setRegistrationSettings({
                     allow_program_selection: Boolean(registration.allow_program_selection),
                     allow_goal_selection: Boolean(registration.allow_goal_selection),
+                    allow_ai_rule_assistant: Boolean(registration.allow_ai_rule_assistant),
                 })
             }
 
