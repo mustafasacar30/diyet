@@ -64,6 +64,8 @@ interface AIRuleAssistantProps {
   onRuleCreated: () => void
   onScopeChange?: (scope: string) => void
   showScopeSelector?: boolean
+  isPatientSelfService?: boolean
+  patientName?: string
 }
 
 const RULE_TYPE_LABELS: Record<string, string> = {
@@ -91,6 +93,14 @@ const EXAMPLE_PROMPTS = [
   'Enginar haftada en fazla 2 kez olsun',
 ]
 
+const PATIENT_EXAMPLE_PROMPTS = [
+  'Akşamları kırmızı et olmasın',
+  'Sabahları mutlaka yumurta olsun',
+  'Hafta sonları tatlı yiyebileyim',
+  'Süt ürünlerini azalt',
+  'Her gün salata olsun',
+]
+
 export function AIRuleAssistant({
   scope: initialScope,
   patientId,
@@ -99,6 +109,8 @@ export function AIRuleAssistant({
   onRuleCreated,
   onScopeChange,
   showScopeSelector = false,
+  isPatientSelfService = false,
+  patientName,
 }: AIRuleAssistantProps) {
   const [prompt, setPrompt] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -216,7 +228,7 @@ export function AIRuleAssistant({
         {isExpanded && (
           <div className="px-4 pb-4 space-y-3">
             {/* Kapsam Seçici (opsiyonel) */}
-            {showScopeSelector && (
+            {showScopeSelector && !isPatientSelfService && (
               <div className="flex items-center gap-2">
                 <span className="text-xs text-gray-500">Kapsam:</span>
                 <Select value={scope} onValueChange={handleScopeChange}>
@@ -265,7 +277,7 @@ export function AIRuleAssistant({
             {/* Örnek İpuçları */}
             {!aiResult && !error && !isLoading && (
               <div className="flex flex-wrap gap-1.5">
-                {EXAMPLE_PROMPTS.slice(0, 3).map((example, i) => (
+                {(isPatientSelfService ? PATIENT_EXAMPLE_PROMPTS : EXAMPLE_PROMPTS).slice(0, 3).map((example, i) => (
                   <button
                     key={i}
                     onClick={() => setPrompt(example)}
@@ -372,22 +384,37 @@ export function AIRuleAssistant({
                 )}
 
                 {/* Aksiyon Butonları */}
-                <div className="flex items-center gap-2 pt-1">
-                  <Button
-                    onClick={handleOpenRuleDialog}
-                    size="sm"
-                    className="bg-purple-600 hover:bg-purple-700 text-white"
-                  >
-                    <Sparkles className="h-3.5 w-3.5 mr-1.5" />
-                    Kuralı Düzenle ve Kaydet
-                  </Button>
-                  <Button
-                    onClick={() => { setAiResult(null); setPrompt('') }}
-                    variant="outline"
-                    size="sm"
-                  >
-                    İptal
-                  </Button>
+                <div>
+                  <div className="flex items-center gap-2 pt-1">
+                    {isPatientSelfService ? (
+                      <Button
+                        onClick={handleOpenRuleDialog}
+                        size="sm"
+                        className="bg-purple-600 hover:bg-purple-700 text-white"
+                      >
+                        <span>🔔 Onay İçin Kaydet</span>
+                      </Button>
+                    ) : (
+                      <Button
+                        onClick={handleOpenRuleDialog}
+                        size="sm"
+                        className="bg-purple-600 hover:bg-purple-700 text-white"
+                      >
+                        <Sparkles className="h-3.5 w-3.5 mr-1.5" />
+                        Kuralı Düzenle ve Kaydet
+                      </Button>
+                    )}
+                    <Button
+                      onClick={() => { setAiResult(null); setPrompt('') }}
+                      variant="outline"
+                      size="sm"
+                    >
+                      İptal
+                    </Button>
+                  </div>
+                  {isPatientSelfService && (
+                    <p className="text-xs text-amber-600 mt-1">💡 Kuralınız diyetisyeninizin onayına sunulacaktır.</p>
+                  )}
                 </div>
               </div>
             )}

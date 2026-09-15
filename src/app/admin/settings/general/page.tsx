@@ -20,6 +20,7 @@ import { resolveTeamScopeContextFromAuth } from "@/lib/team-scope"
 type RegistrationSettings = {
     allow_program_selection: boolean
     allow_goal_selection: boolean
+    allow_ai_rule_assistant: boolean
 }
 
 type FlavorTuningSettings = {
@@ -43,6 +44,7 @@ type FlavorTuningSettings = {
 const DEFAULT_REGISTRATION_SETTINGS: RegistrationSettings = {
     allow_program_selection: false,
     allow_goal_selection: false,
+    allow_ai_rule_assistant: false,
 }
 
 const DEFAULT_FLAVOR_SETTINGS: FlavorTuningSettings = {
@@ -699,6 +701,22 @@ export default function GeneralSettingsPage() {
                             id="goal-selection"
                             checked={registrationSettings.allow_goal_selection}
                             onCheckedChange={checked => toggleRegistration("allow_goal_selection", checked)}
+                        />
+                    </div>
+
+                    <div className="flex items-center justify-between gap-4">
+                        <div className="space-y-1">
+                            <Label htmlFor="ai-rule-assistant" className="text-base font-semibold">
+                                ✨ AI Kural Asistanı Yetkisi
+                            </Label>
+                            <p className="text-sm text-muted-foreground">
+                                Açıksa hastalar kendi panellerinden AI ile kural önerebilir. Önerilen kurallar diyetisyen onayına sunulur.
+                            </p>
+                        </div>
+                        <Switch
+                            id="ai-rule-assistant"
+                            checked={registrationSettings.allow_ai_rule_assistant}
+                            onCheckedChange={checked => toggleRegistration("allow_ai_rule_assistant", checked)}
                         />
                     </div>
                 </CardContent>

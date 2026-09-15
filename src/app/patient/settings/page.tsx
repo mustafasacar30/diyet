@@ -12,7 +12,8 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { MultiSelectCreatable, Option } from "@/components/ui/multi-select-creatable"
-import { Loader2, Save, User, Activity, AlertCircle, Info } from "lucide-react"
+import { Loader2, Save, User, Activity, AlertCircle, Info, Sparkles } from "lucide-react"
+import { AIRuleAssistant } from "@/components/planner/ai-rule-assistant"
 
 export default function PatientSettingsPage() {
     const { user, profile } = useAuth()
@@ -25,6 +26,7 @@ export default function PatientSettingsPage() {
     const [canEditProgram, setCanEditProgram] = useState(false)
     const [canEditGoals, setCanEditGoals] = useState(false)
     const [canDeleteWeek, setCanDeleteWeek] = useState(false)
+    const [canUseAI, setCanUseAI] = useState(false)
 
     // Lookup Data
     const [programs, setPrograms] = useState<{ id: string, name: string, program_template_weeks?: any[] }[]>([])
@@ -113,6 +115,8 @@ export default function PatientSettingsPage() {
                 globalAllowWeekDelete = !!settingsValue.allow_week_delete
             }
 
+            let globalAllowAI = !!settingsValue?.allow_ai_rule_assistant
+
             // 2. Fetch Programs
             const { data: progData } = await supabase
                 .from('program_templates')
@@ -142,6 +146,7 @@ export default function PatientSettingsPage() {
             setCanEditProgram(prefs.allow_program_selection !== undefined ? prefs.allow_program_selection : globalAllowProgram)
             setCanEditGoals(prefs.allow_goal_selection !== undefined ? prefs.allow_goal_selection : globalAllowGoal)
             setCanDeleteWeek(prefs.allow_week_delete !== undefined ? prefs.allow_week_delete : globalAllowWeekDelete)
+            setCanUseAI(prefs.allow_ai_rule_assistant !== undefined ? prefs.allow_ai_rule_assistant : globalAllowAI)
 
             // 5. Populate Form
             const goalsArray = patient.patient_goals || []
@@ -517,7 +522,7 @@ export default function PatientSettingsPage() {
                     {/* PERMISSIONS (Read-Only) */}
                     <div className="space-y-4 pt-4 border-t">
                         <Label>Hesap Yetkilendirme Durumu</Label>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                             <div className="p-3 bg-gray-50 border rounded-md flex flex-col items-center justify-center text-center gap-1">
                                 <span className="text-xs font-semibold text-gray-500 uppercase">Program Seçimi</span>
                                 <span className={cn("text-sm font-bold", canEditProgram ? "text-green-600" : "text-gray-400")}>
@@ -536,6 +541,12 @@ export default function PatientSettingsPage() {
                                     {canDeleteWeek ? "Açık" : "Kapalı"}
                                 </span>
                             </div>
+                            <div className="p-3 bg-gray-50 border rounded-md flex flex-col items-center justify-center text-center gap-1">
+                                <span className="text-xs font-semibold text-gray-500 uppercase">✨ AI Asistan</span>
+                                <span className={cn("text-sm font-bold", canUseAI ? "text-green-600" : "text-gray-400")}>
+                                    {canUseAI ? "Açık" : "Kapalı"}
+                                </span>
+                            </div>
                         </div>
                     </div>
                 </CardContent>
@@ -546,6 +557,33 @@ export default function PatientSettingsPage() {
                     </Button>
                 </CardFooter>
             </Card>
+
+            {/* AI Kural Asistanı — Sadece izin varsa göster */}
+            {canUseAI && patientId && (
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                            <Sparkles className="h-5 w-5 text-purple-500" />
+                            AI Kural Asistanı
+                        </CardTitle>
+                        <CardDescription>
+                            Doğal dilde kural önerileri oluşturun. Önerdiğiniz kurallar diyetisyeninizin onayına sunulacaktır.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <AIRuleAssistant
+                            scope="patient"
+                            patientId={patientId}
+                            isPatientSelfService={true}
+                            patientName={formData.full_name || undefined}
+                            onRuleCreated={() => {
+                                setSuccess("Kural öneriniz diyetisyeninize iletildi! Onaylandığında aktif olacaktır.")
+                                setTimeout(() => setSuccess(null), 5000)
+                            }}
+                        />
+                    </CardContent>
+                </Card>
+            )}
         </div>
     )
 }

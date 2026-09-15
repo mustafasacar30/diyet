@@ -417,6 +417,7 @@ const profileSchema = z.object({
     allow_program_selection: z.boolean().nullable().optional(), // null means use global
     allow_goal_selection: z.boolean().nullable().optional(), // null means use global
     allow_week_delete: z.boolean().nullable().optional(), // null means use global
+    allow_ai_rule_assistant: z.boolean().nullable().optional(), // null means use global
     auto_plan_limit_count: z.coerce.number().nullable().optional(),
     auto_plan_limit_period_hours: z.coerce.number().nullable().optional(),
     ai_analysis_limit_count: z.coerce.number().nullable().optional(),
@@ -800,6 +801,7 @@ export function PatientProfileDialog({
             allow_program_selection: null as boolean | null,
             allow_goal_selection: null as boolean | null,
             allow_week_delete: null as boolean | null,
+            allow_ai_rule_assistant: null as boolean | null,
             auto_plan_limit_count: null as number | null,
             auto_plan_limit_period_hours: null as number | null,
             ai_analysis_limit_count: null as number | null,
@@ -836,6 +838,7 @@ export function PatientProfileDialog({
                     allow_program_selection: null,
                     allow_goal_selection: null,
                     allow_week_delete: null,
+                    allow_ai_rule_assistant: null,
                     auto_plan_limit_count: null,
                     auto_plan_limit_period_hours: null,
                     ai_analysis_limit_count: null,
@@ -929,6 +932,7 @@ export function PatientProfileDialog({
                 allow_program_selection: data.preferences?.allow_program_selection ?? null,
                 allow_goal_selection: data.preferences?.allow_goal_selection ?? null,
                 allow_week_delete: data.preferences?.allow_week_delete ?? null,
+                allow_ai_rule_assistant: data.preferences?.allow_ai_rule_assistant ?? null,
                 auto_plan_limit_count: data.auto_plan_limit_count ?? null,
                 auto_plan_limit_period_hours: data.auto_plan_limit_period_hours ?? null,
                 ai_analysis_limit_count: data.ai_analysis_limit_count ?? null,
@@ -1022,6 +1026,12 @@ export function PatientProfileDialog({
             newPrefs.allow_week_delete = values.allow_week_delete
         } else {
             delete newPrefs.allow_week_delete
+        }
+
+        if (values.allow_ai_rule_assistant !== null) {
+            newPrefs.allow_ai_rule_assistant = values.allow_ai_rule_assistant
+        } else {
+            delete newPrefs.allow_ai_rule_assistant
         }
 
         const { data: updatedRows, error: updateError } = await supabase
@@ -1918,6 +1928,36 @@ export function PatientProfileDialog({
                                                             <FormLabel>Hafta Silme Yetkisi</FormLabel>
                                                             <p className="text-[10px] text-muted-foreground">
                                                                 Şu anki varsayılan: {globalSettings.allow_week_delete ? 'Açık' : 'Kapalı'}
+                                                            </p>
+                                                        </div>
+                                                        <FormControl>
+                                                            <Select
+                                                                onValueChange={(val) => field.onChange(val === "null" ? null : val === "true")}
+                                                                value={field.value === null ? "null" : field.value ? "true" : "false"}
+                                                            >
+                                                                <SelectTrigger className="w-[140px] h-8 text-xs">
+                                                                    <SelectValue />
+                                                                </SelectTrigger>
+                                                                <SelectContent>
+                                                                    <SelectItem value="null">Varsayılanı Kullan</SelectItem>
+                                                                    <SelectItem value="true">Özel: İzin Ver</SelectItem>
+                                                                    <SelectItem value="false">Özel: Kapat</SelectItem>
+                                                                </SelectContent>
+                                                            </Select>
+                                                        </FormControl>
+                                                    </FormItem>
+                                                )}
+                                            />
+
+                                            <FormField
+                                                control={form.control}
+                                                name="allow_ai_rule_assistant"
+                                                render={({ field }) => (
+                                                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm bg-white">
+                                                        <div className="space-y-0.5">
+                                                            <FormLabel>AI Kural Asistanı Yetkisi</FormLabel>
+                                                            <p className="text-[10px] text-muted-foreground">
+                                                                Hasta kendi panelinden AI ile kural önerebilir
                                                             </p>
                                                         </div>
                                                         <FormControl>
