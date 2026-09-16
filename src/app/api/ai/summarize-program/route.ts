@@ -60,6 +60,11 @@ GÖREVİN VE KESİN KURALLAR:
 7. Sadece oluşturduğun bu temiz metni döndür.`
 
     const { HarmCategory, HarmBlockThreshold } = require('@google/generative-ai')
+
+    if (!gemini) {
+      return NextResponse.json({ success: false, error: 'Gemini API anahtarı yapılandırılmamış.' }, { status: 500 })
+    }
+
     const model = gemini.getGenerativeModel({
       model: 'gemini-2.5-flash',
       safetySettings: [

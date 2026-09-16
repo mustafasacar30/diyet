@@ -48,6 +48,11 @@ Cevabını doğrudan hastaya verilecek düz metin olarak döndür. Ekstra açık
 `
 
     const { HarmCategory, HarmBlockThreshold } = require('@google/generative-ai')
+    
+    if (!gemini) {
+      return NextResponse.json({ success: false, error: 'Gemini API anahtarı yapılandırılmamış.' }, { status: 500 })
+    }
+
     const model = gemini.getGenerativeModel({
       model: 'gemini-2.5-flash',
       safetySettings: [
