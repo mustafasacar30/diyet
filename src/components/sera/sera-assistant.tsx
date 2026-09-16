@@ -895,13 +895,14 @@ export function SeraAssistant({
                   <Button
                     variant="outline"
                     size="icon"
+                    disabled={!rule.is_active && rule.pending_global_approval}
                     className={`h-8 w-8 ${rule.is_active ? 'text-amber-600 bg-amber-50 border-amber-200 hover:bg-amber-100 hover:text-amber-700' : 'text-emerald-600 bg-emerald-50 border-emerald-200 hover:bg-emerald-100 hover:text-emerald-700'}`}
                     onClick={() => {
                       if (!rule.is_active || window.confirm('Bu tercih beslenme programınıza uygun şekilde planlanmıştı. Duraklatmak istediğinize emin misiniz?')) {
                         togglePatientRuleStatus(rule.id, rule.is_active)
                       }
                     }}
-                    title={rule.is_active ? "Tercihi Duraklat" : "Tercihi Aktif Et"}
+                    title={!rule.is_active && rule.pending_global_approval ? "Diyetisyen onayı bekleniyor" : (rule.is_active ? "Tercihi Duraklat" : "Tercihi Aktif Et")}
                   >
                     {rule.is_active ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
                   </Button>
