@@ -844,24 +844,26 @@ export function SeraAssistant({
       {/* ── Beslenme Tercihlerim (Faz 5) ── */}
       {patientRules.length > 0 && (
         <div className="mt-6 border border-emerald-100 bg-white rounded-xl overflow-hidden shadow-sm">
-          <div 
-            className="bg-emerald-50/50 px-4 py-3 border-b border-emerald-100 flex items-center justify-between cursor-pointer hover:bg-emerald-100/50 transition-colors"
-            onClick={() => setIsRulesExpanded(!isRulesExpanded)}
-          >
-            <h3 className="text-sm font-semibold text-emerald-800 flex items-center gap-2">
-              Beslenme Tercihlerim
-              {isRulesExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-            </h3>
-            <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-              <Button size="sm" variant="outline" className="h-7 text-xs bg-emerald-100 text-emerald-800 border-emerald-300 hover:bg-emerald-200" onClick={handleSummarize}>
+          <div className="bg-emerald-50/50 px-4 py-3 border-b border-emerald-100 flex flex-col gap-3">
+            <div className="flex items-center justify-between gap-2">
+              <Button size="sm" variant="outline" className="flex-1 h-9 text-xs bg-emerald-100 text-emerald-800 border-emerald-300 hover:bg-emerald-200" onClick={handleSummarize}>
                 Programımı Özetle
               </Button>
-              <Button size="sm" variant="outline" className="h-7 text-xs bg-white text-emerald-700 border-emerald-200 hover:bg-emerald-50" onClick={() => setIsWizardOpen(true)}>
+              <Button size="sm" variant="outline" className="flex-1 h-9 text-xs bg-white text-emerald-700 border-emerald-200 hover:bg-emerald-50" onClick={() => setIsWizardOpen(true)}>
                 Gözden Geçir
               </Button>
-              <Badge variant="outline" className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100 border-none">
-                {patientRules.length} Tercih
-              </Badge>
+            </div>
+            <div 
+              className="flex items-center justify-between cursor-pointer hover:bg-emerald-100/50 transition-colors py-1 -mx-2 px-2 rounded-lg"
+              onClick={() => setIsRulesExpanded(!isRulesExpanded)}
+            >
+              <h3 className="text-sm font-semibold text-emerald-800 flex items-center gap-2">
+                Beslenme Tercihlerim
+                <Badge variant="outline" className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100 border-none">
+                  {patientRules.length} Tercih
+                </Badge>
+              </h3>
+              {isRulesExpanded ? <ChevronUp className="h-5 w-5 text-emerald-600" /> : <ChevronDown className="h-5 w-5 text-emerald-600" />}
             </div>
           </div>
           {isRulesExpanded && (
