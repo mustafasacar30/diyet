@@ -13,8 +13,10 @@ import { applyProgramDietTypeOverrides } from "@/lib/program-diet-type-overrides
 import { resolveTeamScopeContextForUser } from "@/lib/team-scope"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import Link from "next/link"
 import {
     Calendar,
+    Settings,
     ChevronDown,
     ChevronLeft,
     ChevronRight,
@@ -5152,6 +5154,15 @@ export default function PatientPlanPage() {
                                 </DropdownMenuItem>
 
                                 <DropdownMenuSeparator className="my-1 bg-slate-50" />
+
+                                <Link href="/patient/settings" passHref>
+                                    <DropdownMenuItem
+                                        className="flex items-center gap-3 py-2.5 px-3 rounded-lg cursor-pointer text-slate-600 font-bold hover:bg-emerald-50 hover:text-emerald-700 transition-all"
+                                    >
+                                        <Settings className="h-4 w-4" />
+                                        <span className="text-xs">Ayarlar</span>
+                                    </DropdownMenuItem>
+                                </Link>
 
                                 <DropdownMenuItem
                                     onClick={() => signOut()}
