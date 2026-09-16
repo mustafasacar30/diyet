@@ -111,6 +111,7 @@ export function SeraAssistant({
   const [isSummaryOpen, setIsSummaryOpen] = useState(false)
   const [summaryLoading, setSummaryLoading] = useState(false)
   const [summaryText, setSummaryText] = useState<string | null>(null)
+  const [isRulesExpanded, setIsRulesExpanded] = useState(false)
   const [ruleDialogOpen, setRuleDialogOpen] = useState(false)
   const [prefillData, setPrefillData] = useState<PlanningRule | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
@@ -843,9 +844,15 @@ export function SeraAssistant({
       {/* ── Beslenme Tercihlerim (Faz 5) ── */}
       {patientRules.length > 0 && (
         <div className="mt-6 border border-emerald-100 bg-white rounded-xl overflow-hidden shadow-sm">
-          <div className="bg-emerald-50/50 px-4 py-3 border-b border-emerald-100 flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-emerald-800">Beslenme Tercihlerim</h3>
-            <div className="flex items-center gap-2">
+          <div 
+            className="bg-emerald-50/50 px-4 py-3 border-b border-emerald-100 flex items-center justify-between cursor-pointer hover:bg-emerald-100/50 transition-colors"
+            onClick={() => setIsRulesExpanded(!isRulesExpanded)}
+          >
+            <h3 className="text-sm font-semibold text-emerald-800 flex items-center gap-2">
+              Beslenme Tercihlerim
+              {isRulesExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            </h3>
+            <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
               <Button size="sm" variant="outline" className="h-7 text-xs bg-emerald-100 text-emerald-800 border-emerald-300 hover:bg-emerald-200" onClick={handleSummarize}>
                 Programımı Özetle
               </Button>
@@ -857,8 +864,9 @@ export function SeraAssistant({
               </Badge>
             </div>
           </div>
-          <div className="divide-y divide-emerald-50">
-            {[...patientRules].sort((a, b) => {
+          {isRulesExpanded && (
+            <div className="divide-y divide-emerald-50">
+              {[...patientRules].sort((a, b) => {
               if (a.is_active === b.is_active) {
                 return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
               }
@@ -914,7 +922,8 @@ export function SeraAssistant({
                 </div>
               </div>
             ))}
-          </div>
+            </div>
+          )}
         </div>
       )}
 

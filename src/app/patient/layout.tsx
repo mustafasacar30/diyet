@@ -114,17 +114,15 @@ export default function PatientLayout({
             label: "Diyetim",
             icon: Calendar
         },
-        // FAB placeholder - rendered separately
         {
             href: "/patient/settings",
             label: "Ayarlar",
             icon: Settings
         },
         {
-            href: "/patient/messages",
-            label: "Mesajlar",
-            icon: MessageCircle,
-            badge: true
+            href: "/patient/assistant",
+            label: "Sera",
+            icon: MessageCircle
         }
     ]
 

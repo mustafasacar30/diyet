@@ -13,7 +13,6 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { MultiSelectCreatable, Option } from "@/components/ui/multi-select-creatable"
 import { Loader2, Save, User, Activity, AlertCircle, Info, Leaf } from "lucide-react"
-import { SeraAssistant } from "@/components/sera/sera-assistant"
 
 export default function PatientSettingsPage() {
     const { user, profile } = useAuth()
@@ -562,35 +561,6 @@ export default function PatientSettingsPage() {
                 </CardFooter>
             </Card>
 
-            {/* Sera — Kişisel Asistanınız — Sadece izin varsa göster */}
-            {canUseAI && patientId && (
-                <Card id="sera">
-                    <CardHeader>
-                        <CardTitle className="flex items-center gap-2">
-                            <Leaf className="h-5 w-5 text-emerald-600" />
-                            Sera — Kişisel Asistanınız
-                        </CardTitle>
-                        <CardDescription>
-                            Beslenme tercihlerinizi Sera&apos;ya anlatın. O sizin için en uygun düzenlemeyi yapar.
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        <SeraAssistant
-                            patientId={patientId}
-                            patientName={formData.full_name || undefined}
-                            requireApproval={requireApproval}
-                            onRuleCreated={() => {
-                                if (requireApproval) {
-                                    setSuccess("Tercihiniz kaydedildi! Diyetisyeniniz onayladığında aktif olacaktır.")
-                                } else {
-                                    setSuccess("Tercihiniz kaydedildi ve hemen aktif edildi.")
-                                }
-                                setTimeout(() => setSuccess(null), 5000)
-                            }}
-                        />
-                    </CardContent>
-                </Card>
-            )}
         </div>
     )
 }
