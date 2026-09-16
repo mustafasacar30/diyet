@@ -932,7 +932,7 @@ export function SeraAssistant({
           <DialogHeader>
             <DialogTitle className="text-emerald-800 text-lg">Program Özeti</DialogTitle>
           </DialogHeader>
-          <div className="py-4">
+          <div className="py-2 max-h-[65vh] overflow-y-auto pr-1">
             {summaryLoading ? (
               <div className="flex flex-col items-center justify-center space-y-4 py-8">
                 <Loader2 className="h-8 w-8 text-emerald-600 animate-spin" />
