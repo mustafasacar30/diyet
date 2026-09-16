@@ -873,7 +873,11 @@ const mergedRulesMap = new Map<string, PlanningRule>()
                     sort_order: rule.sort_order
                 })
             } else {
-                await supabase.from('planning_rules').update({ is_active: nextActive }).eq('id', rule.id)
+                const updatePayload: any = { is_active: nextActive }
+                if ((rule as any).pending_global_approval) {
+                    updatePayload.pending_global_approval = false
+                }
+                await supabase.from('planning_rules').update(updatePayload).eq('id', rule.id)
             }
             await fetchRules(true)
             onRulesChanged?.()

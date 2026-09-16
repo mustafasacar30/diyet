@@ -1,4 +1,4 @@
-import { PlanningRule } from '@/types/planner'
+﻿import { PlanningRule } from '@/types/planner'
 
 // ─── Tipler ───
 interface FoodSummary {
@@ -345,9 +345,9 @@ Yanıtını TAM OLARAK aşağıdaki alanları içeren DÜZ BİR JSON objesi olar
 - "description": Kuralın teknik açıklaması (1-2 cümle)
 - "rule_type": Yukarıdaki 7 tipten biri
 - "priority": 1-100 (50 varsayılan, kritik kurallar 60-80, yaşamsal kurallar 90+)
-- "definition": Motor şemasına uygun JSON (type alanı OLMADAN, sadece data içeriği)
-- "additional_rules": Eğer kullanıcı AYNI ANDA birden fazla bağımsız istekte bulunmuşsa (örn: "Sucuk isteği" VE "Çorba isteği"), ilk isteği ana alanlara yaz (name, description, vb.), geri kalan isteklerin KURALLARINI (name, description, rule_type, priority, definition alanlarıyla birlikte) bu diziye (array of objects) ekle. Eğer tek istek varsa boş dizi [] gönder.
-  - "explanation": Kullanıcıya gösterilecek detaylı Türkçe açıklama (Sera'nın ağzından, 'Ben' ve 'Siz' diliyle). DİKKAT: Eğer additional_rules dizisine ek kurallar koyduysan, KESİNLİKLE sadece ana kuraldan değil, hazırladığın TÜM kuralların neler yaptığından KISACA bahset!
+- "definition": Motor şemasına uygun JSON (type alanı OLMADAN, sadece data içeriği)`n  - "replaces_rule_id": Eğer hastanın bu isteği, sisteme önceden tanımlanmış (Mevcut Kurallar listesindeki) bir kuralı güncelliyorsa, çelişiyorsa veya onun yerine geçiyorsa, o eski kuralın "id" değerini buraya yaz. Eğer yepyeni bağımsız bir kural ise null gönder.
+- "additional_rules": Eğer kullanıcı AYNI ANDA birden fazla bağımsız istekte bulunmuşsa (örn: "Sucuk isteği" VE "Çorba isteği"), ilk isteği ana alanlara yaz (name, description, vb.), geri kalan isteklerin KURALLARINI (name, description, rule_type, priority, definition, replaces_rule_id alanlarıyla birlikte) bu diziye (array of objects) ekle. Eğer tek istek varsa boş dizi [] gönder.
+  - "explanation": Kullanıcıya gösterilecek detaylı Türkçe açıklama (Sera'nın ağzından, 'Ben' ve 'Siz' diliyle). DİKKAT: Eğer replaces_rule_id kullanıyorsan, hastaya mutlaka "Zaten var olan kuralınızın yerine bu yeni kuralı geçireceğim" şeklinde bilgi ver. Eğer additional_rules dizisine ek kurallar koyduysan, KESİNLİKLE sadece ana kuraldan değil, hazırladığın TÜM kuralların neler yaptığından KISACA bahset!
   - "suggestions": İlave öneriler dizisi (string[]) (Sera'nın ağzından). DİKKAT: Öneriler kısmında HASTAYA ASLA SORU SORMA VEYA SOHBET ETME (Örn: "Başka ne istersiniz?"). SADECE 'Bunu da yap' butonuyla tek tıkla DOĞRUDAN sisteme kural olarak eklenebilecek SOMUT, KESİN YEMEK TERCİHLERİ öner. Ancak bu önerileri sunarken mutlaka DİYETİSYEN GÖZÜYLE KISA BİR BESİNSEL GEREKÇE (makro/mikrobesin, enerji vb.) belirt. (Örn: "Ketojenik diyetinizdeki sağlıklı yağ dengesini korumak için kahvaltılara avokado ekleyebiliriz", "Yumurta kısıtlamasından doğacak protein açığını kapatmak için akşam yemeklerine lor peyniri ekleyebiliriz").
 - "clarification_needed": Kullanıcının isteği çok genel bir grubu hedefliyorsa ve tam olarak hangi yemeklerin etkileneceğini seçmesi/doğrulaması gerekiyorsa true gönder, değilse false gönder.
 - "clarification_target": Eğer clarification_needed true ise, hastaya listelenecek hedef grubu (örn: { "type": "category", "value": "Unlu Mamuller" }), değilse null gönder.
@@ -365,3 +365,4 @@ Yanıtını TAM OLARAK aşağıdaki alanları içeren DÜZ BİR JSON objesi olar
 
   return sections.join('\n\n')
 }
+

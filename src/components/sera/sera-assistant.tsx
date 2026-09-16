@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useState, useCallback, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
@@ -415,6 +415,16 @@ export function SeraAssistant({
       const { error } = await supabase.from('planning_rules').insert(rulesToInsert)
       if (error) throw error
 
+      // Eski kurallarÄ± pasife alma (EÄŸer AI replaces_rule_id dÃ¶nmÃ¼ÅŸse)
+      const replacedIds = [
+        rule.replaces_rule_id,
+        ...(aiResult.additional_rules || []).map((r: any) => r.replaces_rule_id)
+      ].filter(Boolean)
+
+      if (replacedIds.length > 0) {
+         await supabase.from('planning_rules').update({ is_active: false }).in('id', replacedIds)
+      }
+
       setAiResult(null)
       setPrompt('')
       setAffectedFoods([])
@@ -454,6 +464,10 @@ export function SeraAssistant({
       const { supabase } = await import('@/lib/supabase')
       const { error } = await supabase.from('planning_rules').insert(ruleData)
       if (error) throw error
+
+      if (addRule.replaces_rule_id) {
+         await supabase.from('planning_rules').update({ is_active: false }).eq('id', addRule.replaces_rule_id)
+      }
       
       fetchPatientRules()
       onRuleCreated()
@@ -964,3 +978,5 @@ export function SeraAssistant({
     </>
   )
 }
+
+
