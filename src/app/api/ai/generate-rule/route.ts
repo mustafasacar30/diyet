@@ -320,6 +320,7 @@ export async function POST(request: Request) {
         rule_type: aiResponse.rule_type,
         priority: Math.min(100, Math.max(1, aiResponse.priority || 50)),
         is_active: true,
+        replaces_rule_id: aiResponse.replaces_rule_id || null,
         definition: {
           type: aiResponse.rule_type,
           data: aiResponse.definition
@@ -331,6 +332,7 @@ export async function POST(request: Request) {
         rule_type: ar.rule_type,
         priority: Math.min(100, Math.max(1, ar.priority || 50)),
         is_active: true,
+        replaces_rule_id: ar.replaces_rule_id || null,
         definition: {
           type: ar.rule_type,
           data: ar.definition

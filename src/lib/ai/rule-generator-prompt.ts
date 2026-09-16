@@ -218,7 +218,7 @@ ${fs.sampleFoods}
   if (context.existingRules && context.existingRules.length > 0) {
     const activeRules = context.existingRules.filter(r => r.is_active)
     const ruleLines = activeRules.slice(0, 30).map(r =>
-      `- [${r.rule_type}] "${r.name}" (scope:${r.scope || 'global'}): ${getRuleSummaryForPrompt(r)}`
+      `- ID: ${r.id} | [${r.rule_type}] "${r.name}" (scope:${r.scope || 'global'}): ${getRuleSummaryForPrompt(r)}`
     ).join('\n')
 
     sections.push(`## Mevcut Aktif Kurallar (${context.scope} katmanı ve üstü)
