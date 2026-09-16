@@ -36,18 +36,21 @@ export default function AssistantPage() {
             
             setPatientId(actualPatientId)
 
+            const { data: globalData } = await supabase.from('global_settings').select('key, value')
+            const globalSettings = globalData?.reduce((acc: any, row) => ({ ...acc, [row.key]: row.value }), {}) || {}
+            const globalAllowAI = globalSettings['patient_allow_ai_rule_assistant'] === 'true'
+
             const { data } = await supabase
                 .from('patients')
-                .select('full_name, settings, can_use_ai')
+                .select('full_name, preferences')
                 .eq('id', actualPatientId)
                 .single()
 
             if (data) {
                 setPatientName(data.full_name)
-                setCanUseAI(!!data.can_use_ai)
-                if (data.settings && typeof data.settings === 'object' && 'require_approval' in data.settings) {
-                    setRequireApproval(!!(data.settings as any).require_approval)
-                }
+                const prefs = data.preferences || {}
+                setCanUseAI(prefs.allow_ai_rule_assistant !== undefined ? prefs.allow_ai_rule_assistant : globalAllowAI)
+                setRequireApproval(true) // Defaulting to true as in settings
             }
             setLoading(false)
         }

@@ -53,13 +53,31 @@ export function NewChatDialog({
             const { data: allowedRows, error: allowedErr } = await supabase
                 .rpc("get_chat_allowed_contacts", { _user_id: user.id })
 
+            let allowedIds: string[] = []
+
             if (allowedErr) {
-                console.error("Error fetching allowed chat contacts", allowedErr)
-                setUsers([])
+                console.warn("RPC failed, falling back to fetching all admins/dietitians", allowedErr)
+                // Fallback if RPC is missing
+                const { data: fallbackAdmins } = await supabase
+                    .from('profiles')
+                    .select('id, full_name, role')
+                    .in('role', ['admin', 'dietitian'])
+                    
+                if (fallbackAdmins && fallbackAdmins.length > 0) {
+                    setUsers(fallbackAdmins.filter(u => u.id !== user.id).map(a => ({
+                        id: a.id,
+                        full_name: a.full_name || 'İsimsiz',
+                        role: a.role
+                    })))
+                } else {
+                    setUsers([])
+                }
+                setLoading(false)
                 return
+            } else {
+                allowedIds = Array.from(new Set((allowedRows || []).map((r: any) => r.user_id).filter(Boolean)))
             }
 
-            const allowedIds = Array.from(new Set((allowedRows || []).map((r: any) => r.user_id).filter(Boolean)))
             if (allowedIds.length === 0) {
                 setUsers([])
                 return
@@ -69,17 +87,22 @@ export function NewChatDialog({
                 .from("profiles")
                 .select("id, full_name, role")
                 .in("id", allowedIds)
-                .order("full_name")
 
             if (contactsErr) {
-                console.error("Error loading contact profiles", contactsErr)
+                console.error("Error fetching contacts detail", contactsErr)
                 setUsers([])
                 return
             }
 
-            setUsers((contacts || []) as UserOption[])
-        } catch (error) {
-            console.error("Error fetching contacts", error)
+            setUsers(
+                (contacts || []).map((c: any) => ({
+                    id: c.id,
+                    full_name: c.full_name || "İsimsiz",
+                    role: c.role || "unknown",
+                }))
+            )
+        } catch (err) {
+            console.error("fetchContacts error", err)
             setUsers([])
         } finally {
             setLoading(false)
@@ -99,9 +122,11 @@ export function NewChatDialog({
 
     const handleStart = () => {
         const ids = Array.from(selectedIds)
-        const isGroup = allowGroupCreation && ids.length > 1
+        if (ids.length === 0) return
+
+        const isGroup = ids.length > 1
         if (isGroup && !groupTitle.trim()) {
-            alert("Lutfen bir grup adi giriniz.")
+            alert("Lütfen grup için bir isim girin.")
             return
         }
         onStartChat(ids, isGroup, groupTitle)
@@ -114,6 +139,7 @@ export function NewChatDialog({
             <DialogContent className="sm:max-w-[425px]">
                 <DialogHeader>
                     <DialogTitle>Yeni Sohbet Baslat</DialogTitle>
+                    <DialogDescription className="hidden">Sohbet başlatılacak kişiyi seçin</DialogDescription>
                 </DialogHeader>
 
                 <div className="py-4 space-y-4">
