@@ -759,7 +759,8 @@ const mergedRulesMap = new Map<string, PlanningRule>()
             if (flags.length > 0) flagMap.set(rule.id, flags)
         }
         setHealthFlags(flagMap)
-    }, [mergedRules, healthContext])
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [globalRules, teamRules, programRules, patientRules, showDeleted, healthContext])
         
     const hasExplicitProgramRules = programRules.length > 0
     const hasExplicitTeamRules = teamRules.length > 0
