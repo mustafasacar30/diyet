@@ -4,7 +4,6 @@ import { useState, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
-import { RuleDialog } from '@/components/planner/rule-dialog'
 import { PlanningRule } from '@/types/planner'
 import {
   Send,
@@ -144,43 +143,45 @@ export function SeraAssistant({
     }
   }, [prompt, patientId, programTemplateId, teamOwnerId])
 
-  // ─── Kural Formunu Aç ───
-  const handleOpenRuleDialog = useCallback(() => {
+  // ─── Kuralı Direkt Kaydet ───
+  const handleSaveDirectly = useCallback(async () => {
     if (!aiResult?.rule) return
+    setIsLoading(true)
 
     const rule = aiResult.rule
-    setPrefillData({
-      id: '',
+    const ruleData = {
       name: rule.name,
       description: rule.description,
-      rule_type: rule.rule_type as any,
+      rule_type: rule.rule_type,
       priority: rule.priority,
       is_active: !requireApproval, // Onay gerekiyorsa pasif başlar
       definition: rule.definition,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
       scope: 'patient',
-      patient_id: patientId || undefined,
-      program_template_id: programTemplateId || undefined,
-      team_owner_id: teamOwnerId || undefined,
+      patient_id: patientId || null,
+      program_template_id: programTemplateId || null,
+      team_owner_id: teamOwnerId || null,
       pending_global_approval: requireApproval,
-    } as any)
-    setRuleDialogOpen(true)
-  }, [aiResult, patientId, programTemplateId, teamOwnerId, requireApproval])
-
-  // ─── Kural Kaydedildi ───
-  const handleRuleDialogSuccess = useCallback(() => {
-    setRuleDialogOpen(false)
-    setPrefillData(null)
-    setAiResult(null)
-    setPrompt('')
-    if (requireApproval) {
-      setSuccessMessage('Tercihiniz kaydedildi ve diyetisyeninizin onayına sunuldu 🌿')
-    } else {
-      setSuccessMessage('Tercihiniz kaydedildi ve hemen uygulandı 🌿')
     }
-    onRuleCreated()
-  }, [onRuleCreated, requireApproval])
+
+    try {
+      const { supabase } = await import('@/lib/supabase')
+      const { error } = await supabase.from('planning_rules').insert(ruleData)
+      if (error) throw error
+
+      setAiResult(null)
+      setPrompt('')
+      if (requireApproval) {
+        setSuccessMessage('Tercihiniz kaydedildi ve diyetisyeninizin onayına sunuldu 🌿')
+      } else {
+        setSuccessMessage('Tercihiniz kaydedildi ve hemen uygulandı 🌿')
+      }
+      onRuleCreated()
+    } catch (err: any) {
+      setError(err.message || 'Kayıt sırasında bir hata oluştu.')
+    } finally {
+      setIsLoading(false)
+    }
+  }, [aiResult, patientId, programTemplateId, teamOwnerId, requireApproval, onRuleCreated])
 
   // ─── Enter Tuşu ───
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -347,15 +348,21 @@ export function SeraAssistant({
                     <div>
                       <div className="flex items-center gap-2 pt-1">
                         <Button
-                          onClick={handleOpenRuleDialog}
+                          onClick={handleSaveDirectly}
+                          disabled={isLoading}
                           size="sm"
                           className="bg-emerald-600 hover:bg-emerald-700 text-white"
                         >
-                          <Leaf className="h-3.5 w-3.5 mr-1.5" />
+                          {isLoading ? (
+                            <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                          ) : (
+                            <Leaf className="h-3.5 w-3.5 mr-1.5" />
+                          )}
                           {requireApproval ? 'Tercihini Kaydet' : 'Hemen Uygula'}
                         </Button>
                         <Button
                           onClick={() => { setAiResult(null); setPrompt('') }}
+                          disabled={isLoading}
                           variant="outline"
                           size="sm"
                           className="border-emerald-200 text-emerald-700 hover:bg-emerald-50"
@@ -376,21 +383,6 @@ export function SeraAssistant({
           </div>
         )}
       </div>
-
-      {/* ── Prefilled RuleDialog ── */}
-      <RuleDialog
-        open={ruleDialogOpen}
-        onOpenChange={(open) => {
-          setRuleDialogOpen(open)
-          if (!open) setPrefillData(null)
-        }}
-        initialData={null}
-        prefillData={prefillData}
-        onSuccess={handleRuleDialogSuccess}
-        patientId={patientId || undefined}
-        programTemplateId={programTemplateId || undefined}
-        teamOwnerId={teamOwnerId || undefined}
-      />
     </>
   )
 }

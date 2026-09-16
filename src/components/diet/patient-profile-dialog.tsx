@@ -418,6 +418,7 @@ const profileSchema = z.object({
     allow_goal_selection: z.boolean().nullable().optional(), // null means use global
     allow_week_delete: z.boolean().nullable().optional(), // null means use global
     allow_ai_rule_assistant: z.boolean().nullable().optional(), // null means use global
+    require_rule_approval: z.boolean().nullable().optional(), // null means use global
     auto_plan_limit_count: z.coerce.number().nullable().optional(),
     auto_plan_limit_period_hours: z.coerce.number().nullable().optional(),
     ai_analysis_limit_count: z.coerce.number().nullable().optional(),
@@ -802,6 +803,7 @@ export function PatientProfileDialog({
             allow_goal_selection: null as boolean | null,
             allow_week_delete: null as boolean | null,
             allow_ai_rule_assistant: null as boolean | null,
+            require_rule_approval: null as boolean | null,
             auto_plan_limit_count: null as number | null,
             auto_plan_limit_period_hours: null as number | null,
             ai_analysis_limit_count: null as number | null,
@@ -933,6 +935,7 @@ export function PatientProfileDialog({
                 allow_goal_selection: data.preferences?.allow_goal_selection ?? null,
                 allow_week_delete: data.preferences?.allow_week_delete ?? null,
                 allow_ai_rule_assistant: data.preferences?.allow_ai_rule_assistant ?? null,
+                require_rule_approval: data.preferences?.require_rule_approval ?? null,
                 auto_plan_limit_count: data.auto_plan_limit_count ?? null,
                 auto_plan_limit_period_hours: data.auto_plan_limit_period_hours ?? null,
                 ai_analysis_limit_count: data.ai_analysis_limit_count ?? null,
@@ -1032,6 +1035,12 @@ export function PatientProfileDialog({
             newPrefs.allow_ai_rule_assistant = values.allow_ai_rule_assistant
         } else {
             delete newPrefs.allow_ai_rule_assistant
+        }
+
+        if (values.require_rule_approval !== null) {
+            newPrefs.require_rule_approval = values.require_rule_approval
+        } else {
+            delete newPrefs.require_rule_approval
         }
 
         const { data: updatedRows, error: updateError } = await supabase
@@ -1955,9 +1964,9 @@ export function PatientProfileDialog({
                                                 render={({ field }) => (
                                                     <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm bg-white">
                                                         <div className="space-y-0.5">
-                                                            <FormLabel>AI Kural Asistanı Yetkisi</FormLabel>
+                                                            <FormLabel>Sera (AI Asistan) Yetkisi</FormLabel>
                                                             <p className="text-[10px] text-muted-foreground">
-                                                                Hasta kendi panelinden AI ile kural önerebilir
+                                                                Hasta kendi panelinden Sera ile kural önerebilir
                                                             </p>
                                                         </div>
                                                         <FormControl>
@@ -1972,6 +1981,36 @@ export function PatientProfileDialog({
                                                                     <SelectItem value="null">Varsayılanı Kullan</SelectItem>
                                                                     <SelectItem value="true">Özel: İzin Ver</SelectItem>
                                                                     <SelectItem value="false">Özel: Kapat</SelectItem>
+                                                                </SelectContent>
+                                                            </Select>
+                                                        </FormControl>
+                                                    </FormItem>
+                                                )}
+                                            />
+
+                                            <FormField
+                                                control={form.control}
+                                                name="require_rule_approval"
+                                                render={({ field }) => (
+                                                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm bg-white">
+                                                        <div className="space-y-0.5">
+                                                            <FormLabel>Sera Onay Zorunluluğu</FormLabel>
+                                                            <p className="text-[10px] text-muted-foreground">
+                                                                Hastanın kuralları diyetisyen onayı gerektirir mi?
+                                                            </p>
+                                                        </div>
+                                                        <FormControl>
+                                                            <Select
+                                                                onValueChange={(val) => field.onChange(val === "null" ? null : val === "true")}
+                                                                value={field.value === null ? "null" : field.value ? "true" : "false"}
+                                                            >
+                                                                <SelectTrigger className="w-[140px] h-8 text-xs">
+                                                                    <SelectValue />
+                                                                </SelectTrigger>
+                                                                <SelectContent>
+                                                                    <SelectItem value="null">Varsayılanı Kullan</SelectItem>
+                                                                    <SelectItem value="true">Özel: Onay Gereksin</SelectItem>
+                                                                    <SelectItem value="false">Özel: Anında Aktif</SelectItem>
                                                                 </SelectContent>
                                                             </Select>
                                                         </FormControl>

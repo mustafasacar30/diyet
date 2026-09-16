@@ -346,6 +346,9 @@ Yanıtını TAM OLARAK aşağıdaki JSON formatında ver. Başka hiçbir metin e
 - "definition": Motor şemasına uygun JSON (type alanı OLMADAN, sadece data içeriği)
 - "explanation": Kullanıcıya gösterilecek detaylı Türkçe açıklama (kural ne yapar, nasıl çalışır, motorun hangi davranışını tetikler)
 - "suggestions": İlave öneriler dizisi (string[])
+- "clarification_needed": boolean (Kullanıcının isteği çok genel bir grubu hedefliyorsa örn: "ekmek yeme" ve tam olarak hangi yemeklerin (örn: börek dahil mi) etkileneceğini seçmesi/doğrulaması gerektiğini düşünüyorsan true gönder)
+- "clarification_target": Eğer clarification_needed true ise, hastaya listelenecek hedef grubu (örn: { "type": "category", "value": "Unlu Mamuller" })
+- "clarification_message": Hastaya sorulacak soru (örn: "Ekmek grubunda şunlar var, hangilerini kastetmiştiniz?")
 
 ÖNEMLİ NOTLAR:
 - Target value'da normalleştirme motorun işi. Sen veritabanındaki ham değeri yaz.

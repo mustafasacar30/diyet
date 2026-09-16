@@ -298,7 +298,10 @@ export async function POST(request: Request) {
       },
       explanation: aiResponse.explanation,
       conflicts,
-      suggestions: Array.isArray(aiResponse.suggestions) ? aiResponse.suggestions : []
+      suggestions: Array.isArray(aiResponse.suggestions) ? aiResponse.suggestions : [],
+      clarification_needed: aiResponse.clarification_needed || false,
+      clarification_target: aiResponse.clarification_target || null,
+      clarification_message: aiResponse.clarification_message || null
     })
 
   } catch (error: any) {

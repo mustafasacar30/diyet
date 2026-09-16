@@ -27,6 +27,7 @@ export default function PatientSettingsPage() {
     const [canEditGoals, setCanEditGoals] = useState(false)
     const [canDeleteWeek, setCanDeleteWeek] = useState(false)
     const [canUseAI, setCanUseAI] = useState(false)
+    const [requireApproval, setRequireApproval] = useState(true)
 
     // Lookup Data
     const [programs, setPrograms] = useState<{ id: string, name: string, program_template_weeks?: any[] }[]>([])
@@ -147,6 +148,9 @@ export default function PatientSettingsPage() {
             setCanEditGoals(prefs.allow_goal_selection !== undefined ? prefs.allow_goal_selection : globalAllowGoal)
             setCanDeleteWeek(prefs.allow_week_delete !== undefined ? prefs.allow_week_delete : globalAllowWeekDelete)
             setCanUseAI(prefs.allow_ai_rule_assistant !== undefined ? prefs.allow_ai_rule_assistant : globalAllowAI)
+            
+            let globalRequireApproval = settingsValue?.require_rule_approval !== undefined ? !!settingsValue.require_rule_approval : true
+            setRequireApproval(prefs.require_rule_approval !== undefined ? prefs.require_rule_approval : globalRequireApproval)
 
             // 5. Populate Form
             const goalsArray = patient.patient_goals || []
@@ -574,9 +578,13 @@ export default function PatientSettingsPage() {
                         <SeraAssistant
                             patientId={patientId}
                             patientName={formData.full_name || undefined}
-                            requireApproval={true}
+                            requireApproval={requireApproval}
                             onRuleCreated={() => {
-                                setSuccess("Tercihiniz kaydedildi! Diyetisyeniniz onayladığında aktif olacaktır.")
+                                if (requireApproval) {
+                                    setSuccess("Tercihiniz kaydedildi! Diyetisyeniniz onayladığında aktif olacaktır.")
+                                } else {
+                                    setSuccess("Tercihiniz kaydedildi ve hemen aktif edildi.")
+                                }
                                 setTimeout(() => setSuccess(null), 5000)
                             }}
                         />

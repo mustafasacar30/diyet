@@ -5,6 +5,7 @@ export type TargetType = 'category' | 'tag' | 'role' | 'food_id' | 'diet_type' |
 export interface RuleTarget {
     type: TargetType
     value: string
+    exceptions?: string[] // Array of food_ids to exclude from this target
 }
 
 // Week Scope: controls which weeks a rule is active

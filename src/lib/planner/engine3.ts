@@ -5133,6 +5133,11 @@ export class Planner {
         if (!food || !target) return false
         if (target.value === undefined || target.value === null || String(target.value).trim() === '') return false
 
+        // EXCEPTION CHECK: If this food's ID is in the exceptions list, it's explicitly rejected
+        if (target.exceptions && Array.isArray(target.exceptions) && target.exceptions.includes(food.id)) {
+            return false
+        }
+
         if (target.type === 'category') {
             const tVal = normalizeCategory(target.value)
             const fCat = normalizeCategory(food.category || '')

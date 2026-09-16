@@ -238,7 +238,6 @@ export default function RulesPage() {
                 }))
 
                 setSuggestions(suggestionsWithPatient as unknown as PlanningRule[])
-                setSuggestions([])
             }
 
             // Fetch program overrides to see which global/team rules are used in which programs

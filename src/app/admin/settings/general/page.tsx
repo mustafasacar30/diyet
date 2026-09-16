@@ -21,6 +21,7 @@ type RegistrationSettings = {
     allow_program_selection: boolean
     allow_goal_selection: boolean
     allow_ai_rule_assistant: boolean
+    require_rule_approval: boolean
 }
 
 type FlavorTuningSettings = {
@@ -45,6 +46,7 @@ const DEFAULT_REGISTRATION_SETTINGS: RegistrationSettings = {
     allow_program_selection: false,
     allow_goal_selection: false,
     allow_ai_rule_assistant: false,
+    require_rule_approval: true,
 }
 
 const DEFAULT_FLAVOR_SETTINGS: FlavorTuningSettings = {
@@ -516,6 +518,7 @@ export default function GeneralSettingsPage() {
                     allow_program_selection: Boolean(registration.allow_program_selection),
                     allow_goal_selection: Boolean(registration.allow_goal_selection),
                     allow_ai_rule_assistant: Boolean(registration.allow_ai_rule_assistant),
+                    require_rule_approval: registration.require_rule_approval !== undefined ? Boolean(registration.require_rule_approval) : true,
                 })
             }
 
@@ -705,19 +708,35 @@ export default function GeneralSettingsPage() {
                         />
                     </div>
 
-                    <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center justify-between gap-4 border-t pt-6">
                         <div className="space-y-1">
                             <Label htmlFor="ai-rule-assistant" className="text-base font-semibold">
                                 ✨ AI Kural Asistanı Yetkisi
                             </Label>
                             <p className="text-sm text-muted-foreground">
-                                Açıksa hastalar kendi panellerinden AI ile kural önerebilir. Önerilen kurallar diyetisyen onayına sunulur.
+                                Açıksa hastalar kendi panellerinden Sera (AI Asistan) ile tercih (kural) önerebilir.
                             </p>
                         </div>
                         <Switch
                             id="ai-rule-assistant"
                             checked={registrationSettings.allow_ai_rule_assistant}
                             onCheckedChange={checked => toggleRegistration("allow_ai_rule_assistant", checked)}
+                        />
+                    </div>
+
+                    <div className="flex items-center justify-between gap-4 border-t pt-6">
+                        <div className="space-y-1">
+                            <Label htmlFor="require-rule-approval" className="text-base font-semibold">
+                                🛡️ Hasta Kurallarında Onay Zorunluluğu
+                            </Label>
+                            <p className="text-sm text-muted-foreground">
+                                Açıksa hastaların oluşturduğu tüm kurallar, aktif olmadan önce diyetisyen onayına sunulur. Kapalıysa anında aktif olur.
+                            </p>
+                        </div>
+                        <Switch
+                            id="require-rule-approval"
+                            checked={registrationSettings.require_rule_approval}
+                            onCheckedChange={checked => toggleRegistration("require_rule_approval", checked)}
                         />
                     </div>
                 </CardContent>

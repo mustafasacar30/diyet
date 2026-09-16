@@ -5,7 +5,7 @@ const config: CapacitorConfig = {
   appName: 'Diyet App',
   webDir: 'public',
   server: {
-    url: 'https://diyet-seven.vercel.app/',
+    url: 'https://diyet-five.vercel.app/',
     cleartext: true
   }
 };
