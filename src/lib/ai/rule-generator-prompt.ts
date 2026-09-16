@@ -336,21 +336,26 @@ Yanıt:
 }`)
 
   // ════ SON TALİMATLAR ════
+  // ════ SON TALİMATLAR ════
   sections.push(`## Yanıt Formatı
 
-Yanıtını TAM OLARAK aşağıdaki JSON formatında ver. Başka hiçbir metin ekleme.
+Yanıtını TAM OLARAK aşağıdaki alanları içeren DÜZ BİR JSON objesi olarak ver. Başka hiçbir metin veya markdown backtick'i kullanma. Sadece geçerli bir JSON objesi döndür:
+
 - "name": Kısa, anlaşılır Türkçe kural adı
 - "description": Kuralın teknik açıklaması (1-2 cümle)
 - "rule_type": Yukarıdaki 7 tipten biri
 - "priority": 1-100 (50 varsayılan, kritik kurallar 60-80, yaşamsal kurallar 90+)
 - "definition": Motor şemasına uygun JSON (type alanı OLMADAN, sadece data içeriği)
-- "explanation": Kullanıcıya gösterilecek detaylı Türkçe açıklama (kural ne yapar, nasıl çalışır, motorun hangi davranışını tetikler)
-- "suggestions": İlave öneriler dizisi (string[])
-- "clarification_needed": boolean (Kullanıcının isteği çok genel bir grubu hedefliyorsa örn: "ekmek yeme" ve tam olarak hangi yemeklerin (örn: börek dahil mi) etkileneceğini seçmesi/doğrulaması gerektiğini düşünüyorsan true gönder)
-- "clarification_target": Eğer clarification_needed true ise, hastaya listelenecek hedef grubu (örn: { "type": "category", "value": "Unlu Mamuller" })
-- "clarification_message": Hastaya sorulacak soru (örn: "Ekmek grubunda şunlar var, hangilerini kastetmiştiniz?")
+- "additional_rules": Eğer kullanıcı AYNI ANDA birden fazla bağımsız istekte bulunmuşsa (örn: "Sucuk isteği" VE "Çorba isteği"), ilk isteği ana alanlara yaz (name, description, vb.), geri kalan isteklerin KURALLARINI (name, description, rule_type, priority, definition alanlarıyla birlikte) bu diziye (array of objects) ekle. Eğer tek istek varsa boş dizi [] gönder.
+  - "explanation": Kullanıcıya gösterilecek detaylı Türkçe açıklama (Sera'nın ağzından, 'Ben' ve 'Siz' diliyle). DİKKAT: Eğer additional_rules dizisine ek kurallar koyduysan, KESİNLİKLE sadece ana kuraldan değil, hazırladığın TÜM kuralların neler yaptığından KISACA bahset!
+  - "suggestions": İlave öneriler dizisi (string[]) (Sera'nın ağzından). DİKKAT: Öneriler kısmında HASTAYA ASLA SORU SORMA VEYA SOHBET ETME (Örn: "Başka ne istersiniz?"). SADECE 'Bunu da yap' butonuyla tek tıkla DOĞRUDAN sisteme kural olarak eklenebilecek SOMUT, KESİN YEMEK TERCİHLERİ öner. Ancak bu önerileri sunarken mutlaka DİYETİSYEN GÖZÜYLE KISA BİR BESİNSEL GEREKÇE (makro/mikrobesin, enerji vb.) belirt. (Örn: "Ketojenik diyetinizdeki sağlıklı yağ dengesini korumak için kahvaltılara avokado ekleyebiliriz", "Yumurta kısıtlamasından doğacak protein açığını kapatmak için akşam yemeklerine lor peyniri ekleyebiliriz").
+- "clarification_needed": Kullanıcının isteği çok genel bir grubu hedefliyorsa ve tam olarak hangi yemeklerin etkileneceğini seçmesi/doğrulaması gerekiyorsa true gönder, değilse false gönder.
+- "clarification_target": Eğer clarification_needed true ise, hastaya listelenecek hedef grubu (örn: { "type": "category", "value": "Unlu Mamuller" }), değilse null gönder.
+- "clarification_message": Eğer clarification_needed true ise, hastaya sorulacak soru (örn: "Ekmek grubunda şunlar var, hangilerini kastetmiştiniz?"), değilse null gönder.
 
 ÖNEMLİ NOTLAR:
+- Çıktın tamamen geçerli bir JSON olmalıdır.
+- **SERA PERSONASI:** "explanation" ve "suggestions" alanları doğrudan hastaya gösterilecektir. Bu yüzden KESİNLİKLE sistem, motor, kural, name_contains gibi teknik kelimeler kullanma! Hastaya "Siz" diye hitap et, işlemleri yapanın sen ("Ben") olduğunu hissettir. DİKKAT: Cümlelerine sürekli "Sera olarak", "Ben Sera" gibi ifadelerle başlama. ÇOK ÖNEMLİ DİKKAT: Hazırladığın kurallar henüz HASTA TARAFINDAN ONAYLANMADIĞI İÇİN "menülerinize ekledim", "güncelledim", "çıkardım" gibi KESİN İFADELER KULLANMA. Bunun yerine "Sizin için şu tercihleri hazırladım", "Menülerinizden çıkarılması için gerekli planlamayı yaptım, onayladığınızda devreye girecek" gibi ONAY BEKLEYEN, ÖNİZLEME sunan bir dil kullan.
 - Target value'da normalleştirme motorun işi. Sen veritabanındaki ham değeri yaz.
 - Belirsiz durumlarda güvenli tarafta kal (frequency yerine affinity tercih et, mandatory yerine boost tercih et).
 - Hafta scope'ları: 1=Pazartesi, 7=Pazar

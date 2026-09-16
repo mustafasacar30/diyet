@@ -1,10 +1,13 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { PlanningRule } from '@/types/planner'
+import { RuleReviewWizard } from './rule-review-wizard'
 import {
   Send,
   Loader2,
@@ -16,6 +19,11 @@ import {
   ChevronDown,
   ChevronUp,
   Leaf,
+  Trash2,
+  Play,
+  Pause,
+  PlusCircle,
+  Activity,
 } from 'lucide-react'
 
 // ─── Interfaces ───
@@ -23,7 +31,6 @@ interface ConflictInfo {
   severity: 'error' | 'warning' | 'info'
   icon: '🔴' | '🟡' | '🔵'
   existing_rule_name: string
-  existing_rule_id: string
   message: string
 }
 
@@ -39,21 +46,19 @@ interface GenerateRuleResponse {
     is_active: boolean
     definition: any
   }
+  additional_rules?: any[]
   explanation: string
   conflicts: ConflictInfo[]
   suggestions: string[]
   affected_foods?: AffectedFood[]
-  // Clarification fields
-  question?: string
-  options?: string[]
-  show_food_list?: boolean
-  food_search_query?: string
-  context?: any
+  clarification_needed?: boolean
+  clarification_target?: any
+  clarification_message?: string
 }
 
 interface AffectedFood {
-  food_id: string
-  food_name: string
+  id: string
+  name: string
   category: string
   role: string
   tags: string[]
@@ -102,17 +107,171 @@ export function SeraAssistant({
   const [aiResult, setAiResult] = useState<GenerateRuleResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isExpanded, setIsExpanded] = useState(true)
+  const [isWizardOpen, setIsWizardOpen] = useState(false)
+  const [isSummaryOpen, setIsSummaryOpen] = useState(false)
+  const [summaryLoading, setSummaryLoading] = useState(false)
+  const [summaryText, setSummaryText] = useState<string | null>(null)
   const [ruleDialogOpen, setRuleDialogOpen] = useState(false)
   const [prefillData, setPrefillData] = useState<PlanningRule | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
 
+  // Faz 3 & 5 States
+  const [patientRules, setPatientRules] = useState<any[]>([])
+  const [affectedFoods, setAffectedFoods] = useState<AffectedFood[]>([])
+  const [selectedExceptions, setSelectedExceptions] = useState<string[]>([])
+  const [isFetchingFoods, setIsFetchingFoods] = useState(false)
+
+  // Faz 6 States
+  const [simulationReport, setSimulationReport] = useState<string | null>(null)
+  const [isSimulating, setIsSimulating] = useState(false)
+
   // ─── Sera'ya Mesaj Gönder ───
-  const handleGenerate = useCallback(async () => {
-    if (!prompt.trim() || prompt.trim().length < 3) return
+  const [clarificationInput, setClarificationInput] = useState('')
+
+  // ─── Makro Simülasyon (Faz 6) ───
+  useEffect(() => {
+    if (aiResult?.rule && !aiResult.clarification_needed) {
+      const runSimulation = async () => {
+        setIsSimulating(true)
+        setSimulationReport(null)
+        try {
+          const rulesToSimulate = [aiResult.rule, ...(aiResult.additional_rules || [])]
+          const res = await fetch('/api/ai/simulate-impact-v3', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ rules: rulesToSimulate, patient_id: patientId })
+          })
+          const data = await res.json()
+          if (data.success && data.simulation_report) {
+            setSimulationReport(data.simulation_report)
+          }
+        } catch (err) {
+          console.error("Simulation error", err)
+        } finally {
+          setIsSimulating(false)
+        }
+      }
+      runSimulation()
+    } else {
+      setSimulationReport(null)
+      setIsSimulating(false)
+    }
+  }, [aiResult, patientId])
+
+  // ─── Kuralları Çekme ───
+  const fetchPatientRules = useCallback(async () => {
+    try {
+      const { supabase } = await import('@/lib/supabase')
+      const { data, error } = await supabase
+        .from('planning_rules')
+        .select('*')
+        .eq('scope', 'patient')
+        .eq('patient_id', patientId)
+        .order('created_at', { ascending: false })
+      
+      if (data) setPatientRules(data)
+    } catch (e) {
+      console.error('Error fetching patient rules:', e)
+    }
+  }, [patientId])
+
+  useEffect(() => {
+    fetchPatientRules()
+  }, [fetchPatientRules])
+
+  const togglePatientRuleStatus = async (id: string, currentStatus: boolean) => {
+    try {
+      const { supabase } = await import('@/lib/supabase')
+      await supabase.from('planning_rules').update({ is_active: !currentStatus }).eq('id', id)
+      fetchPatientRules()
+      onRuleCreated()
+    } catch (e) {
+      console.error('Error toggling rule:', e)
+    }
+  }
+
+  const updatePatientRule = async (id: string, newDefinition: any) => {
+    try {
+      const { supabase } = await import('@/lib/supabase')
+      await supabase.from('planning_rules').update({ definition: newDefinition }).eq('id', id)
+      fetchPatientRules()
+      onRuleCreated()
+    } catch (e) {
+      console.error('Error updating rule:', e)
+    }
+  }
+
+  const handleSummarize = async () => {
+    setIsSummaryOpen(true)
+    setSummaryLoading(true)
+    setSummaryText(null)
+    try {
+      const res = await fetch('/api/ai/summarize-program', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ patient_id: patientId })
+      })
+      const data = await res.json()
+      if (data.success) {
+        setSummaryText(data.summary)
+      } else {
+        setSummaryText("Özet oluşturulurken bir hata oluştu: " + data.error)
+      }
+    } catch (err) {
+      setSummaryText("Bağlantı hatası.")
+    } finally {
+      setSummaryLoading(false)
+    }
+  }
+
+  const deletePatientRule = async (id: string) => {
+    try {
+      const { supabase } = await import('@/lib/supabase')
+      await supabase.from('planning_rules').delete().eq('id', id)
+      fetchPatientRules()
+      onRuleCreated()
+    } catch (e) {
+      console.error('Error deleting rule:', e)
+    }
+  }
+
+  // ─── Etkilenen Yemekleri Çekme ───
+  const fetchAffectedFoods = async (target: any) => {
+    if (!target?.type || !target?.value) return
+    setIsFetchingFoods(true)
+    try {
+      const res = await fetch('/api/ai/affected-foods', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target_type: target.type, target_value: target.value })
+      })
+      const data = await res.json()
+      if (data.success && data.affected_foods) {
+        setAffectedFoods(data.affected_foods)
+        // By default, no exceptions selected (all affected)
+        setSelectedExceptions([])
+      }
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setIsFetchingFoods(false)
+    }
+  }
+
+  // ─── Sera'ya Mesaj Gönder ───
+  const handleGenerate = useCallback(async (additionalPrompt?: string) => {
+    const basePrompt = prompt.trim()
+    const activePrompt = additionalPrompt 
+      ? `Orijinal İsteğim: "${basePrompt}"\n\nSera'nın Netleştirme Sorusu: "${aiResult?.clarification_message || 'Daha detaylı belirtin'}"\n\nBenim Cevabım: "${additionalPrompt.trim()}"\n\nLütfen bu cevabıma göre kuralı oluştur.`
+      : basePrompt
+
+    if (!activePrompt || activePrompt.length < 3) return
 
     setIsLoading(true)
     setError(null)
-    setAiResult(null)
+    if (!additionalPrompt) {
+        setAiResult(null)
+    }
     setSuccessMessage(null)
 
     try {
@@ -120,7 +279,7 @@ export function SeraAssistant({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          prompt: prompt.trim(),
+          prompt: activePrompt,
           scope: 'patient',
           patient_id: patientId,
           program_template_id: programTemplateId || undefined,
@@ -136,12 +295,73 @@ export function SeraAssistant({
       }
 
       setAiResult(data)
+      if (additionalPrompt) {
+          // Keep original prompt but clear clarification input
+          setClarificationInput('')
+      }
+      if (data.rule && !data.clarification_needed && data.rule.definition?.target) {
+        fetchAffectedFoods(data.rule.definition.target)
+      }
     } catch (err: any) {
       setError(err.message || 'Bağlantı hatası. Lütfen internet bağlantınızı kontrol edin.')
     } finally {
       setIsLoading(false)
     }
-  }, [prompt, patientId, programTemplateId, teamOwnerId])
+  }, [prompt, patientId, programTemplateId, teamOwnerId, aiResult])
+
+  // ─── Suggestion'ı Pakete Ekle ───
+  const handleAppendSuggestion = async (suggestion: string) => {
+    if (!aiResult) return
+    setIsLoading(true)
+    setError(null)
+    
+    const appendPrompt = `Aşağıdaki ek isteğimi yerine getirecek bir beslenme kuralı üret:\n\nİstek: "${suggestion}"`
+    
+    try {
+      const response = await fetch('/api/ai/generate-rule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: appendPrompt,
+          scope: 'patient',
+          patient_id: patientId,
+          program_template_id: programTemplateId || undefined,
+          team_owner_id: teamOwnerId || undefined,
+        }),
+      })
+
+      const data = await response.json()
+
+      if (!data.success) {
+        setError(data.error || 'Ek istek oluşturulurken bir sorun oluştu.')
+        return
+      }
+      
+      setAiResult(prev => {
+        if (!prev) return prev
+        const updatedSuggestions = (prev.suggestions || []).filter(s => s !== suggestion)
+        const newAdditionalRules = [...(prev.additional_rules || [])]
+        
+        if (data.rule) {
+          newAdditionalRules.push(data.rule)
+        }
+        if (data.additional_rules && data.additional_rules.length > 0) {
+           newAdditionalRules.push(...data.additional_rules)
+        }
+        
+        return {
+          ...prev,
+          suggestions: updatedSuggestions,
+          additional_rules: newAdditionalRules
+        }
+      })
+      
+    } catch (err: any) {
+      setError(err.message || 'Bağlantı hatası.')
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   // ─── Kuralı Direkt Kaydet ───
   const handleSaveDirectly = useCallback(async () => {
@@ -149,39 +369,114 @@ export function SeraAssistant({
     setIsLoading(true)
 
     const rule = aiResult.rule
-    const ruleData = {
+    const rulesToInsert = []
+    
+    // Ana Kural
+    const finalDefinition = { ...rule.definition }
+    if (finalDefinition.target && selectedExceptions.length > 0) {
+      finalDefinition.target.exceptions = selectedExceptions
+    }
+    rulesToInsert.push({
       name: rule.name,
       description: rule.description,
       rule_type: rule.rule_type,
       priority: rule.priority,
-      is_active: !requireApproval, // Onay gerekiyorsa pasif başlar
-      definition: rule.definition,
+      is_active: !requireApproval,
+      definition: { ...finalDefinition, _source: 'sera_assistant' },
       scope: 'patient',
       patient_id: patientId || null,
       program_template_id: programTemplateId || null,
       team_owner_id: teamOwnerId || null,
       pending_global_approval: requireApproval,
+    })
+
+    // Ek Kurallar
+    if (aiResult.additional_rules && aiResult.additional_rules.length > 0) {
+      for (const ar of aiResult.additional_rules) {
+        rulesToInsert.push({
+          name: ar.name,
+          description: ar.description,
+          rule_type: ar.rule_type,
+          priority: ar.priority,
+          is_active: !requireApproval,
+          definition: { ...ar.definition, _source: 'sera_assistant' },
+          scope: 'patient',
+          patient_id: patientId || null,
+          program_template_id: programTemplateId || null,
+          team_owner_id: teamOwnerId || null,
+          pending_global_approval: requireApproval,
+        })
+      }
     }
 
     try {
       const { supabase } = await import('@/lib/supabase')
-      const { error } = await supabase.from('planning_rules').insert(ruleData)
+      const { error } = await supabase.from('planning_rules').insert(rulesToInsert)
       if (error) throw error
 
       setAiResult(null)
       setPrompt('')
+      setAffectedFoods([])
+      setSelectedExceptions([])
+      
       if (requireApproval) {
         setSuccessMessage('Tercihiniz kaydedildi ve diyetisyeninizin onayına sunuldu 🌿')
       } else {
         setSuccessMessage('Tercihiniz kaydedildi ve hemen uygulandı 🌿')
       }
+      fetchPatientRules()
       onRuleCreated()
     } catch (err: any) {
       setError(err.message || 'Kayıt sırasında bir hata oluştu.')
     } finally {
       setIsLoading(false)
     }
-  }, [aiResult, patientId, programTemplateId, teamOwnerId, requireApproval, onRuleCreated])
+  }, [aiResult, patientId, programTemplateId, teamOwnerId, requireApproval, onRuleCreated, selectedExceptions, fetchPatientRules])
+  // ─── Ek Kuralı Kaydet ───
+  const handleSaveAdditionalRule = async (addRule: any, index: number) => {
+    setIsLoading(true)
+    const ruleData = {
+      name: addRule.name,
+      description: addRule.description,
+      rule_type: addRule.rule_type,
+      priority: addRule.priority,
+      is_active: !requireApproval,
+      definition: { ...addRule.definition, _source: 'sera_assistant' },
+      scope: 'patient',
+      patient_id: patientId || null,
+      program_template_id: programTemplateId || null,
+      team_owner_id: teamOwnerId || null,
+      pending_global_approval: requireApproval,
+    }
+    
+    try {
+      const { supabase } = await import('@/lib/supabase')
+      const { error } = await supabase.from('planning_rules').insert(ruleData)
+      if (error) throw error
+      
+      fetchPatientRules()
+      onRuleCreated()
+      
+      setAiResult(prev => {
+        if (!prev) return prev
+        const newAdditional = [...(prev.additional_rules || [])]
+        newAdditional.splice(index, 1)
+        
+        // If everything is saved, we can optionally clear the whole result
+        // But for now just remove the saved rule from the list
+        if (!prev.rule && newAdditional.length === 0) {
+           setPrompt('')
+           return null
+        }
+        return { ...prev, additional_rules: newAdditional }
+      })
+    } catch (e: any) {
+      console.error(e)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
 
   // ─── Enter Tuşu ───
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -242,7 +537,7 @@ export function SeraAssistant({
                     disabled={isLoading}
                   />
                   <Button
-                    onClick={handleGenerate}
+                    onClick={() => handleGenerate()}
                     disabled={isLoading || prompt.trim().length < 3}
                     size="sm"
                     className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 shrink-0 self-end"
@@ -289,93 +584,254 @@ export function SeraAssistant({
                 {/* ── Sera Sonuç Kartı ── */}
                 {aiResult && (
                   <div className="space-y-3">
-                    {/* Tercih Özeti */}
-                    <div className="p-3 bg-white border border-emerald-200 rounded-lg space-y-2">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                          <span className="font-medium text-sm">{aiResult.rule.name}</span>
+                    {aiResult.clarification_needed ? (
+                      /* ── Netleştirme İhtiyacı ── */
+                      <div className="p-3 bg-emerald-50/50 border border-emerald-200 rounded-lg space-y-3">
+                        <div className="flex items-start gap-2">
+                          <Leaf className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
+                          <div>
+                            <p className="text-sm text-emerald-800 font-medium">Sera'nın size bir sorusu var:</p>
+                            <p className="text-sm text-emerald-700 mt-1">{aiResult.clarification_message || "Bu kuralı uygulamak için hangi yemekleri kastettiğinizi biraz daha detaylandırabilir misiniz?"}</p>
+                          </div>
                         </div>
-                        <Badge variant="outline" className="text-[10px] border-emerald-200 text-emerald-600">
-                          {RULE_TYPE_LABELS_FRIENDLY[aiResult.rule.rule_type] || aiResult.rule.rule_type}
-                        </Badge>
-                      </div>
-
-                      {/* Açıklama */}
-                      <p className="text-sm text-gray-600 leading-relaxed">
-                        {aiResult.explanation}
-                      </p>
-                    </div>
-
-                    {/* Çakışma Uyarıları */}
-                    {aiResult.conflicts.length > 0 && (
-                      <div className="space-y-1.5">
-                        {aiResult.conflicts.map((conflict, i) => (
-                          <div
-                            key={i}
-                            className={`flex items-start gap-2 p-2.5 rounded-lg border text-sm ${
-                              conflict.severity === 'error'
-                                ? 'bg-red-50 border-red-200 text-red-700'
-                                : conflict.severity === 'warning'
-                                ? 'bg-yellow-50 border-yellow-200 text-yellow-700'
-                                : 'bg-blue-50 border-blue-200 text-blue-700'
-                            }`}
+                        <div className="flex gap-2">
+                          <Textarea
+                            value={clarificationInput}
+                            onChange={(e) => setClarificationInput(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter' && !e.shiftKey) {
+                                  e.preventDefault()
+                                  handleGenerate(clarificationInput)
+                                }
+                            }}
+                            placeholder="Cevabınızı buraya yazın..."
+                            className="min-h-[44px] max-h-[100px] text-sm resize-none bg-white border-emerald-200 focus-visible:ring-emerald-400"
+                            rows={1}
+                            disabled={isLoading}
+                          />
+                          <Button
+                            onClick={() => handleGenerate(clarificationInput)}
+                            disabled={isLoading || clarificationInput.trim().length < 2}
+                            size="sm"
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 shrink-0 self-end"
                           >
-                            {conflict.severity === 'error' ? (
-                              <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-                            ) : (
-                              <Info className="h-4 w-4 shrink-0 mt-0.5" />
-                            )}
-                            <span>{conflict.message}</span>
-                          </div>
-                        ))}
+                            {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                          </Button>
+                        </div>
+                        <div className="pt-1">
+                          <Button
+                            onClick={() => { setAiResult(null); setPrompt(''); setClarificationInput('') }}
+                            disabled={isLoading}
+                            variant="ghost"
+                            size="sm"
+                            className="text-emerald-600 hover:bg-emerald-100 h-7 text-xs px-2"
+                          >
+                            İptal Et
+                          </Button>
+                        </div>
                       </div>
-                    )}
-
-                    {/* Öneriler */}
-                    {aiResult.suggestions.length > 0 && (
-                      <div className="space-y-1">
-                        {aiResult.suggestions.map((suggestion, i) => (
-                          <div key={i} className="flex items-start gap-2 text-sm text-emerald-700">
-                            <Lightbulb className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                            <span>{suggestion}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Aksiyon Butonları */}
-                    <div>
-                      <div className="flex items-center gap-2 pt-1">
-                        <Button
-                          onClick={handleSaveDirectly}
-                          disabled={isLoading}
-                          size="sm"
-                          className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                        >
-                          {isLoading ? (
-                            <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                          ) : (
-                            <Leaf className="h-3.5 w-3.5 mr-1.5" />
-                          )}
-                          {requireApproval ? 'Tercihini Kaydet' : 'Hemen Uygula'}
-                        </Button>
-                        <Button
-                          onClick={() => { setAiResult(null); setPrompt('') }}
-                          disabled={isLoading}
-                          variant="outline"
-                          size="sm"
-                          className="border-emerald-200 text-emerald-700 hover:bg-emerald-50"
-                        >
-                          İptal
-                        </Button>
-                      </div>
-                      {requireApproval && (
-                        <p className="text-xs text-amber-600 mt-1.5">
-                          🌿 Tercihiniz diyetisyeninizin onayına sunulacaktır.
+                    ) : (
+                      /* ── Normal Kural Sonucu ── */
+                      <>
+                      {/* Sera'nın Yanıtı */}
+                      <div className="p-3 bg-white border border-emerald-200 rounded-lg space-y-2">
+                        <p className="text-sm text-gray-600 leading-relaxed">
+                          {aiResult.explanation}
                         </p>
+                      </div>
+
+                      {/* Hazırlanan Tercihler (Paket) */}
+                      <div className="space-y-2 pt-3 mt-3">
+                        <p className="text-sm font-medium text-emerald-800 mb-2 flex items-center gap-1.5">
+                          <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                          Onayınıza Sunulan Tercihler:
+                        </p>
+                        {[aiResult.rule, ...(aiResult.additional_rules || [])].map((ruleObj, idx) => (
+                           <div key={idx} className="bg-emerald-50/50 p-2.5 rounded-lg border border-emerald-100 flex items-center justify-between gap-3 shadow-sm">
+                             <div>
+                               <p className="text-sm font-medium text-gray-800">{ruleObj.name}</p>
+                               <p className="text-[11px] text-gray-500 line-clamp-1">{ruleObj.description}</p>
+                             </div>
+                             <div className="flex items-center gap-1 text-[10px] font-medium text-emerald-600 shrink-0 bg-emerald-100/50 px-2 py-1 rounded-md">
+                               <CheckCircle2 className="h-3 w-3" />
+                               Pakete Dahil
+                             </div>
+                           </div>
+                        ))}
+                      </div>
+
+                      {/* Çakışma Uyarıları */}
+                      {aiResult.conflicts && aiResult.conflicts.length > 0 && (
+                        <div className="space-y-1.5 pt-3 border-t border-emerald-50 mt-3">
+                          {aiResult.conflicts.map((conflict, i) => (
+                            <div
+                              key={i}
+                              className={`flex items-start gap-2 p-2.5 rounded-lg border text-sm ${
+                                conflict.severity === 'error'
+                                  ? 'bg-red-50 border-red-200 text-red-700'
+                                  : conflict.severity === 'warning'
+                                  ? 'bg-yellow-50 border-yellow-200 text-yellow-700'
+                                  : 'bg-blue-50 border-blue-200 text-blue-700'
+                              }`}
+                            >
+                              {conflict.severity === 'error' ? (
+                                <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                              ) : (
+                                <Info className="h-4 w-4 shrink-0 mt-0.5" />
+                              )}
+                              <span>{conflict.message}</span>
+                            </div>
+                          ))}
+                        </div>
                       )}
-                    </div>
+
+                      {/* Öneriler */}
+                      {aiResult.suggestions && aiResult.suggestions.length > 0 && (
+                        <div className="space-y-1.5 pt-3 border-t border-emerald-50 mt-3">
+                          <p className="text-sm font-medium text-emerald-800 mb-1 flex items-center gap-1.5">
+                            <Lightbulb className="h-4 w-4 text-emerald-600" />
+                            Dilerseniz şu ek düzenlemeleri de yapabiliriz:
+                          </p>
+                          {aiResult.suggestions.map((suggestion, i) => (
+                            <div key={i} className="flex items-start justify-between gap-2 text-sm text-emerald-700 ml-5 group">
+                              <div className="flex items-start gap-2">
+                                <span className="text-emerald-400 mt-0.5">•</span>
+                                <span>{suggestion}</span>
+                              </div>
+                              <Button 
+                                size="sm" 
+                                variant="ghost" 
+                                className="h-6 text-[10px] px-2 transition-opacity bg-emerald-100 hover:bg-emerald-200 text-emerald-700 shrink-0 mt-0.5"
+                                onClick={() => handleAppendSuggestion(suggestion)}
+                                disabled={isLoading}
+                              >
+                                Bunu da Yap
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                        {/* İstisnalar (Affected Foods) */}
+                        {!isFetchingFoods && affectedFoods.length > 0 && (
+                          <div className="p-3 bg-emerald-50/30 border border-emerald-100 rounded-lg space-y-2 mt-2">
+                            <p className="text-xs font-medium text-emerald-800">
+                              Kurala Dahil Olan Yemekler
+                              <span className="font-normal text-emerald-600 block mt-0.5">Aşağıdakilerden kalmasını (kuraldan hariç tutulmasını) istediklerinizi seçebilirsiniz.</span>
+                            </p>
+                            <div className="max-h-[120px] overflow-y-auto space-y-2 pr-2">
+                              {affectedFoods.map((f) => (
+                                <div key={f.id} className="flex items-center space-x-2">
+                                  <Checkbox
+                                    id={f.id}
+                                    checked={selectedExceptions.includes(f.id)}
+                                    onCheckedChange={(checked) => {
+                                      if (checked) {
+                                        setSelectedExceptions(prev => [...prev, f.id])
+                                      } else {
+                                        setSelectedExceptions(prev => prev.filter(id => id !== f.id))
+                                      }
+                                    }}
+                                    className="border-emerald-300 data-[state=checked]:bg-emerald-600"
+                                  />
+                                  <label
+                                    htmlFor={f.id}
+                                    className="text-xs font-medium leading-none cursor-pointer"
+                                  >
+                                    {f.name}
+                                  </label>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {isFetchingFoods && (
+                          <div className="p-3 text-center text-xs text-emerald-600">
+                            <Loader2 className="h-4 w-4 animate-spin mx-auto mb-1" />
+                            Yemek listesi çekiliyor...
+                          </div>
+                        )}
+
+                        {/* Simülasyon Raporu (Faz 6) */}
+                        {isSimulating ? (
+                          <div className="p-3 bg-blue-50/50 border border-blue-100 rounded-lg space-y-2 mt-3 flex flex-col items-center justify-center py-4 shadow-sm">
+                            <Loader2 className="h-5 w-5 text-blue-500 animate-spin mb-2" />
+                            <p className="text-xs font-medium text-blue-800">Sistem Olası Makro ve Lezzet Etkilerini Hesaplıyor...</p>
+                          </div>
+                        ) : simulationReport ? (
+                          <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg space-y-2 mt-3 shadow-sm">
+                            <p className="text-sm font-semibold text-blue-900 flex items-center gap-1.5">
+                              <Activity className="h-4 w-4 text-blue-600" />
+                              Kuralınızın Olası Etkileri
+                            </p>
+                            <div className="text-xs text-blue-800 leading-relaxed whitespace-pre-wrap">
+                              {simulationReport}
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {/* Aksiyon Butonları & Düzeltme Alanı */}
+                        <div className="pt-2 border-t border-emerald-100 space-y-3">
+                          <div className="flex gap-2">
+                            <Textarea
+                              value={clarificationInput}
+                              onChange={(e) => setClarificationInput(e.target.value)}
+                              onKeyDown={(e) => {
+                                  if (e.key === 'Enter' && !e.shiftKey) {
+                                    e.preventDefault()
+                                    handleGenerate(clarificationInput)
+                                  }
+                              }}
+                              placeholder="Ekleme veya düzeltme yapmak isterseniz yazın... (Örn: Yoğurdu da ekleyelim)"
+                              className="min-h-[44px] max-h-[100px] text-sm resize-none bg-emerald-50/30 border-emerald-200 focus-visible:ring-emerald-400"
+                              rows={1}
+                              disabled={isLoading}
+                            />
+                            <Button
+                              onClick={() => handleGenerate(clarificationInput)}
+                              disabled={isLoading || clarificationInput.trim().length < 2}
+                              size="sm"
+                              className="bg-emerald-100 hover:bg-emerald-200 text-emerald-700 px-3 shrink-0 self-end h-[44px]"
+                              title="Değişikliği Gönder"
+                            >
+                              {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                            </Button>
+                          </div>
+
+                          <div className="flex items-center gap-2 pt-1">
+                            <Button
+                              onClick={handleSaveDirectly}
+                              disabled={isLoading}
+                              size="sm"
+                              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                            >
+                              {isLoading ? (
+                                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                              ) : (
+                                <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" />
+                              )}
+                              {requireApproval 
+                                ? (aiResult.additional_rules && aiResult.additional_rules.length > 0 ? 'Tüm Tercihleri Kaydet' : 'Bu Tercihi Kaydet') 
+                                : (aiResult.additional_rules && aiResult.additional_rules.length > 0 ? 'Tüm Tercihleri Uygula' : 'Bu Tercihi Uygula')}
+                            </Button>
+                            <Button
+                              onClick={() => { setAiResult(null); setPrompt('') }}
+                              disabled={isLoading}
+                              variant="outline"
+                              size="sm"
+                              className="border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                            >
+                              Vazgeç (İptal)
+                            </Button>
+                          </div>
+                          {requireApproval && (
+                            <p className="text-xs text-amber-600 mt-1.5">
+                              🌿 Tercihiniz diyetisyeninizin onayına sunulacaktır.
+                            </p>
+                          )}
+                        </div>
+                      </>
+                    )}
                   </div>
                 )}
               </>
@@ -383,6 +839,116 @@ export function SeraAssistant({
           </div>
         )}
       </div>
+
+      {/* ── Beslenme Tercihlerim (Faz 5) ── */}
+      {patientRules.length > 0 && (
+        <div className="mt-6 border border-emerald-100 bg-white rounded-xl overflow-hidden shadow-sm">
+          <div className="bg-emerald-50/50 px-4 py-3 border-b border-emerald-100 flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-emerald-800">Beslenme Tercihlerim</h3>
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant="outline" className="h-7 text-xs bg-emerald-100 text-emerald-800 border-emerald-300 hover:bg-emerald-200" onClick={handleSummarize}>
+                Programımı Özetle
+              </Button>
+              <Button size="sm" variant="outline" className="h-7 text-xs bg-white text-emerald-700 border-emerald-200 hover:bg-emerald-50" onClick={() => setIsWizardOpen(true)}>
+                Gözden Geçir
+              </Button>
+              <Badge variant="outline" className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100 border-none">
+                {patientRules.length} Tercih
+              </Badge>
+            </div>
+          </div>
+          <div className="divide-y divide-emerald-50">
+            {[...patientRules].sort((a, b) => {
+              if (a.is_active === b.is_active) {
+                return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+              }
+              return a.is_active ? -1 : 1
+            }).map((rule) => (
+              <div key={rule.id} className="p-4 flex items-start justify-between gap-4 hover:bg-emerald-50/30 transition-colors">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-sm text-gray-800">{rule.name}</span>
+                    {!rule.is_active && rule.pending_global_approval && (
+                      <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-200 bg-amber-50">
+                        Onay Bekliyor
+                      </Badge>
+                    )}
+                    {rule.is_active && (
+                      <Badge variant="outline" className="text-[10px] text-emerald-600 border-emerald-200 bg-emerald-50">
+                        Aktif
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-500 line-clamp-2">{rule.description}</p>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className={`h-8 w-8 ${rule.is_active ? 'text-amber-600 bg-amber-50 border-amber-200 hover:bg-amber-100 hover:text-amber-700' : 'text-emerald-600 bg-emerald-50 border-emerald-200 hover:bg-emerald-100 hover:text-emerald-700'}`}
+                    onClick={() => {
+                      if (!rule.is_active || window.confirm('Bu tercih beslenme programınıza uygun şekilde planlanmıştı. Duraklatmak istediğinize emin misiniz?')) {
+                        togglePatientRuleStatus(rule.id, rule.is_active)
+                      }
+                    }}
+                    title={rule.is_active ? "Tercihi Duraklat" : "Tercihi Aktif Et"}
+                  >
+                    {rule.is_active ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                  </Button>
+                  
+                  {(!rule.source_rule_id && (rule.definition?._source === 'sera_assistant' || rule.definition?.data?._source === 'sera_assistant')) && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-red-400 hover:text-red-600 hover:bg-red-50"
+                      onClick={() => {
+                        if (window.confirm('Bu tercihi tamamen silmek istediğinize emin misiniz? (Dilerseniz silmek yerine duraklatabilirsiniz)')) {
+                          deletePatientRule(rule.id)
+                        }
+                      }}
+                      title="Tercihi Tamamen Sil"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <RuleReviewWizard
+        isOpen={isWizardOpen}
+        onClose={() => setIsWizardOpen(false)}
+        rules={patientRules}
+        onRuleUpdated={updatePatientRule}
+        onRuleDeleted={deletePatientRule}
+      />
+
+      {/* Program Özeti Modalı */}
+      <Dialog open={isSummaryOpen} onOpenChange={setIsSummaryOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="text-emerald-800 text-lg">Program Özeti</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            {summaryLoading ? (
+              <div className="flex flex-col items-center justify-center space-y-4 py-8">
+                <Loader2 className="h-8 w-8 text-emerald-600 animate-spin" />
+                <p className="text-sm font-medium text-emerald-800">Sera programınızı diyetisyen gözüyle yorumluyor...</p>
+              </div>
+            ) : (
+              <div className="text-[15px] text-gray-700 leading-relaxed space-y-4 whitespace-pre-wrap p-4 bg-emerald-50/50 rounded-xl border border-emerald-100">
+                {summaryText}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setIsSummaryOpen(false)} className="bg-emerald-600 hover:bg-emerald-700">Kapat</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

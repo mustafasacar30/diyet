@@ -220,13 +220,31 @@ export async function POST(request: Request) {
       scope: scope || 'global'
     })
 
+    const { HarmCategory, HarmBlockThreshold } = require('@google/generative-ai')
+
     const model = gemini.getGenerativeModel({
       model: 'gemini-2.5-flash',
       generationConfig: {
-        temperature: 0.3,
-        maxOutputTokens: 2048,
-        responseMimeType: 'application/json'
-      }
+        temperature: 0.3
+      },
+      safetySettings: [
+        {
+          category: HarmCategory.HARM_CATEGORY_HARASSMENT,
+          threshold: HarmBlockThreshold.BLOCK_NONE,
+        },
+        {
+          category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+          threshold: HarmBlockThreshold.BLOCK_NONE,
+        },
+        {
+          category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+          threshold: HarmBlockThreshold.BLOCK_NONE,
+        },
+        {
+          category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+          threshold: HarmBlockThreshold.BLOCK_NONE,
+        }
+      ]
     })
 
     const result = await model.generateContent({
@@ -248,17 +266,22 @@ export async function POST(request: Request) {
       if (cleanedText.endsWith('```')) cleanedText = cleanedText.slice(0, -3)
       aiResponse = JSON.parse(cleanedText.trim())
     } catch (parseError) {
-      console.error('[AI Rule Generator] JSON parse error:', parseError, 'Raw:', responseText)
+      const finishReason = result.response.candidates?.[0]?.finishReason || 'UNKNOWN'
+      console.error('[AI Rule Generator] JSON parse error:', parseError, 'Raw:', responseText, 'FinishReason:', finishReason)
       return NextResponse.json(
-        { success: false, error: `AI yanıtı ayrıştırılamadı. Hata: ${(parseError as any)?.message || 'Bilinmiyor'}. Ham yanıt: ${responseText.slice(0, 200)}` },
+        { success: false, error: `AI yanıtı ayrıştırılamadı. Neden: ${finishReason}. Hata: ${(parseError as any)?.message || 'Bilinmiyor'}. Ham yanıt: ${responseText.slice(0, 250)}` },
         { status: 422 }
       )
     }
 
     // Validate required fields
-    const requiredFields = ['name', 'rule_type', 'definition', 'explanation']
+    const isClarification = aiResponse.clarification_needed === true;
+    const requiredFields = isClarification
+      ? ['clarification_message']
+      : ['name', 'rule_type', 'definition', 'explanation']
+
     for (const field of requiredFields) {
-      if (!aiResponse[field]) {
+      if (aiResponse[field] === undefined || aiResponse[field] === null) {
         return NextResponse.json(
           { success: false, error: `AI yanıtında "${field}" alanı eksik.` },
           { status: 422 }
@@ -266,26 +289,32 @@ export async function POST(request: Request) {
       }
     }
 
-    // Validate rule_type
-    const validTypes = ['frequency', 'affinity', 'consistency', 'fixed_meal', 'nutritional', 'rotation', 'or_group']
-    if (!validTypes.includes(aiResponse.rule_type)) {
-      return NextResponse.json(
-        { success: false, error: `Geçersiz kural tipi: "${aiResponse.rule_type}"` },
-        { status: 422 }
-      )
+    // Validate rule_type only if not clarifying
+    if (!isClarification) {
+      const validTypes = ['frequency', 'affinity', 'consistency', 'fixed_meal', 'nutritional', 'rotation', 'or_group']
+      if (!validTypes.includes(aiResponse.rule_type)) {
+        return NextResponse.json(
+          { success: false, error: `Geçersiz kural tipi: "${aiResponse.rule_type}"` },
+          { status: 422 }
+        )
+      }
     }
 
     // ═══ ADIM 3: Çakışma Kontrolü ═══
-    const ruleForConflictCheck = {
-      rule_type: aiResponse.rule_type,
-      definition: { data: aiResponse.definition }
+    let conflicts: any[] = [];
+    if (!isClarification) {
+      const ruleForConflictCheck = {
+        rule_type: aiResponse.rule_type,
+        definition: { data: aiResponse.definition }
+      }
+      const rawConflicts = detectConflicts(ruleForConflictCheck, existingRules, healthContext)
+      conflicts = rawConflicts.filter((v, i, a) => a.findIndex(t => t.message === v.message) === i)
     }
-    const conflicts = detectConflicts(ruleForConflictCheck, existingRules, healthContext)
 
     // ═══ ADIM 4: Response ═══
     return NextResponse.json({
       success: true,
-      rule: {
+      rule: isClarification ? null : {
         name: aiResponse.name,
         description: aiResponse.description || '',
         rule_type: aiResponse.rule_type,
@@ -296,6 +325,17 @@ export async function POST(request: Request) {
           data: aiResponse.definition
         }
       },
+      additional_rules: (aiResponse.additional_rules || []).map((ar: any) => ({
+        name: ar.name,
+        description: ar.description || '',
+        rule_type: ar.rule_type,
+        priority: Math.min(100, Math.max(1, ar.priority || 50)),
+        is_active: true,
+        definition: {
+          type: ar.rule_type,
+          data: ar.definition
+        }
+      })),
       explanation: aiResponse.explanation,
       conflicts,
       suggestions: Array.isArray(aiResponse.suggestions) ? aiResponse.suggestions : [],
