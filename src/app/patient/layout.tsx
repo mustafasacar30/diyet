@@ -3,7 +3,7 @@
 import { useAuth } from "@/contexts/auth-context"
 import { useRouter, usePathname } from "next/navigation"
 import { useEffect, useState } from "react"
-import { Home, Calendar, Settings, LogOut, Utensils, Eye, MessageCircle, RotateCcw, X, TrendingUp, BarChart3, ChevronUp, ChevronDown, Wand2 } from "lucide-react"
+import { Home, Calendar, Settings, LogOut, Utensils, Eye, MessageCircle, RotateCcw, X, TrendingUp, BarChart3, ChevronUp, ChevronDown, Wand2, Leaf } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
@@ -115,14 +115,15 @@ export default function PatientLayout({
             icon: Calendar
         },
         {
-            href: "/patient/settings",
-            label: "Ayarlar",
-            icon: Settings
-        },
-        {
             href: "/patient/assistant",
             label: "Sera",
-            icon: MessageCircle
+            icon: Leaf
+        },
+        {
+            href: "/patient/messages",
+            label: "Mesajlar",
+            icon: MessageCircle,
+            badge: true
         }
     ]
 
@@ -238,6 +239,13 @@ export default function PatientLayout({
                             Otomatik Planla
                         </Button>
 
+                        <Link href="/patient/settings">
+                            <Button variant="ghost" size="sm" className="text-gray-600 hover:text-green-600 hover:bg-green-50">
+                                <Settings className="h-4 w-4 mr-2" />
+                                Ayarlar
+                            </Button>
+                        </Link>
+
                         <Button variant="ghost" size="sm" onClick={() => signOut()} className="text-red-500 hover:text-red-600 hover:bg-red-50">
                             <LogOut className="h-4 w-4 mr-2" />
                             Çıkış
@@ -259,9 +267,16 @@ export default function PatientLayout({
                             </span>
                         )}
                     </div>
-                    <Button variant="ghost" size="icon" onClick={() => signOut()}>
-                        <LogOut className="h-5 w-5 text-gray-500" />
-                    </Button>
+                    <div className="flex items-center">
+                        <Link href="/patient/settings">
+                            <Button variant="ghost" size="icon">
+                                <Settings className="h-5 w-5 text-gray-500" />
+                            </Button>
+                        </Link>
+                        <Button variant="ghost" size="icon" onClick={() => signOut()}>
+                            <LogOut className="h-5 w-5 text-gray-500" />
+                        </Button>
+                    </div>
                 </header>
             )}
 
