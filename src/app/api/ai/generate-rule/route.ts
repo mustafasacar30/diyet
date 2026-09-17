@@ -292,7 +292,7 @@ export async function POST(request: Request) {
 
     // Validate rule_type only if not clarifying
     if (!isClarification) {
-      const validTypes = ['frequency', 'affinity', 'consistency', 'fixed_meal', 'nutritional', 'rotation', 'or_group']
+      const validTypes = ['frequency', 'affinity', 'consistency', 'fixed_meal', 'nutritional', 'rotation', 'or_group', 'update_meal_settings']
       if (!validTypes.includes(aiResponse.rule_type)) {
         return NextResponse.json(
           { success: false, error: `Geçersiz kural tipi: "${aiResponse.rule_type}"` },

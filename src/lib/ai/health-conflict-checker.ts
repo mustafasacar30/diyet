@@ -364,6 +364,10 @@ export function generateRuleSentence(rule: any): string {
     return res.charAt(0).toUpperCase() + res.slice(1);
   }
 
+  if (type === 'update_meal_settings') {
+    return 'Öğünlerinizin mimarisi (çeşit sayısı, ara öğün vb.) güncellenir.';
+  }
+
   return rule.description || rule.name;
 }
 
@@ -376,6 +380,8 @@ export function detectConflicts(
   existingRules: any[],
   healthContext?: HealthContext | null
 ): ConflictInfo[] {
+  if (newRule.rule_type === 'update_meal_settings') return [];
+
   const conflicts: ConflictInfo[] = []
   const newDef = newRule.definition?.data || newRule.definition || {}
 

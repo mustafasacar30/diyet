@@ -265,7 +265,7 @@ export function SeraAssistant({
   const handleGenerate = useCallback(async (additionalPrompt?: string) => {
     const basePrompt = prompt.trim()
     const activePrompt = additionalPrompt 
-      ? `Orijinal İsteğim: "${basePrompt}"\n\nSera'nın Netleştirme Sorusu: "${aiResult?.clarification_message || 'Daha detaylı belirtin'}"\n\nBenim Cevabım: "${additionalPrompt.trim()}"\n\nLütfen bu cevabıma göre kuralı oluştur.`
+      ? `Orijinal İsteğim: "${basePrompt}"\n\nSera'nın Notu/Sorusu (Varsa): "${aiResult?.clarification_message || 'Yok'}"\n\nBenim Ek Düzeltmem/Revizyonum: "${additionalPrompt.trim()}"\n\nGörev: Orijinal isteğimle bu son düzeltmemi/cevabımı HARMANLAYARAK benim "Nihai İsteğimi" anla. Ve bu nihai isteğe göre TÜM KURALLARI (iptal edilmeyen geçerli eski isteklerimi de dahil ederek) EKSİKSİZ BİR TAM LİSTE halinde yeniden oluştur. Aksi halde eski kurallarım ekrandan silinir!`
       : basePrompt
 
     if (!activePrompt || activePrompt.length < 3) return
@@ -381,48 +381,79 @@ export function SeraAssistant({
       ...(aiResult.conflicts || []).map((c: any) => c.existing_rule_id)
     ].filter(Boolean)))
 
+    const mealUpdateSlots: any[] = []
+
     // Ana Kural
     const finalDefinition = { ...rule.definition }
     if (finalDefinition.target && selectedExceptions.length > 0) {
       finalDefinition.target.exceptions = selectedExceptions
     }
-    rulesToInsert.push({
-      name: rule.name,
-      description: rule.description,
-      rule_type: rule.rule_type,
-      priority: rule.priority,
-      is_active: !requireApproval,
-      definition: { ...finalDefinition, _source: 'sera_assistant', _replaced_ids: replacedIds },
-      scope: 'patient',
-      patient_id: patientId || null,
-      program_template_id: programTemplateId || null,
-      team_owner_id: teamOwnerId || null,
-      pending_global_approval: requireApproval,
-    })
+
+    if (rule.rule_type === 'update_meal_settings') {
+      const slots = finalDefinition.data?.slots || finalDefinition.slots;
+      if (slots) mealUpdateSlots.push(...slots)
+    } else {
+      rulesToInsert.push({
+        name: rule.name,
+        description: rule.description,
+        rule_type: rule.rule_type,
+        priority: rule.priority,
+        is_active: !requireApproval,
+        definition: { ...finalDefinition, _source: 'sera_assistant', _replaced_ids: replacedIds },
+        scope: 'patient',
+        patient_id: patientId || null,
+        program_template_id: programTemplateId || null,
+        team_owner_id: teamOwnerId || null,
+        pending_global_approval: requireApproval,
+      })
+    }
 
     // Ek Kurallar
     if (aiResult.additional_rules && aiResult.additional_rules.length > 0) {
       for (const ar of aiResult.additional_rules) {
-        rulesToInsert.push({
-          name: ar.name,
-          description: ar.description,
-          rule_type: ar.rule_type,
-          priority: ar.priority,
-          is_active: !requireApproval,
-          definition: { ...ar.definition, _source: 'sera_assistant' },
-          scope: 'patient',
-          patient_id: patientId || null,
-          program_template_id: programTemplateId || null,
-          team_owner_id: teamOwnerId || null,
-          pending_global_approval: requireApproval,
-        })
+        if (ar.rule_type === 'update_meal_settings') {
+          const arSlots = ar.definition?.data?.slots || ar.definition?.slots;
+          if (arSlots) mealUpdateSlots.push(...arSlots)
+        } else {
+          rulesToInsert.push({
+            name: ar.name,
+            description: ar.description,
+            rule_type: ar.rule_type,
+            priority: ar.priority,
+            is_active: !requireApproval,
+            definition: { ...ar.definition, _source: 'sera_assistant' },
+            scope: 'patient',
+            patient_id: patientId || null,
+            program_template_id: programTemplateId || null,
+            team_owner_id: teamOwnerId || null,
+            pending_global_approval: requireApproval,
+          })
+        }
       }
     }
 
     try {
       const { supabase } = await import('@/lib/supabase')
-      const { error } = await supabase.from('planning_rules').insert(rulesToInsert)
-      if (error) throw error
+      
+      if (rulesToInsert.length > 0) {
+        const { error } = await supabase.from('planning_rules').insert(rulesToInsert)
+        if (error) throw error
+      }
+
+      if (mealUpdateSlots.length > 0 && patientId) {
+        const mealRes = await fetch('/api/ai/update-meals', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            patient_id: patientId,
+            program_template_id: programTemplateId || null,
+            team_owner_id: teamOwnerId || null,
+            slots: mealUpdateSlots
+          })
+        })
+        const mealData = await mealRes.json()
+        if (!mealData.success) throw new Error(mealData.error || "Öğün ayarları güncellenemedi.")
+      }
 
       // Eğer çelişen/ezilen eski kurallar varsa, onları HEMEN ez/pause yap (Onaya düşse bile hastanın eski kuralını durdururuz)
       if (replacedIds.length > 0) {
@@ -480,52 +511,69 @@ export function SeraAssistant({
   // ─── Ek Kuralı Kaydet ───
   const handleSaveAdditionalRule = async (addRule: any, index: number) => {
     setIsLoading(true)
-    const ruleData = {
-      name: addRule.name,
-      description: addRule.description,
-      rule_type: addRule.rule_type,
-      priority: addRule.priority,
-      is_active: !requireApproval,
-      definition: { 
-        ...addRule.definition, 
-        _source: 'sera_assistant',
-        _replaced_ids: addRule.replaces_rule_id ? [addRule.replaces_rule_id] : []
-      },
-      scope: 'patient',
-      patient_id: patientId || null,
-      program_template_id: programTemplateId || null,
-      team_owner_id: teamOwnerId || null,
-      pending_global_approval: requireApproval,
-    }
     
     try {
-      const { supabase } = await import('@/lib/supabase')
-      const { error } = await supabase.from('planning_rules').insert(ruleData)
-      if (error) throw error
-      
-      // Eğer Diyetisyen kendi ekliyorsa (direkt aktif oluyorsa), çelişenleri HEMEN ez/pause yap!
-      if (!requireApproval && addRule.replaces_rule_id) {
-        const { data: replacedRules } = await supabase.from('planning_rules').select('*').eq('id', addRule.replaces_rule_id)
-        if (replacedRules && replacedRules.length > 0) {
+      const slotsToUpdate = addRule.definition?.data?.slots || addRule.definition?.slots;
+      if (addRule.rule_type === 'update_meal_settings' && slotsToUpdate && patientId) {
+         const mealRes = await fetch('/api/ai/update-meals', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+               patient_id: patientId,
+               program_template_id: programTemplateId || null,
+               team_owner_id: teamOwnerId || null,
+               slots: slotsToUpdate
+            })
+         })
+         const mealData = await mealRes.json()
+         if (!mealData.success) throw new Error(mealData.error || "Öğün ayarları güncellenemedi.")
+      } else {
+        const ruleData = {
+          name: addRule.name,
+          description: addRule.description,
+          rule_type: addRule.rule_type,
+          priority: addRule.priority,
+          is_active: !requireApproval,
+          definition: { 
+            ...addRule.definition, 
+            _source: 'sera_assistant',
+            _replaced_ids: addRule.replaces_rule_id ? [addRule.replaces_rule_id] : []
+          },
+          scope: 'patient',
+          patient_id: patientId || null,
+          program_template_id: programTemplateId || null,
+          team_owner_id: teamOwnerId || null,
+          pending_global_approval: requireApproval,
+        }
+        
+        const { supabase } = await import('@/lib/supabase')
+        const { error } = await supabase.from('planning_rules').insert(ruleData)
+        if (error) throw error
+        
+        // Eğer Diyetisyen kendi ekliyorsa (direkt aktif oluyorsa), çelişenleri HEMEN ez/pause yap!
+        if (!requireApproval && addRule.replaces_rule_id) {
+          const { data: replacedRules } = await supabase.from('planning_rules').select('*').eq('id', addRule.replaces_rule_id)
+          if (replacedRules && replacedRules.length > 0) {
             for (const repRule of replacedRules) {
-                if (repRule.scope === 'patient') {
-                    await supabase.from('planning_rules').update({ is_active: false }).eq('id', repRule.id)
-                } else {
-                    await supabase.from('planning_rules').insert({
-                        name: repRule.name,
-                        description: repRule.description,
-                        rule_type: repRule.rule_type,
-                        priority: repRule.priority,
-                        is_active: false,
-                        definition: repRule.definition,
-                        scope: 'patient',
-                        patient_id: patientId,
-                        team_owner_id: teamOwnerId || null,
-                        source_rule_id: repRule.id,
-                        sort_order: repRule.sort_order
-                    })
-                }
+              if (repRule.scope === 'patient') {
+                await supabase.from('planning_rules').update({ is_active: false }).eq('id', repRule.id)
+              } else {
+                await supabase.from('planning_rules').insert({
+                  name: repRule.name,
+                  description: repRule.description,
+                  rule_type: repRule.rule_type,
+                  priority: repRule.priority,
+                  is_active: false,
+                  definition: repRule.definition,
+                  scope: 'patient',
+                  patient_id: patientId,
+                  team_owner_id: teamOwnerId || null,
+                  source_rule_id: repRule.id,
+                  sort_order: repRule.sort_order
+                })
+              }
             }
+          }
         }
       }
 

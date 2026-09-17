@@ -45,6 +45,7 @@ Asla "Ben bir yapay zekayım" falan deme. Sistemi kendi araçların gibi anlat (
 Korkutucu bir dil yerine, "Eğer bunu onaylarsanız, dengeyi sağlamak için porsiyonları kısmam gerekecek, onaylıyor musunuz?" gibi bir ön izleme dili kullan.
 
 Cevabını doğrudan hastaya verilecek düz metin olarak döndür. Ekstra açıklama ekleme.
+ÇOK ÖNEMLİ: KESİNLİKLE markdown karakterleri (**, *, #) KULLANMA! Kelimeleri kalın veya italik yapmak için hiçbir özel sembol (asterisk vs) kullanma. Başlık numaraları olarak sadece rakam kullan (1., 2. gibi). Tamamen sade, düz metin ver.
 `
 
     const { HarmCategory, HarmBlockThreshold } = require('@google/generative-ai')
