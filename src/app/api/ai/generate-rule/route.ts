@@ -308,8 +308,7 @@ export async function POST(request: Request) {
         rule_type: aiResponse.rule_type,
         definition: { data: aiResponse.definition }
       }
-      const rawConflicts = detectConflicts(ruleForConflictCheck, existingRules, healthContext)
-      conflicts = rawConflicts.filter((v, i, a) => a.findIndex(t => t.message === v.message) === i)
+      conflicts = detectConflicts(ruleForConflictCheck, existingRules, healthContext)
     }
 
     // ═══ ADIM 4: Response ═══
