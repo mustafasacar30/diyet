@@ -241,15 +241,22 @@ export default function RulesPage() {
                 setSuggestions(suggestionsWithPatient as unknown as PlanningRule[])
             }
 
-            // Fetch patient specific rules (Only custom rules created by patient/assistant, not overrides)
+            // Fetch patient specific rules
             const { data: patientRulesData } = await supabase
                 .from('planning_rules')
                 .select('*, patients(id, full_name)')
                 .eq('scope', 'patient')
-                .is('source_rule_id', null)
                 .order('created_at', { ascending: false })
+            
             if (patientRulesData) {
-                setPatientRules(patientRulesData as unknown as PlanningRule[])
+                // Filter specifically for rules created by Sera Assistant or auto-paused by it
+                const filteredRules = patientRulesData.filter((pr: any) => {
+                    const def = pr.definition || {};
+                    const isSeraCreated = def._source === 'sera_assistant' || def.data?._source === 'sera_assistant';
+                    const isAutoPausedBySera = pr.description?.includes('otomatik olarak duraklatıldı');
+                    return isSeraCreated || isAutoPausedBySera;
+                });
+                setPatientRules(filteredRules as unknown as PlanningRule[])
             }
 
             // Fetch program overrides to see which global/team rules are used in which programs
