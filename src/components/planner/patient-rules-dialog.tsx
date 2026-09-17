@@ -899,16 +899,21 @@ const mergedRulesMap = new Map<string, PlanningRule>()
                     
                     if (replacedRules && replacedRules.length > 0) {
                         for (const repRule of replacedRules) {
+                            const pauseReason = `(Yeni bir tercih oluşturulduğu için bu kural otomatik olarak duraklatıldı.)\n\n${repRule.description || ''}`;
+                            
                             if (repRule.scope === 'patient') {
                                 // Hasta kuralıysa doğrudan update ile kapat
-                                await supabase.from('planning_rules').update({ is_active: false }).eq('id', repRule.id)
+                                await supabase.from('planning_rules').update({ 
+                                    is_active: false,
+                                    description: pauseReason
+                                }).eq('id', repRule.id)
                                 // Optimistic UI:
-                                setPatientRules(prev => prev.map(r => r.id === repRule.id ? { ...r, is_active: false } : r))
+                                setPatientRules(prev => prev.map(r => r.id === repRule.id ? { ...r, is_active: false, description: pauseReason } : r))
                             } else {
                                 // Global/Team kuralıysa hasta için override (tombstone) oluştur
                                 const { data: newTombstone } = await supabase.from('planning_rules').insert({
                                     name: repRule.name,
-                                    description: repRule.description,
+                                    description: pauseReason,
                                     rule_type: repRule.rule_type,
                                     priority: repRule.priority,
                                     is_active: false,

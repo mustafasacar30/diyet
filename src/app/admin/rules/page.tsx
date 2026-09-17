@@ -20,6 +20,7 @@ export default function RulesPage() {
     const router = useRouter()
     const searchParams = useSearchParams()
     const [rules, setRules] = useState<PlanningRule[]>([])
+    const [patientRules, setPatientRules] = useState<PlanningRule[]>([])
     const [inheritedGlobalRules, setInheritedGlobalRules] = useState<PlanningRule[]>([])
     const [suggestions, setSuggestions] = useState<PlanningRule[]>([])
     const [showSuggestions, setShowSuggestions] = useState(true)
@@ -238,6 +239,16 @@ export default function RulesPage() {
                 }))
 
                 setSuggestions(suggestionsWithPatient as unknown as PlanningRule[])
+            }
+
+            // Fetch patient specific rules
+            const { data: patientRulesData } = await supabase
+                .from('planning_rules')
+                .select('*, patients(id, full_name)')
+                .eq('scope', 'patient')
+                .order('created_at', { ascending: false })
+            if (patientRulesData) {
+                setPatientRules(patientRulesData as unknown as PlanningRule[])
             }
 
             // Fetch program overrides to see which global/team rules are used in which programs
@@ -684,6 +695,30 @@ export default function RulesPage() {
                 onSuccess={handleSuccess}
                 teamOwnerId={hasTeamScope ? effectiveTeamOwnerId : null}
             />
+
+            {patientRules.length > 0 && (
+                <div className="mt-12 pt-6 border-t border-slate-200">
+                    <h3 className="text-lg font-semibold text-slate-800 mb-4">Hastaya Özel Kurallar</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {patientRules.map((pr: any) => (
+                            <div key={pr.id} className="bg-blue-50/50 border border-blue-100 rounded-lg p-4 flex flex-col justify-between">
+                                <div>
+                                    <div className="flex items-start justify-between">
+                                        <div className="font-medium text-slate-800 text-sm">{pr.name}</div>
+                                        {!pr.is_active && (
+                                            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">Duraklatıldı</span>
+                                        )}
+                                    </div>
+                                    <div className="text-xs text-slate-500 mt-2 line-clamp-3">{pr.description}</div>
+                                </div>
+                                <div className="mt-4 inline-block self-start bg-blue-100 text-blue-800 text-[10px] px-2 py-0.5 rounded-full font-medium">
+                                    Hasta: {pr.patients?.full_name || 'Bilinmiyor'}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             <SettingsDialog
                 open={settingsOpen}

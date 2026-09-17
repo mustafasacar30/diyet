@@ -24,6 +24,7 @@ import {
   Pause,
   PlusCircle,
   Activity,
+  Lock,
 } from 'lucide-react'
 
 // ─── Interfaces ───
@@ -429,14 +430,19 @@ export function SeraAssistant({
         
         if (replacedRules) {
           for (const repRule of replacedRules) {
+            const pauseReason = `(Yeni bir tercih oluşturulduğu için bu kural otomatik olarak duraklatıldı.)\n\n${repRule.description || ''}`;
+            
             if (repRule.scope === 'patient') {
               // Hasta kuralıysa doğrudan update ile kapat
-              await supabase.from('planning_rules').update({ is_active: false }).eq('id', repRule.id)
+              await supabase.from('planning_rules').update({ 
+                  is_active: false,
+                  description: pauseReason
+              }).eq('id', repRule.id)
             } else {
               // Global/Team kuralıysa hasta için override (tombstone) oluştur
               await supabase.from('planning_rules').insert({
                 name: repRule.name,
-                description: repRule.description,
+                description: pauseReason,
                 rule_type: repRule.rule_type,
                 priority: repRule.priority,
                 is_active: false,
@@ -960,18 +966,19 @@ export function SeraAssistant({
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
                   <Button
-                    variant="outline"
+                    variant="ghost"
                     size="icon"
                     disabled={!rule.is_active && rule.pending_global_approval}
-                    className={`h-8 w-8 ${rule.is_active ? 'text-amber-600 bg-amber-50 border-amber-200 hover:bg-amber-100 hover:text-amber-700' : 'text-emerald-600 bg-emerald-50 border-emerald-200 hover:bg-emerald-100 hover:text-emerald-700'}`}
+                    className={`h-8 w-8 ${rule.is_active ? 'text-amber-500 hover:text-amber-600 hover:bg-amber-50' : (rule.description?.includes('otomatik olarak duraklatıldı') ? 'text-slate-400 hover:text-slate-600 hover:bg-slate-100' : 'text-emerald-500 hover:text-emerald-600 hover:bg-emerald-50')}`}
                     onClick={() => {
+                      if (rule.pending_global_approval) return
                       if (!rule.is_active || window.confirm('Bu tercih beslenme programınıza uygun şekilde planlanmıştı. Duraklatmak istediğinize emin misiniz?')) {
                         togglePatientRuleStatus(rule.id, rule.is_active)
                       }
                     }}
-                    title={!rule.is_active && rule.pending_global_approval ? "Diyetisyen onayı bekleniyor" : (rule.is_active ? "Tercihi Duraklat" : "Tercihi Aktif Et")}
+                    title={!rule.is_active && rule.pending_global_approval ? "Diyetisyen onayı bekleniyor" : (!rule.is_active && rule.description?.includes('otomatik olarak duraklatıldı') ? "Bu kural yeni bir tercih tarafından ezildiği için otomatik duraklatıldı. Aktif etmek için tıklayın." : (rule.is_active ? "Tercihi Duraklat" : "Tercihi Aktif Et"))}
                   >
-                    {rule.is_active ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                    {rule.is_active ? <Pause className="h-4 w-4" /> : (rule.description?.includes('otomatik olarak duraklatıldı') ? <Lock className="h-4 w-4 opacity-80" /> : <Play className="h-4 w-4" />)}
                   </Button>
                   
                   {(!rule.source_rule_id && (rule.definition?._source === 'sera_assistant' || rule.definition?.data?._source === 'sera_assistant')) && (

@@ -38,7 +38,7 @@ export default function AssistantPage() {
 
             const { data } = await supabase
                 .from('patients')
-                .select('full_name, preferences')
+                .select('full_name, preferences, dietitian_id, patient_assignments(dietitian_id)')
                 .eq('id', actualPatientId)
                 .single()
 
@@ -47,7 +47,12 @@ export default function AssistantPage() {
                 const prefs = data.preferences || {}
                 // If preferences object doesn't have it, default to true
                 setCanUseAI(prefs.allow_ai_rule_assistant !== undefined ? prefs.allow_ai_rule_assistant : true)
-                setRequireApproval(true)
+                
+                // If patient has a direct dietitian or a team assignment, require approval
+                const hasDirectDietitian = !!data.dietitian_id;
+                const hasTeamDietitian = Array.isArray(data.patient_assignments) && data.patient_assignments.length > 0;
+                
+                setRequireApproval(hasDirectDietitian || hasTeamDietitian);
             }
             setLoading(false)
         }
