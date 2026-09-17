@@ -375,7 +375,7 @@ export function SeraAssistant({
     
     // Çelişen/Eski kural ID'lerini toplayıp Kuralın içine (definition._replaced_ids) gömüyoruz ki Diyetisyen onayladığında iptal edilsin!
     const replacedIds = Array.from(new Set([
-      rule.replaces_rule_id,
+      (rule as any).replaces_rule_id,
       ...(aiResult.additional_rules || []).map((r: any) => r.replaces_rule_id),
       ...(aiResult.conflicts || []).map((c: any) => c.existing_rule_id)
     ].filter(Boolean)))

@@ -887,7 +887,7 @@ const mergedRulesMap = new Map<string, PlanningRule>()
 
                 const replacedIds = Array.from(new Set([
                     ...(parsedDef._replaced_ids || []),
-                    rule.replaces_rule_id,
+                    (rule as any).replaces_rule_id,
                     rule.source_rule_id
                 ].filter(Boolean))) as string[];
 

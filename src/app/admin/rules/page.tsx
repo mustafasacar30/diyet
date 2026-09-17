@@ -393,7 +393,7 @@ export default function RulesPage() {
             // Ayrıca kök düzeydeki replaces_rule_id de varsa toplayalım!
             const replacedIds = Array.from(new Set([
                 ...(parsedDef._replaced_ids || []),
-                rule.replaces_rule_id,
+                (rule as any).replaces_rule_id,
                 rule.source_rule_id
             ].filter(Boolean))) as string[];
 

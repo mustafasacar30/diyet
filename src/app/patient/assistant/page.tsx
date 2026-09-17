@@ -59,7 +59,7 @@ export default function AssistantPage() {
                     .eq('patient_id', actualPatientId)
 
                 // If patient has a direct dietitian assigned, require approval
-                const hasDirectDietitian = assignments && assignments.length > 0;
+                const hasDirectDietitian = Boolean(assignments && assignments.length > 0);
                 setRequireApproval(hasDirectDietitian);
             }
             setLoading(false)
