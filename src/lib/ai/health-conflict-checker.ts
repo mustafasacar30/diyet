@@ -183,50 +183,59 @@ export function generateRuleSentence(rule: any): string {
   if (!rule || !rule.definition) return rule?.name || 'Bilinmeyen Kural';
   
   const n = (rule.name || '').toLowerCase();
-  // Özel macro kuralları
   if (n.includes('protein dolgu')) {
     if (n.includes('hindi') || n.includes('füme')) return 'Protein makrosu eksik kalırsa hindi füme eklenebilir.';
-    return 'Protein makronuzun eksik olması durumunda, tamamlanması için menüye ek gıdalar eklenir.';
+    return 'Protein makronuzun eksik olması durumunda, tamamlanması için ek gıdalar eklenir.';
   }
 
   const type = rule.rule_type;
   const def = (rule.definition as any)?.data || rule.definition || {};
   const t = def?.target || {};
 
-  // 1. NE (Hangi Yiyecek/Grup)?
   let subject = "";
   if (t.categories && t.categories.length > 0) {
-    subject = t.categories.map((c: string) => c.toLowerCase()).join(' ve ') + ' türleri';
+    subject = t.categories.map((c: string) => {
+        let sc = c.toLowerCase().replace(/l[ae]r$/i, '');
+        if (sc === 'salad') return 'salata';
+        if (sc === 'ekmek') return 'ekmek türlerinden bir tanesi';
+        return sc + ' türü';
+    }).join(' ve ');
   } else if (t.type === 'category') {
-    subject = (t.value || '').toLowerCase() + ' türleri';
+    let sc = (t.value || '').toLowerCase().replace(/l[ae]r$/i, '');
+    if (sc === 'salad') subject = 'salata';
+    else if (sc === 'ekmek') subject = 'ekmek türlerinden bir tanesi';
+    else if (sc === 'tatlı' || sc === 'tatli') subject = 'tatlı';
+    else subject = sc + (sc.endsWith('lı') ? ' yemek' : ' türü');
   } else if (t.type === 'tag') {
-    subject = `${(t.value || '').toLowerCase()} içeren yemekler`;
+    subject = `${(t.value || '').toLowerCase()} içeren yemek`;
   } else if (t.type === 'name_contains') {
-    subject = `içinde "${(t.value || '').toLowerCase()}" geçen yemekler`;
+    subject = `içinde "${(t.value || '').toLowerCase()}" geçen yemek`;
   } else if (t.type === 'role') {
-    const roleMap: Record<string, string> = { mainDish: 'ana yemekler', sideDish: 'yardımcı yemekler' };
+    const roleMap: Record<string, string> = { mainDish: 'ana yemek', sideDish: 'yan yemek (meze, salata vb.)' };
     subject = roleMap[t.value] || t.value;
   } else if (t.type === 'food_id') {
     subject = (t.value || '').toLowerCase();
   } else {
-    subject = "belirli yemekler";
+    subject = "belirli bir yemek";
   }
 
-  // 2. ÖĞÜN ve GÜN KISITLAMASI
   const meals = t.meal_types || def.scope_meals || [];
-  let cond = "";
+  let mealStr = "";
   if (meals.length > 0) {
     const ml = meals.map((m: string) => m.toLowerCase());
-    cond += `${ml.join(' ve ')} öğünlerinde`;
+    mealStr = `${ml.join(' ve ')} öğünlerinde`;
   }
   
+  let dayStr = "";
   if (def.scope_days && def.scope_days.length > 0) {
     const dayNames = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
     const days = def.scope_days.map((d: number) => dayNames[d - 1] || d).join(', ');
-    cond += (cond ? ` (${days})` : `${days} günleri`);
+    dayStr = `(${days}) günlerinde`;
   }
 
-  // 3. HAFTA KISITLAMASI
+  let condParts = [dayStr, mealStr].filter(Boolean);
+  let cond = condParts.join(', ');
+
   let weekText = "";
   if (def.scope_weeks) {
     if (def.scope_weeks.mode === 'specific' && def.scope_weeks.weeks && def.scope_weeks.weeks.length > 0) {
@@ -257,11 +266,11 @@ export function generateRuleSentence(rule: any): string {
   if (type === 'frequency') {
     let countText = "";
     if (def.min_count && def.max_count && def.min_count === def.max_count) {
-      countText = `${def.min_count} kez`;
+      countText = `${def.min_count}`;
     } else if (def.min_count) {
-      countText = `en az ${def.min_count} kez`;
+      countText = `en az ${def.min_count}`;
     } else if (def.max_count) {
-      countText = `en fazla ${def.max_count} kez`;
+      countText = `en fazla ${def.max_count}`;
     }
     
     let periodText = "";
@@ -269,7 +278,8 @@ export function generateRuleSentence(rule: any): string {
     else if (def.period === 'per_meal') periodText = "her öğünde";
     else periodText = "haftada";
     
-    let res = `${prefix}${periodText} ${countText} menünüze ${subject} eklenir.`;
+    let subjectWithCount = countText ? `${countText} ${subject}` : subject;
+    let res = `${prefix}${periodText} ${subjectWithCount} eklenir.`;
     return res.charAt(0).toUpperCase() + res.slice(1);
   }
 

@@ -12,12 +12,21 @@ export async function POST(req: Request) {
 
         let query = supabase.from('foods').select('id, name, category, role, tags').eq('is_active', true)
 
+        let searchVal = target_value;
+        if (target_type === 'category' || target_type === 'role') {
+            searchVal = searchVal.replace(/L[AE]R$/i, '').trim();
+        }
+        
+        const upperVal = searchVal.toLocaleUpperCase('tr-TR');
+        const lowerVal = searchVal.toLocaleLowerCase('tr-TR');
+        const capVal = searchVal.charAt(0).toLocaleUpperCase('tr-TR') + searchVal.slice(1).toLocaleLowerCase('tr-TR');
+
         switch (target_type) {
             case 'category':
-                query = query.ilike('category', `%${target_value}%`)
+                query = query.or(`category.ilike.%${upperVal}%,category.ilike.%${lowerVal}%,category.ilike.%${capVal}%,category.ilike.%${searchVal}%`)
                 break
             case 'role':
-                query = query.ilike('role', `%${target_value}%`)
+                query = query.or(`role.ilike.%${upperVal}%,role.ilike.%${lowerVal}%,role.ilike.%${capVal}%,role.ilike.%${searchVal}%`)
                 break
             case 'tag':
                 query = query.contains('tags', [target_value])
