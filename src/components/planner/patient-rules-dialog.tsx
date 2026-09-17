@@ -902,9 +902,11 @@ const mergedRulesMap = new Map<string, PlanningRule>()
                             if (repRule.scope === 'patient') {
                                 // Hasta kuralıysa doğrudan update ile kapat
                                 await supabase.from('planning_rules').update({ is_active: false }).eq('id', repRule.id)
+                                // Optimistic UI:
+                                setPatientRules(prev => prev.map(r => r.id === repRule.id ? { ...r, is_active: false } : r))
                             } else {
                                 // Global/Team kuralıysa hasta için override (tombstone) oluştur
-                                await supabase.from('planning_rules').insert({
+                                const { data: newTombstone } = await supabase.from('planning_rules').insert({
                                     name: repRule.name,
                                     description: repRule.description,
                                     rule_type: repRule.rule_type,
@@ -916,7 +918,10 @@ const mergedRulesMap = new Map<string, PlanningRule>()
                                     team_owner_id: isTeamScopedContext ? teamOwnerId : null,
                                     source_rule_id: repRule.id,
                                     sort_order: repRule.sort_order
-                                })
+                                }).select('*').single()
+                                if (newTombstone) {
+                                    setPatientRules(prev => [...prev, newTombstone as PlanningRule])
+                                }
                             }
                         }
                     }

@@ -422,29 +422,33 @@ export function SeraAssistant({
       const { error } = await supabase.from('planning_rules').insert(rulesToInsert)
       if (error) throw error
 
-      // Eğer Diyetisyen kendi ekliyorsa (direkt aktif oluyorsa), çelişenleri HEMEN ez/pause yap!
-      if (!requireApproval && replacedIds.length > 0) {
+      // Eğer çelişen/ezilen eski kurallar varsa, onları HEMEN ez/pause yap (Onaya düşse bile hastanın eski kuralını durdururuz)
+      if (replacedIds.length > 0) {
+        console.log("Auto-pausing replaced rules directly from Sera:", replacedIds)
         const { data: replacedRules } = await supabase.from('planning_rules').select('*').in('id', replacedIds)
+        
         if (replacedRules) {
-            for (const repRule of replacedRules) {
-                if (repRule.scope === 'patient') {
-                    await supabase.from('planning_rules').update({ is_active: false }).eq('id', repRule.id)
-                } else {
-                    await supabase.from('planning_rules').insert({
-                        name: repRule.name,
-                        description: repRule.description,
-                        rule_type: repRule.rule_type,
-                        priority: repRule.priority,
-                        is_active: false,
-                        definition: repRule.definition,
-                        scope: 'patient',
-                        patient_id: patientId,
-                        team_owner_id: teamOwnerId || null,
-                        source_rule_id: repRule.id,
-                        sort_order: repRule.sort_order
-                    })
-                }
+          for (const repRule of replacedRules) {
+            if (repRule.scope === 'patient') {
+              // Hasta kuralıysa doğrudan update ile kapat
+              await supabase.from('planning_rules').update({ is_active: false }).eq('id', repRule.id)
+            } else {
+              // Global/Team kuralıysa hasta için override (tombstone) oluştur
+              await supabase.from('planning_rules').insert({
+                name: repRule.name,
+                description: repRule.description,
+                rule_type: repRule.rule_type,
+                priority: repRule.priority,
+                is_active: false,
+                definition: repRule.definition,
+                scope: 'patient',
+                patient_id: patientId || null,
+                team_owner_id: teamOwnerId || null,
+                source_rule_id: repRule.id,
+                sort_order: repRule.sort_order
+              })
             }
+          }
         }
       }
 
