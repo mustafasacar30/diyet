@@ -92,29 +92,53 @@ function isDefinitionDuplicate(defA: any, defB: any): boolean {
 
 function describeRuleTarget(def: any): string {
   const t = def?.target || {};
-  const parts = [];
+  let desc = "";
   
-  if (t.meal_types && t.meal_types.length > 0) {
-    parts.push(t.meal_types.join(' ve ') + ' öğünlerinde');
-  } else if (def.scope_meals && def.scope_meals.length > 0) {
-    parts.push(def.scope_meals.join(' ve ') + ' öğünlerinde');
-  }
-  
+  // 1. NE (Hangi Yiyecek/Grup)?
   if (t.categories && t.categories.length > 0) {
-    parts.push(t.categories.join(' ve ') + ' kategorisinden yemeklerin');
+    desc += t.categories.join(' ve ') + ' kategorisindeki yemeklerin ';
   } else if (t.type === 'category') {
-    parts.push(t.value + ' kategorisinden yemeklerin');
+    desc += t.value + ' kategorisindeki yemeklerin ';
   } else if (t.type === 'tag') {
-    parts.push(t.value + ' özellikli yemeklerin');
+    desc += t.value + ' özellikli yemeklerin ';
   } else if (t.type === 'name_contains') {
-    parts.push('içinde "' + t.value + '" geçen yemeklerin');
+    desc += 'içinde "' + t.value + '" geçen yemeklerin ';
+  } else if (t.type === 'role') {
+    desc += t.value + ' rolündeki yemeklerin ';
+  } else {
+    desc += "bu besin grubunun ";
+  }
+
+  // 2. ÖĞÜN KISITLAMASI
+  const meals = t.meal_types || def.scope_meals;
+  if (meals && meals.length > 0) {
+    desc += `(sadece ${meals.join(', ')} öğünlerinde) `;
+  } else {
+    desc += `(öğün kısıtlaması olmaksızın) `;
+  }
+
+  // 3. GÜN KISITLAMASI
+  if (def.scope_days && def.scope_days.length > 0) {
+    const dayNames = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
+    const days = def.scope_days.map((d: number) => dayNames[d - 1] || d).join(', ');
+    desc += `sadece ${days} günlerinde `;
+  }
+
+  // 4. HAFTA KISITLAMASI
+  if (def.scope_weeks) {
+    if (def.scope_weeks.mode === 'specific' && def.scope_weeks.weeks) {
+      desc += `(diyetin ${def.scope_weeks.weeks.join(', ')}. haftalarında) `;
+    } else if (def.scope_weeks.mode === 'repeating') {
+      desc += `(her ${def.scope_weeks.every || '?'} haftada bir) `;
+    }
   }
   
-  if (parts.length === 0) {
-    return "bu besin grubunun";
+  // 5. EXCLUSIVE SCOPE
+  if (def.exclusive_scope) {
+    desc += `*ve bu aralık dışında kalan zamanlarda tamamen yasaklanacak şekilde* `;
   }
-  
-  return parts.join(' ');
+
+  return desc.trim();
 }
 
 // ─── Kural Çakışma Dedektörü ───
