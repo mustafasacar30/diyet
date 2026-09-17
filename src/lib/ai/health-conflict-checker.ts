@@ -181,44 +181,123 @@ export function isDefinitionDuplicate(defA: any, defB: any): boolean {
 
 export function generateRuleSentence(rule: any): string {
   if (!rule || !rule.definition) return rule?.name || 'Bilinmeyen Kural';
+  
+  const n = (rule.name || '').toLowerCase();
+  // Özel macro kuralları
+  if (n.includes('protein dolgu')) {
+    if (n.includes('hindi') || n.includes('füme')) return 'Protein makrosu eksik kalırsa hindi füme eklenebilir.';
+    return 'Protein makronuzun eksik olması durumunda, tamamlanması için menüye ek gıdalar eklenir.';
+  }
+
   const type = rule.rule_type;
   const def = (rule.definition as any)?.data || rule.definition || {};
+  const t = def?.target || {};
 
-  if (type === 'frequency') {
-    let action = "menüye eklenir";
-    if (def.min_count && def.max_count && def.min_count === def.max_count) {
-      action = `tam olarak ${def.min_count} kez eklenmesi zorunludur`;
-    } else if (def.min_count) {
-      action = `en az ${def.min_count} kez eklenmesi sağlanır`;
-    } else if (def.max_count) {
-      action = `en fazla ${def.max_count} kez eklenmesine izin verilir`;
+  // 1. NE (Hangi Yiyecek/Grup)?
+  let subject = "";
+  if (t.categories && t.categories.length > 0) {
+    subject = t.categories.map((c: string) => c.toLowerCase()).join(' ve ') + ' türleri';
+  } else if (t.type === 'category') {
+    subject = (t.value || '').toLowerCase() + ' türleri';
+  } else if (t.type === 'tag') {
+    subject = `${(t.value || '').toLowerCase()} içeren yemekler`;
+  } else if (t.type === 'name_contains') {
+    subject = `içinde "${(t.value || '').toLowerCase()}" geçen yemekler`;
+  } else if (t.type === 'role') {
+    const roleMap: Record<string, string> = { mainDish: 'ana yemekler', sideDish: 'yardımcı yemekler' };
+    subject = roleMap[t.value] || t.value;
+  } else if (t.type === 'food_id') {
+    subject = (t.value || '').toLowerCase();
+  } else {
+    subject = "belirli yemekler";
+  }
+
+  // 2. ÖĞÜN ve GÜN KISITLAMASI
+  const meals = t.meal_types || def.scope_meals || [];
+  let cond = "";
+  if (meals.length > 0) {
+    const ml = meals.map((m: string) => m.toLowerCase());
+    cond += `${ml.join(' ve ')} öğünlerinde`;
+  }
+  
+  if (def.scope_days && def.scope_days.length > 0) {
+    const dayNames = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
+    const days = def.scope_days.map((d: number) => dayNames[d - 1] || d).join(', ');
+    cond += (cond ? ` (${days})` : `${days} günleri`);
+  }
+
+  // 3. HAFTA KISITLAMASI
+  let weekText = "";
+  if (def.scope_weeks) {
+    if (def.scope_weeks.mode === 'specific' && def.scope_weeks.weeks && def.scope_weeks.weeks.length > 0) {
+      const w = [...def.scope_weeks.weeks].sort((a,b)=>a-b);
+      let isConsecutive = true;
+      for (let i = 1; i < w.length; i++) {
+        if (w[i] !== w[i-1] + 1) { isConsecutive = false; break; }
+      }
+      if (isConsecutive && w.length > 1) {
+        weekText = `${w[0]}. haftadan ${w[w.length-1]}. haftaya kadar`;
+      } else {
+        weekText = `${w.join(', ')}. haftalarda`;
+      }
+    } else if (def.scope_weeks.mode === 'repeating' && def.scope_weeks.every > 1) {
+      weekText = `her ${def.scope_weeks.every} haftada bir`;
     }
     
-    if (def.period === 'daily') action = "günde " + action;
-    else if (def.period === 'per_meal') action = "her öğünde " + action;
-    else action = "haftada " + action;
+    if (def.scope_weeks.starting_week && def.scope_weeks.starting_week > 1) {
+      if (!weekText.includes("haftadan")) {
+         weekText = `${def.scope_weeks.starting_week}. haftadan itibaren`;
+      }
+    }
+  }
+
+  const prefixParts = [weekText, cond].filter(Boolean);
+  const prefix = prefixParts.length > 0 ? prefixParts.join(', ') + ', ' : '';
+
+  if (type === 'frequency') {
+    let countText = "";
+    if (def.min_count && def.max_count && def.min_count === def.max_count) {
+      countText = `${def.min_count} kez`;
+    } else if (def.min_count) {
+      countText = `en az ${def.min_count} kez`;
+    } else if (def.max_count) {
+      countText = `en fazla ${def.max_count} kez`;
+    }
     
-    const targetText = describeRuleTarget(def);
-    return `${targetText.charAt(0).toUpperCase() + targetText.slice(1)}, ${action}.`;
+    let periodText = "";
+    if (def.period === 'daily') periodText = "günde";
+    else if (def.period === 'per_meal') periodText = "her öğünde";
+    else periodText = "haftada";
+    
+    let res = `${prefix}${periodText} ${countText} menünüze ${subject} eklenir.`;
+    return res.charAt(0).toUpperCase() + res.slice(1);
   }
 
   if (type === 'affinity') {
-    const trigger = def.trigger ? `${def.trigger.value} (${def.trigger.type}) varsa` : 'Belirli bir yemek varsa';
-    const outcome = def.outcome ? `${def.outcome.value} (${def.outcome.type})` : 'başka bir yemek';
-    const assoc = (def.association === 'forbidden' || def.probability === 0) ? 'kesinlikle eklenmez' : 'mutlaka birlikte eklenir';
-    return `Menüde ${trigger}, yanına ${outcome} ${assoc}.`;
+    let tVal = (def.trigger?.value || 'belirli bir yemek').toLowerCase();
+    let oVal = (def.outcome?.value || 'başka bir yemek').toLowerCase();
+    
+    const assoc = (def.association === 'forbidden' || def.probability === 0) 
+       ? 'kesinlikle eklenmez' 
+       : 'de eklenir';
+       
+    let res = `${prefix}menüde ${tVal} olan öğünlerde, yanına ${oVal} ${assoc}.`;
+    return res.charAt(0).toUpperCase() + res.slice(1);
   }
 
   if (type === 'consistency') {
-    return `${describeRuleTarget(def).charAt(0).toUpperCase() + describeRuleTarget(def).slice(1)} seçimi, hafta veya gün boyunca değiştirilmeden aynı bırakılır.`;
+    let res = `${prefix}o hafta listelere eklenecek ${subject} için hep aynı çeşit seçilir.`;
+    return res.charAt(0).toUpperCase() + res.slice(1);
   }
   
   if (type === 'rotation') {
-    return `${describeRuleTarget(def).charAt(0).toUpperCase() + describeRuleTarget(def).slice(1)} seçenekleri menüde düzenli olarak sırayla sunulur.`;
+    let res = `${prefix}${subject}, menüde sürekli farklı çeşitleriyle sırayla sunulur.`;
+    return res.charAt(0).toUpperCase() + res.slice(1);
   }
 
   if (type === 'fixed_meal') {
-    return `${def.target_slot || 'Belirli öğüne'} sabit olarak (${(def.foods || []).join(', ')}) eklenir.`;
+    let res = `${prefix}${(def.foods || []).join(', ')} menüye sabit olarak eklenir.`;
+    return res.charAt(0).toUpperCase() + res.slice(1);
   }
 
   return rule.description || rule.name;
