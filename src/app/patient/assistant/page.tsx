@@ -36,11 +36,15 @@ export default function AssistantPage() {
             
             setPatientId(actualPatientId)
 
-            const { data } = await supabase
+            const { data, error } = await supabase
                 .from('patients')
-                .select('full_name, preferences, dietitian_id, patient_assignments(dietitian_id)')
+                .select('full_name, preferences, dietitian_id')
                 .eq('id', actualPatientId)
                 .single()
+
+            if (error) {
+                console.error("Error fetching patient for Sera:", error)
+            }
 
             if (data) {
                 setPatientName(data.full_name)
@@ -48,11 +52,10 @@ export default function AssistantPage() {
                 // If preferences object doesn't have it, default to true
                 setCanUseAI(prefs.allow_ai_rule_assistant !== undefined ? prefs.allow_ai_rule_assistant : true)
                 
-                // If patient has a direct dietitian or a team assignment, require approval
+                // If patient has a direct dietitian assigned, require approval
                 const hasDirectDietitian = !!data.dietitian_id;
-                const hasTeamDietitian = Array.isArray(data.patient_assignments) && data.patient_assignments.length > 0;
                 
-                setRequireApproval(hasDirectDietitian || hasTeamDietitian);
+                setRequireApproval(hasDirectDietitian);
             }
             setLoading(false)
         }
