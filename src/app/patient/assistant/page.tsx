@@ -38,7 +38,7 @@ export default function AssistantPage() {
 
             const { data, error } = await supabase
                 .from('patients')
-                .select('full_name, preferences, dietitian_id')
+                .select('full_name, preferences')
                 .eq('id', actualPatientId)
                 .single()
 
@@ -52,9 +52,14 @@ export default function AssistantPage() {
                 // If preferences object doesn't have it, default to true
                 setCanUseAI(prefs.allow_ai_rule_assistant !== undefined ? prefs.allow_ai_rule_assistant : true)
                 
+                // Fetch assignments separately to avoid join relation errors
+                const { data: assignments } = await supabase
+                    .from('patient_assignments')
+                    .select('dietitian_id')
+                    .eq('patient_id', actualPatientId)
+
                 // If patient has a direct dietitian assigned, require approval
-                const hasDirectDietitian = !!data.dietitian_id;
-                
+                const hasDirectDietitian = assignments && assignments.length > 0;
                 setRequireApproval(hasDirectDietitian);
             }
             setLoading(false)
