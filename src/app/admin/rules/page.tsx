@@ -373,32 +373,42 @@ export default function RulesPage() {
                 
             if (error) throw error
 
-            // 2. Eğer kuralın ezmesi gereken eski kurallar (_replaced_ids) varsa, onları ez/tombstone oluştur
-            if (rule.definition && (rule.definition as any)._replaced_ids) {
-                const replacedIds = (rule.definition as any)._replaced_ids
-                if (Array.isArray(replacedIds) && replacedIds.length > 0) {
-                    const { data: replacedRules } = await supabase.from('planning_rules').select('*').in('id', replacedIds)
-                    if (replacedRules) {
-                        for (const repRule of replacedRules) {
-                            if (repRule.scope === 'patient') {
-                                // Hasta kuralıysa doğrudan update ile kapat
-                                await supabase.from('planning_rules').update({ is_active: false }).eq('id', repRule.id)
-                            } else {
-                                // Global/Team kuralıysa hasta için override (tombstone) oluştur
-                                await supabase.from('planning_rules').insert({
-                                    name: repRule.name,
-                                    description: repRule.description,
-                                    rule_type: repRule.rule_type,
-                                    priority: repRule.priority,
-                                    is_active: false,
-                                    definition: repRule.definition,
-                                    scope: 'patient',
-                                    patient_id: rule.patient_id,
-                                    team_owner_id: rule.team_owner_id,
-                                    source_rule_id: repRule.id,
-                                    sort_order: repRule.sort_order
-                                })
-                            }
+            // 2. Safely parse definition (in case Supabase returned a string)
+            let parsedDef: any = rule.definition || {};
+            if (typeof parsedDef === 'string') {
+                try { parsedDef = JSON.parse(parsedDef); } catch (e) { console.error("Parse error on definition", e); }
+            }
+
+            // Ayrıca kök düzeydeki replaces_rule_id de varsa toplayalım!
+            const replacedIds = Array.from(new Set([
+                ...(parsedDef._replaced_ids || []),
+                rule.replaces_rule_id,
+                rule.source_rule_id
+            ].filter(Boolean))) as string[];
+
+            if (replacedIds.length > 0) {
+                console.log("Admin Panel: Auto-pausing replaced rules:", replacedIds);
+                const { data: replacedRules } = await supabase.from('planning_rules').select('*').in('id', replacedIds)
+                if (replacedRules && replacedRules.length > 0) {
+                    for (const repRule of replacedRules) {
+                        if (repRule.scope === 'patient') {
+                            // Hasta kuralıysa doğrudan update ile kapat
+                            await supabase.from('planning_rules').update({ is_active: false }).eq('id', repRule.id)
+                        } else {
+                            // Global/Team kuralıysa hasta için override (tombstone) oluştur
+                            await supabase.from('planning_rules').insert({
+                                name: repRule.name,
+                                description: repRule.description,
+                                rule_type: repRule.rule_type,
+                                priority: repRule.priority,
+                                is_active: false,
+                                definition: repRule.definition,
+                                scope: 'patient',
+                                patient_id: rule.patient_id,
+                                team_owner_id: rule.team_owner_id,
+                                source_rule_id: repRule.id,
+                                sort_order: repRule.sort_order
+                            })
                         }
                     }
                 }

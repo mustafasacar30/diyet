@@ -879,35 +879,44 @@ const mergedRulesMap = new Map<string, PlanningRule>()
                 }
                 await supabase.from('planning_rules').update(updatePayload).eq('id', rule.id)
                 
+                // Safely parse definition
+                let parsedDef: any = rule.definition || {};
+                if (typeof parsedDef === 'string') {
+                    try { parsedDef = JSON.parse(parsedDef); } catch (e) {}
+                }
+
+                const replacedIds = Array.from(new Set([
+                    ...(parsedDef._replaced_ids || []),
+                    rule.replaces_rule_id,
+                    rule.source_rule_id
+                ].filter(Boolean))) as string[];
+
                 // Eğer yeni kural aktif edildiyse ve Sera tarafından "eski kuralları ezecek" diye işaretlenmişse (_replaced_ids), onları pasife al!
-                if (nextActive && rule.definition && (rule.definition as any)._replaced_ids) {
-                    const replacedIds = (rule.definition as any)._replaced_ids
-                    if (Array.isArray(replacedIds) && replacedIds.length > 0) {
-                        console.log("Rule approved. Auto-pausing replaced rules:", replacedIds)
-                        
-                        const { data: replacedRules } = await supabase.from('planning_rules').select('*').in('id', replacedIds)
-                        
-                        if (replacedRules) {
-                            for (const repRule of replacedRules) {
-                                if (repRule.scope === 'patient') {
-                                    // Hasta kuralıysa doğrudan update ile kapat
-                                    await supabase.from('planning_rules').update({ is_active: false }).eq('id', repRule.id)
-                                } else {
-                                    // Global/Team kuralıysa hasta için override (tombstone) oluştur
-                                    await supabase.from('planning_rules').insert({
-                                        name: repRule.name,
-                                        description: repRule.description,
-                                        rule_type: repRule.rule_type,
-                                        priority: repRule.priority,
-                                        is_active: false,
-                                        definition: repRule.definition,
-                                        scope: 'patient',
-                                        patient_id: patientId,
-                                        team_owner_id: isTeamScopedContext ? teamOwnerId : null,
-                                        source_rule_id: repRule.id,
-                                        sort_order: repRule.sort_order
-                                    })
-                                }
+                if (nextActive && replacedIds.length > 0) {
+                    console.log("Patient Dialog: Auto-pausing replaced rules:", replacedIds)
+                    
+                    const { data: replacedRules } = await supabase.from('planning_rules').select('*').in('id', replacedIds)
+                    
+                    if (replacedRules && replacedRules.length > 0) {
+                        for (const repRule of replacedRules) {
+                            if (repRule.scope === 'patient') {
+                                // Hasta kuralıysa doğrudan update ile kapat
+                                await supabase.from('planning_rules').update({ is_active: false }).eq('id', repRule.id)
+                            } else {
+                                // Global/Team kuralıysa hasta için override (tombstone) oluştur
+                                await supabase.from('planning_rules').insert({
+                                    name: repRule.name,
+                                    description: repRule.description,
+                                    rule_type: repRule.rule_type,
+                                    priority: repRule.priority,
+                                    is_active: false,
+                                    definition: repRule.definition,
+                                    scope: 'patient',
+                                    patient_id: patientId,
+                                    team_owner_id: isTeamScopedContext ? teamOwnerId : null,
+                                    source_rule_id: repRule.id,
+                                    sort_order: repRule.sort_order
+                                })
                             }
                         }
                     }
