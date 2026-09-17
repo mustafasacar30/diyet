@@ -241,11 +241,12 @@ export default function RulesPage() {
                 setSuggestions(suggestionsWithPatient as unknown as PlanningRule[])
             }
 
-            // Fetch patient specific rules
+            // Fetch patient specific rules (Only custom rules created by patient/assistant, not overrides)
             const { data: patientRulesData } = await supabase
                 .from('planning_rules')
                 .select('*, patients(id, full_name)')
                 .eq('scope', 'patient')
+                .is('source_rule_id', null)
                 .order('created_at', { ascending: false })
             if (patientRulesData) {
                 setPatientRules(patientRulesData as unknown as PlanningRule[])
