@@ -1,6 +1,7 @@
-﻿'use client'
+'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { AIRuleAssistant } from '@/components/planner/ai-rule-assistant'
 import { supabase } from '@/lib/supabase'
 import { adminSaveProgramTemplateAction } from '@/actions/public-db-actions'
 import {
@@ -1547,6 +1548,15 @@ const saveResult = await adminSaveProgramTemplateAction({
                             </div>
                         ) : (
                             <>
+                                                                <div className="mb-4">
+                                    <AIRuleAssistant 
+                                        scope="program" 
+                                        programTemplateId={program.id} 
+                                        onRuleCreated={() => fetchProgramRules(program.id)}
+                                        showScopeSelector={false} 
+                                        isPatientSelfService={false} 
+                                    />
+                                </div>
                                 <p className="text-xs text-slate-500 mb-3">
                                     {`${inheritedRulesSourceLabel} katmanından gelen kurallar ve bu programa özel kurallar birlikte görüntüleniyor. Düzenlenen her kural programa özel olarak kaydedilir.`}
                                 </p>

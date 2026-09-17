@@ -5408,7 +5408,11 @@ export default function PatientPlanPage() {
                             onTouchEnd={onTouchEnd}
                         >
 
-                            {currentDay?.diet_meals.map((meal: any, mealIdx) => (
+                            {currentDay?.diet_meals.filter((meal: any) => {
+                                const isMainMeal = ['KAHVALTI', 'ÖĞLEN', 'AKŞAM'].includes(meal.meal_time?.toUpperCase() || '');
+                                if (isMainMeal) return true;
+                                return meal.diet_foods && meal.diet_foods.length > 0;
+                            }).map((meal: any, mealIdx) => (
                                 <Card key={meal.id} className="meal-section-container scroll-mt-[130px] overflow-hidden border border-gray-200 shadow-sm bg-white mb-0 p-0 gap-0">
                                     <div className="pt-2 px-1.5 pb-2">
                                         {/* Unified Header & Content */}

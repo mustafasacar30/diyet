@@ -212,13 +212,40 @@ export async function POST(request: Request) {
       (scope === 'patient' && patient_id) ? buildHealthContext(patient_id) : Promise.resolve(null)
     ])
 
-    // ═══ ADIM 2: AI Çağrısı ═══
-    const systemPrompt = buildRuleGeneratorSystemPrompt({
+    let dietType = undefined;
+    let slotConfigsContext = "";
+    if (scope === 'patient' && patient_id) {
+      const { data: pt } = await supabase.from('patients').select('diet_type').eq('id', patient_id).single();
+      if (pt && pt.diet_type) dietType = pt.diet_type;
+      
+      const { data: ps } = await supabase.from('planner_settings')
+        .select('slot_configs')
+        .eq('patient_id', patient_id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+        
+      if (ps && ps.slot_configs) {
+        slotConfigsContext = "\n\nHASTANIN ÖĞÜN AYARLARI (MEAL SETTINGS):\n";
+        ps.slot_configs.forEach((slot: any) => {
+          slotConfigsContext += `- ${slot.name}: Kapasite (Min: ${slot.min_items}, Max: ${slot.max_items})\n`;
+        });
+        slotConfigsContext += "DİKKAT: Kapasitesi 0 veya 1 olan, ya da yukarıdaki listede hiç bulunmayan öğünlere 'Ara öğüne ekle' gibi asılsız önerilerde BULUNMA!";
+      }
+    }
+
+    // ════ ADIM 2: AI Çağrısı ════
+    let systemPrompt = buildRuleGeneratorSystemPrompt({
       existingRules,
       foodSummary,
       healthContext,
-      scope: scope || 'global'
+      scope,
+      dietType
     })
+
+    if (slotConfigsContext) {
+      systemPrompt += slotConfigsContext;
+    }
 
     const { HarmCategory, HarmBlockThreshold } = require('@google/generative-ai')
 
@@ -354,3 +381,4 @@ export async function POST(request: Request) {
     )
   }
 }
+ 

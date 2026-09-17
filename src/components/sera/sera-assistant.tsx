@@ -204,6 +204,33 @@ export function SeraAssistant({
     }
   }
 
+  const clonePatientRule = async (rule: any, newDefinition: any) => {
+    try {
+      const { supabase } = await import('@/lib/supabase')
+      
+      const newDesc = (rule.description || '') + ' (Otomatik olarak duraklatıldı)'
+      await supabase.from('planning_rules').update({ is_active: false, description: newDesc }).eq('id', rule.id)
+      
+      const { id, created_at, updated_at, is_active, ...clonedData } = rule
+      
+      clonedData.source_rule_id = null 
+      clonedData.scope = 'patient'
+      clonedData.definition = newDefinition
+      if(clonedData.definition.data) {
+          clonedData.definition.data._source = 'sera_assistant'
+      } else {
+          clonedData.definition._source = 'sera_assistant'
+      }
+      
+      await supabase.from('planning_rules').insert([clonedData])
+      
+      fetchPatientRules()
+      onRuleCreated()
+    } catch (e) {
+      console.error('Error cloning rule:', e)
+    }
+  }
+
   const handleSummarize = async () => {
     setIsSummaryOpen(true)
     setSummaryLoading(true)
@@ -713,8 +740,8 @@ export function SeraAssistant({
                         <div className="flex items-start gap-2">
                           <Leaf className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
                           <div>
-                            <p className="text-sm text-emerald-800 font-medium">Sera'nın size bir sorusu var:</p>
-                            <p className="text-sm text-emerald-700 mt-1">{aiResult.clarification_message || "Bu kuralı uygulamak için hangi yemekleri kastettiğinizi biraz daha detaylandırabilir misiniz?"}</p>
+                            <p className="text-sm text-emerald-800 font-medium">Talebinizi daha net anlayabilmem için şunu cevaplayabilir misiniz?</p>
+                            <p className="text-base font-medium text-emerald-900 mt-2 p-2 bg-white/60 rounded-md border border-emerald-100 shadow-sm">{aiResult.clarification_message || "Bu kuralı uygulamak için hangi yemekleri kastettiğinizi biraz daha detaylandırabilir misiniz?"}</p>
                           </div>
                         </div>
                         <div className="flex gap-2">
@@ -1008,25 +1035,25 @@ export function SeraAssistant({
                     <summary className="list-none cursor-pointer flex flex-col gap-1.5 focus:outline-none">
                       <div className="flex items-center gap-2">
                         <span className="font-medium text-[13px] text-gray-800 leading-snug pr-2">{generateRuleSentence(rule)}</span>
-                        {!rule.is_active && rule.pending_global_approval && (
-                          <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-200 bg-amber-50 shrink-0">
-                            Onay Bekliyor
-                          </Badge>
-                        )}
-                        {rule.is_active && (
-                          <Badge variant="outline" className="text-[10px] text-emerald-600 border-emerald-200 bg-emerald-50 shrink-0">
-                            Aktif
-                          </Badge>
-                        )}
-                      </div>
-                      <span className="text-[10px] text-emerald-600/70 group-open:hidden transition-opacity">
-                        Sistem kayıtlarını görmek için tıklayın...
-                      </span>
-                    </summary>
-                    <div className="mt-3 pl-3 border-l-2 border-emerald-200/50">
-                      <div className="text-xs font-semibold text-gray-700 bg-gray-50 inline-block px-2 py-0.5 rounded border border-gray-100 mb-1">
-                        Sistem Kaydı: {rule.name}
-                      </div>
+                          {!rule.is_active && rule.pending_global_approval && (
+                            <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-200 bg-amber-50 shrink-0">
+                              Onay Bekliyor
+                            </Badge>
+                          )}
+                          {rule.is_active && (
+                            <Badge variant="outline" className="text-[10px] text-emerald-600 border-emerald-200 bg-emerald-50 shrink-0">
+                              Aktif
+                            </Badge>
+                          )}
+                        </div>
+                        <span className="text-[10px] text-emerald-600/70 group-open:hidden transition-opacity">
+                          Sistem kayıtlarını görmek için tıklayın...
+                        </span>
+                      </summary>
+                      <div className="mt-3 pl-3 border-l-2 border-emerald-200/50">
+                        <div className="text-xs font-semibold text-gray-700 bg-gray-50 inline-block px-2 py-0.5 rounded border border-gray-100 mb-1">
+                          Sistem Kaydı: {rule.name}
+                        </div>
                       <p className="text-xs text-gray-500 leading-relaxed">{rule.description}</p>
                     </div>
                   </details>
@@ -1048,7 +1075,7 @@ export function SeraAssistant({
                     {rule.is_active ? <Pause className="h-4 w-4" /> : (rule.description?.includes('otomatik olarak duraklatıldı') ? <Lock className="h-4 w-4 opacity-80" /> : <Play className="h-4 w-4" />)}
                   </Button>
                   
-                  {(!rule.source_rule_id && (rule.definition?._source === 'sera_assistant' || rule.definition?.data?._source === 'sera_assistant')) && (
+                  {(!rule.source_rule_id) && (
                     <Button
                       variant="ghost"
                       size="icon"
@@ -1072,12 +1099,13 @@ export function SeraAssistant({
       )}
 
       <RuleReviewWizard
-        isOpen={isWizardOpen}
-        onClose={() => setIsWizardOpen(false)}
-        rules={patientRules}
-        onRuleUpdated={updatePatientRule}
-        onRuleDeleted={deletePatientRule}
-      />
+          isOpen={isWizardOpen}
+          onClose={() => setIsWizardOpen(false)}
+          rules={patientRules}
+          onRuleUpdated={updatePatientRule}
+          onRuleDeleted={deletePatientRule}
+          onRuleCloned={clonePatientRule}
+        />
 
       {/* Program Özeti Modalı */}
       <Dialog open={isSummaryOpen} onOpenChange={setIsSummaryOpen}>

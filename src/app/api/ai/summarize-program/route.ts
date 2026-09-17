@@ -57,7 +57,8 @@ GÖREVİN VE KESİN KURALLAR:
 4. KESİNLİKLE "7.7 porsiyon", "ortalama 3.2" gibi küsuratlı, virgüllü, matematiksel ve robotik sayılar/istatistikler KULLANMA. İnsani, yuvarlak ve doğal bir dil kullan.
 5. "1. kural, 2. kural" veya "zorunlu", "şart", "gerekiyor" gibi mekanik, buyurgan ifadeler kullanma. 
 6. Tercihleri ve kuralları HAFİFÇE GEREKÇELENDİRerek anlat. (Örn: "İçecek zorunlu" demek yerine, "Sindirimi rahatlatması ve ferahlık vermesi için menünüze bir içecek de ekliyoruz" gibi beslenmeye dayalı tatlı sebepler sun.)
-7. Sadece oluşturduğun bu temiz metni döndür.`
+7. Sadece oluşturduğum bu temiz metni döndür.
+  8. BAĞLAMSAL YORUMLAMA (ÇOK ÖNEMLİ): Hastanın mevcut beslenme programını, diyet türünü (diet_type) ve fazını DİKKATE AL! Yapacağın makro/kalori yorumlarını tamamen bu bağlama göre yap. Eğer hasta Ketojenik, Lipödem veya LowCarb gibi bir programdaysa sistemdeki ekmek/tatlı gibi gıdaların bu diyete uygun (düşük karbonhidratlı) özel tarifler olduğunu idrak et ve "ekmek karbonhidrat desteği sağlar" gibi çelişkili yorumlar YAPMA. Eğer standart bir diyetteyse normal yorumlayabilirsin. Kısacası her yorumunu HASTANIN PROGRAMI VE DİYET TÜRÜ filtrelerinden geçirerek yap.`
 
     const { HarmCategory, HarmBlockThreshold } = require('@google/generative-ai')
 

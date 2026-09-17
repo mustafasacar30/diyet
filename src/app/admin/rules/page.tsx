@@ -253,6 +253,7 @@ export default function RulesPage() {
                 const filteredRules = patientRulesData.filter((pr: any) => {
                     const def = pr.definition || {};
                     const isSeraCreated = def._source === 'sera_assistant' || def.data?._source === 'sera_assistant';
+                    if (!pr.is_active) return false;
                     const isAutoPausedBySera = pr.description?.includes('otomatik olarak duraklatıldı');
                     return isSeraCreated || isAutoPausedBySera;
                 });

@@ -9,20 +9,26 @@ const supabase = createClient(
 export async function POST(req: Request) {
     try {
         const body = await req.json()
-        const { patient_id, program_template_id, team_owner_id, slots } = body
+        const { scope = 'patient', patient_id, program_template_id, team_owner_id, slots } = body
 
-        if (!patient_id) {
-            return NextResponse.json({ success: false, error: 'patient_id is required' }, { status: 400 })
+        if (scope === 'patient' && !patient_id) {
+            return NextResponse.json({ success: false, error: 'patient_id is required for patient scope' }, { status: 400 })
+        }
+        if (scope === 'program' && !program_template_id) {
+            return NextResponse.json({ success: false, error: 'program_template_id is required for program scope' }, { status: 400 })
+        }
+        if (scope === 'team' && !team_owner_id) {
+            return NextResponse.json({ success: false, error: 'team_owner_id is required for team scope' }, { status: 400 })
         }
         if (!slots || !Array.isArray(slots)) {
             return NextResponse.json({ success: false, error: 'slots array is required' }, { status: 400 })
         }
 
-        // Fetch all relevant settings to merge (global, team, program, patient)
+        // Fetch all relevant settings to merge up to the requested scope
         const orConditions = ['scope.eq.global']
         if (team_owner_id) orConditions.push(`and(scope.eq.team,team_owner_id.eq.${team_owner_id})`)
         if (program_template_id) orConditions.push(`and(scope.eq.program,program_template_id.eq.${program_template_id})`)
-        orConditions.push(`and(scope.eq.patient,patient_id.eq.${patient_id})`)
+        if (patient_id) orConditions.push(`and(scope.eq.patient,patient_id.eq.${patient_id})`)
 
         const { data: allSettings, error: fetchError } = await supabase
             .from('planner_settings')
@@ -33,16 +39,21 @@ export async function POST(req: Request) {
 
         // Merge logic
         let mergedData: any = {}
-        let existingPatientRecord = null
+        let existingTargetRecord = null
 
         const layers = ['global', 'team', 'program', 'patient']
         for (const layer of layers) {
             const row = allSettings?.find((r: any) => r.scope === layer)
             if (row) {
-                if (layer === 'patient') existingPatientRecord = row
-                Object.keys(row).forEach(key => {
-                    if (row[key] !== null) mergedData[key] = row[key]
-                })
+                // Sadece mevcut scope ve altındaki katmanları miras al
+                if (layers.indexOf(layer) <= layers.indexOf(scope)) {
+                    Object.keys(row).forEach(key => {
+                        if (row[key] !== null) mergedData[key] = row[key]
+                    })
+                }
+                if (layer === scope) {
+                    existingTargetRecord = row
+                }
             }
         }
 
@@ -56,7 +67,18 @@ export async function POST(req: Request) {
             ]
         }
 
+        // --- MIGRATION: 'ARA ÖĞÜN' to '1. ARA ÖĞÜN' ---
+        const has1stSnack = currentSlotConfigs.some((s: any) => s.name.toUpperCase() === '1. ARA ÖĞÜN')
+        if (has1stSnack) {
+            currentSlotConfigs = currentSlotConfigs.filter((s: any) => s.name.toUpperCase() !== 'ARA ÖĞÜN')
+        } else {
+            const oldSnack = currentSlotConfigs.find((s: any) => s.name.toUpperCase() === 'ARA ÖĞÜN')
+            if (oldSnack) oldSnack.name = '1. ARA ÖĞÜN'
+        }
+
         for (const aiSlot of slots) {
+            if (aiSlot.name.toUpperCase() === 'ARA ÖĞÜN') aiSlot.name = '1. ARA ÖĞÜN'
+            
             const action = aiSlot.action || 'add_or_update'
             const targetName = aiSlot.name.toUpperCase()
             const existingIndex = currentSlotConfigs.findIndex(s => s.name.toUpperCase() === targetName)
@@ -99,20 +121,20 @@ export async function POST(req: Request) {
 
         const payload = {
             ...mergedData,
-            scope: 'patient',
-            patient_id: patient_id,
-            team_owner_id: team_owner_id || null,
-            program_template_id: null,
+            scope: scope,
+            patient_id: scope === 'patient' ? patient_id : null,
+            team_owner_id: ['team', 'patient'].includes(scope) ? team_owner_id : null,
+            program_template_id: scope === 'program' ? program_template_id : null,
             slot_config: currentSlotConfigs
         }
         delete payload.id;
         delete payload.created_at;
 
-        if (existingPatientRecord) {
+        if (existingTargetRecord) {
             const { error: updateError } = await supabase
                 .from('planner_settings')
                 .update({ slot_config: currentSlotConfigs })
-                .eq('id', existingPatientRecord.id)
+                .eq('id', existingTargetRecord.id)
             if (updateError) throw updateError
         } else {
             const { error: insertError } = await supabase

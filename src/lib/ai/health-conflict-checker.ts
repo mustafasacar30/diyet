@@ -140,7 +140,7 @@ export function describeRuleTarget(def: any): string {
 
   // 3. GÜN KISITLAMASI
   if (def.scope_days && def.scope_days.length > 0) {
-    const dayNames = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
+    const dayNames = ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar'];
     const days = def.scope_days.map((d: number) => dayNames[d - 1] || d).join(', ');
     desc += `sadece ${days} günlerinde `;
   }
@@ -232,7 +232,7 @@ export function generateRuleSentence(rule: any): string {
   
   let dayStr = "";
   if (def.scope_days && def.scope_days.length > 0) {
-    const dayNames = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
+    const dayNames = ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar'];
     const days = def.scope_days.map((d: number) => dayNames[d - 1] || d).join(', ');
     dayStr = `${days} günlerinde`;
   }
