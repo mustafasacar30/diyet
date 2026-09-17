@@ -183,8 +183,8 @@ export function generateRuleSentence(rule: any): string {
   if (!rule || !rule.definition) return rule?.name || 'Bilinmeyen Kural';
   
   const n = (rule.name || '').toLowerCase();
-  if (n.includes('protein dolgu')) {
-    if (n.includes('hindi') || n.includes('füme')) return 'Protein makrosu düşük olan günlerde protein kaynağı olarak hindi füme tercih edilebilir.';
+  if (n.includes('prot_dolgu') || n.includes('protein dolgu') || n.includes('protein_dolgu')) {
+    if (n.includes('hindi') || n.includes('füme')) return 'Protein makrosu eksik olan günlerde, hindi füme ile protein makrosuna destek olunabilir.';
     return 'Protein makronuzun eksik olması durumunda, tamamlanması için ek gıdalar eklenir.';
   }
 
@@ -197,21 +197,21 @@ export function generateRuleSentence(rule: any): string {
     subject = t.categories.map((c: string) => {
         let sc = c.toLowerCase().replace(/l[ae]r$/i, '');
         if (sc === 'salad') return 'salata';
-        if (sc === 'ekmek') return 'ekmek türlerinden bir tanesi';
+        if (sc === 'ekmek') return 'ekmek';
         if (sc === 'çorba' || sc === 'tatlı' || sc === 'tatli' || sc === 'kuruyemiş' || sc === 'kuruyemi̇ş' || sc === 'meyve' || sc === 'içecek') return sc;
         return sc + ' türü';
     }).join(' ve ');
   } else if (t.type === 'category') {
     let sc = (t.value || '').toLowerCase().replace(/l[ae]r$/i, '');
     if (sc === 'salad') subject = 'salata';
-    else if (sc === 'ekmek') subject = 'ekmek türlerinden bir tanesi';
+    else if (sc === 'ekmek') subject = 'ekmek';
     else if (sc === 'çorba' || sc === 'tatlı' || sc === 'tatli' || sc === 'kuruyemiş' || sc === 'kuruyemi̇ş' || sc === 'meyve' || sc === 'içecek') subject = sc;
     else subject = sc + (sc.endsWith('lı') ? ' yemek' : ' türü');
   } else if (t.type === 'tag') {
     let tv = (t.value || '').toLowerCase();
     subject = `${tv} içeren yemek`;
   } else if (t.type === 'name_contains') {
-    subject = `içinde "${(t.value || '').toLowerCase()}" geçen yemek`;
+    subject = `içinde "${(t.value || '').toLowerCase()}" olan yemek`;
   } else if (t.type === 'role') {
     const roleMap: Record<string, string> = { mainDish: 'ana yemek', sideDish: 'yan yemek (meze, salata vb.)' };
     subject = roleMap[t.value] || t.value;
@@ -220,6 +220,8 @@ export function generateRuleSentence(rule: any): string {
   } else {
     subject = "belirli bir yemek";
   }
+  
+  if (subject === 'salad') subject = 'salata';
 
   const meals = t.meal_types || def.scope_meals || [];
   let mealStr = "";
@@ -232,7 +234,7 @@ export function generateRuleSentence(rule: any): string {
   if (def.scope_days && def.scope_days.length > 0) {
     const dayNames = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
     const days = def.scope_days.map((d: number) => dayNames[d - 1] || d).join(', ');
-    dayStr = `(${days}) günlerinde`;
+    dayStr = `${days} günlerinde`;
   }
 
   let weekText = "";
@@ -262,9 +264,10 @@ export function generateRuleSentence(rule: any): string {
   }
 
   if (type === 'fixed_meal') {
-    let mealText = (def.target_slot || '').toLowerCase() || 'öğüne';
-    if (mealText.includes('breakfast')) mealText = 'sabah öğününe';
-    let res = `${mealText} dönüşümlü olarak sabit bir yemek eklenir.`;
+    let mealText = (def.target_slot || '').toLowerCase();
+    if (mealText.includes('breakfast') || mealText === 'kahvaltı' || mealText === 'kahvalti') mealText = 'Sabah öğünü';
+    else if (!mealText) mealText = 'Belirli bir öğün';
+    let res = `${mealText} için dönüşümlü olarak sabit bir yemek eklenir.`;
     return res.charAt(0).toUpperCase() + res.slice(1);
   }
 
@@ -276,36 +279,41 @@ export function generateRuleSentence(rule: any): string {
     if (!isExact && !def.min_count && def.max_count) countPrefix = "en fazla ";
 
     let res = "";
+    let isEkmek = subject === 'ekmek';
     
     if (def.period === 'per_meal' && count === 1 && isExact) {
       let condParts = [weekText, dayStr, mealStr].filter(Boolean);
       let prefix = condParts.length > 0 ? condParts.join(', ') + ', ' : '';
       if (subject.includes('yan yemek')) {
          res = `${prefix}ana yemek yanında 1 yan yemek (meze, salata vb.) eklenir.`;
+      } else if (isEkmek) {
+         res = `${prefix}ekmek eklenir.`;
       } else {
-         let subClean = subject.replace(' türlerinden bir tanesi', '');
-         res = `${prefix}birer ${subClean} eklenir.`;
+         res = `${prefix}birer ${subject} eklenir.`;
       }
     } 
     else if (def.period === 'daily' && meals.length > 1) {
       let condParts = [weekText, dayStr].filter(Boolean);
       let prefix = condParts.length > 0 ? condParts.join(', ') + ', ' : '';
       let mText = meals.map((m: string) => m.toLowerCase()).join(' veya ') + ' öğününde';
-      res = `${prefix}günde ${countPrefix}${count} kez (${mText}) ${subject} eklenir.`;
+      
+      if (count === 1 && isExact) {
+        res = `${prefix}günde 1 kez (${mText}) ${subject} eklenir.`;
+      } else {
+        let cStr = isEkmek ? "" : `${countPrefix}${count} kez`;
+        res = `${prefix}${cStr ? 'günde ' + cStr + ' ' : ''}(${mText}) ${subject} eklenir.`;
+      }
     }
-    else if (def.period === 'daily' && meals.length === 1 && count === 1 && isExact && !dayStr) {
-      let condParts = [weekText].filter(Boolean);
+    else if (def.period === 'daily' && meals.length === 1 && count === 1 && isExact) {
+      let condParts = [weekText, dayStr, mealStr].filter(Boolean);
       let prefix = condParts.length > 0 ? condParts.join(', ') + ', ' : '';
-      res = `${prefix}her gün ${meals[0].toLowerCase()} öğününde 1 ${subject} eklenir.`;
+      let cStr = (isEkmek || subject.includes('türü')) ? "" : "1 ";
+      res = `${prefix}${cStr}${subject} eklenir.`;
     }
     else {
       let periodWord = def.period === 'daily' ? 'günde' : 'haftada';
-      let showCount = true;
+      let showCount = !isEkmek;
       let countStr = `${countPrefix}${count} kez`;
-      
-      if (count === 1 && isExact && subject === 'ekmek türlerinden bir tanesi') {
-          showCount = false;
-      }
       
       let condParts = [weekText].filter(Boolean);
       let prefix = condParts.length > 0 ? condParts.join(', ') + ', ' : '';
@@ -328,6 +336,8 @@ export function generateRuleSentence(rule: any): string {
     
     if (tVal === 'ekmek' || tVal === 'ekme') tVal = 'ekmek';
     if (oVal === 'ekmek' || oVal === 'ekme') oVal = 'ekmek';
+    if (tVal === 'salad') tVal = 'salata';
+    if (oVal === 'salad') oVal = 'salata';
 
     const assoc = (def.association === 'forbidden' || def.probability === 0) 
        ? 'kesinlikle eklenmez' 
@@ -344,7 +354,8 @@ export function generateRuleSentence(rule: any): string {
   let prefix = condParts.length > 0 ? condParts.join(', ') + ', ' : '';
   
   if (type === 'consistency') {
-    let res = `${prefix}o hafta listelere eklenecek ${subject} için hep aynı çeşit seçilir.`;
+    let s = subject === 'ekmek' ? 'ekmek türü' : subject;
+    let res = `${prefix}o hafta listelere eklenecek ${s} için hep aynı çeşit seçilir.`;
     return res.charAt(0).toUpperCase() + res.slice(1);
   }
   
