@@ -422,6 +422,32 @@ export function SeraAssistant({
       const { error } = await supabase.from('planning_rules').insert(rulesToInsert)
       if (error) throw error
 
+      // Eğer Diyetisyen kendi ekliyorsa (direkt aktif oluyorsa), çelişenleri HEMEN ez/pause yap!
+      if (!requireApproval && replacedIds.length > 0) {
+        const { data: replacedRules } = await supabase.from('planning_rules').select('*').in('id', replacedIds)
+        if (replacedRules) {
+            for (const repRule of replacedRules) {
+                if (repRule.scope === 'patient') {
+                    await supabase.from('planning_rules').update({ is_active: false }).eq('id', repRule.id)
+                } else {
+                    await supabase.from('planning_rules').insert({
+                        name: repRule.name,
+                        description: repRule.description,
+                        rule_type: repRule.rule_type,
+                        priority: repRule.priority,
+                        is_active: false,
+                        definition: repRule.definition,
+                        scope: 'patient',
+                        patient_id: patientId,
+                        team_owner_id: teamOwnerId || null,
+                        source_rule_id: repRule.id,
+                        sort_order: repRule.sort_order
+                    })
+                }
+            }
+        }
+      }
+
       setAiResult(null)
       setPrompt('')
       setAffectedFoods([])
@@ -466,6 +492,32 @@ export function SeraAssistant({
       const { error } = await supabase.from('planning_rules').insert(ruleData)
       if (error) throw error
       
+      // Eğer Diyetisyen kendi ekliyorsa (direkt aktif oluyorsa), çelişenleri HEMEN ez/pause yap!
+      if (!requireApproval && addRule.replaces_rule_id) {
+        const { data: replacedRules } = await supabase.from('planning_rules').select('*').eq('id', addRule.replaces_rule_id)
+        if (replacedRules && replacedRules.length > 0) {
+            for (const repRule of replacedRules) {
+                if (repRule.scope === 'patient') {
+                    await supabase.from('planning_rules').update({ is_active: false }).eq('id', repRule.id)
+                } else {
+                    await supabase.from('planning_rules').insert({
+                        name: repRule.name,
+                        description: repRule.description,
+                        rule_type: repRule.rule_type,
+                        priority: repRule.priority,
+                        is_active: false,
+                        definition: repRule.definition,
+                        scope: 'patient',
+                        patient_id: patientId,
+                        team_owner_id: teamOwnerId || null,
+                        source_rule_id: repRule.id,
+                        sort_order: repRule.sort_order
+                    })
+                }
+            }
+        }
+      }
+
       fetchPatientRules()
       onRuleCreated()
       
