@@ -362,21 +362,52 @@ export default function RulesPage() {
         }
     }
 
-    // Accept Suggestion: Open dialog as "New Rule" but pre-filled
-    const handleAcceptSuggestion = (rule: PlanningRule) => {
-        // Create a copy of the rule but tailored for Global creation
-        const newGlobalRule: any = {
-            ...rule,
-            id: undefined, // Clear ID to create new
-            scope: 'global',
-            patient_id: null,
-            source_rule_id: null,
-            pending_global_approval: false,
-            // Keep name, definition, type etc.
+    // Accept Suggestion: Hastaya özel olarak onaylar ve aktif eder, çelişen eski kuralları ezer!
+    const handleAcceptSuggestion = async (rule: PlanningRule) => {
+        try {
+            // 1. Kuralı Aktif et ve Bekleme flag'ini kaldır
+            const { error } = await supabase
+                .from('planning_rules')
+                .update({ is_active: true, pending_global_approval: false })
+                .eq('id', rule.id)
+                
+            if (error) throw error
+
+            // 2. Eğer kuralın ezmesi gereken eski kurallar (_replaced_ids) varsa, onları ez/tombstone oluştur
+            if (rule.definition && (rule.definition as any)._replaced_ids) {
+                const replacedIds = (rule.definition as any)._replaced_ids
+                if (Array.isArray(replacedIds) && replacedIds.length > 0) {
+                    const { data: replacedRules } = await supabase.from('planning_rules').select('*').in('id', replacedIds)
+                    if (replacedRules) {
+                        for (const repRule of replacedRules) {
+                            if (repRule.scope === 'patient') {
+                                // Hasta kuralıysa doğrudan update ile kapat
+                                await supabase.from('planning_rules').update({ is_active: false }).eq('id', repRule.id)
+                            } else {
+                                // Global/Team kuralıysa hasta için override (tombstone) oluştur
+                                await supabase.from('planning_rules').insert({
+                                    name: repRule.name,
+                                    description: repRule.description,
+                                    rule_type: repRule.rule_type,
+                                    priority: repRule.priority,
+                                    is_active: false,
+                                    definition: repRule.definition,
+                                    scope: 'patient',
+                                    patient_id: rule.patient_id,
+                                    team_owner_id: rule.team_owner_id,
+                                    source_rule_id: repRule.id,
+                                    sort_order: repRule.sort_order
+                                })
+                            }
+                        }
+                    }
+                }
+            }
+            
+            fetchRules() // Listeyi güncelle
+        } catch (err: any) {
+            alert("Hata: " + err.message)
         }
-        setEditingRule(newGlobalRule)
-        setIsAcceptingSuggestion(rule.id) // Track which suggestion we are accepting
-        setDialogOpen(true)
     }
 
     // Reject Suggestion: Just clear the flag
