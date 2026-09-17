@@ -756,6 +756,12 @@ export function SeraAssistant({
                               <span>{conflict.message}</span>
                             </div>
                           ))}
+                          {aiResult.conflicts.some(c => c.severity === 'error') && (
+                            <div className="text-xs text-red-600 font-medium px-2 py-1 flex gap-1.5 items-start bg-white/50 rounded border border-red-100">
+                              <Info className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                              <span>Bu tercihi onayladığınızda, yukarıda belirtilen çelişkili eski kurallarınız otomatik olarak duraklatılacaktır.</span>
+                            </div>
+                          )}
                         </div>
                       )}
 
