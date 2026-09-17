@@ -184,7 +184,7 @@ export function generateRuleSentence(rule: any): string {
   
   const n = (rule.name || '').toLowerCase();
   if (n.includes('protein dolgu')) {
-    if (n.includes('hindi') || n.includes('füme')) return 'Protein makrosu eksik kalırsa hindi füme eklenebilir.';
+    if (n.includes('hindi') || n.includes('füme')) return 'Protein makrosu düşük olan günlerde protein kaynağı olarak hindi füme tercih edilebilir.';
     return 'Protein makronuzun eksik olması durumunda, tamamlanması için ek gıdalar eklenir.';
   }
 
@@ -198,16 +198,18 @@ export function generateRuleSentence(rule: any): string {
         let sc = c.toLowerCase().replace(/l[ae]r$/i, '');
         if (sc === 'salad') return 'salata';
         if (sc === 'ekmek') return 'ekmek türlerinden bir tanesi';
+        if (sc === 'çorba' || sc === 'tatlı' || sc === 'tatli' || sc === 'kuruyemiş' || sc === 'kuruyemi̇ş' || sc === 'meyve' || sc === 'içecek') return sc;
         return sc + ' türü';
     }).join(' ve ');
   } else if (t.type === 'category') {
     let sc = (t.value || '').toLowerCase().replace(/l[ae]r$/i, '');
     if (sc === 'salad') subject = 'salata';
     else if (sc === 'ekmek') subject = 'ekmek türlerinden bir tanesi';
-    else if (sc === 'tatlı' || sc === 'tatli') subject = 'tatlı';
+    else if (sc === 'çorba' || sc === 'tatlı' || sc === 'tatli' || sc === 'kuruyemiş' || sc === 'kuruyemi̇ş' || sc === 'meyve' || sc === 'içecek') subject = sc;
     else subject = sc + (sc.endsWith('lı') ? ' yemek' : ' türü');
   } else if (t.type === 'tag') {
-    subject = `${(t.value || '').toLowerCase()} içeren yemek`;
+    let tv = (t.value || '').toLowerCase();
+    subject = `${tv} içeren yemek`;
   } else if (t.type === 'name_contains') {
     subject = `içinde "${(t.value || '').toLowerCase()}" geçen yemek`;
   } else if (t.type === 'role') {
@@ -233,9 +235,6 @@ export function generateRuleSentence(rule: any): string {
     dayStr = `(${days}) günlerinde`;
   }
 
-  let condParts = [dayStr, mealStr].filter(Boolean);
-  let cond = condParts.join(', ');
-
   let weekText = "";
   if (def.scope_weeks) {
     if (def.scope_weeks.mode === 'specific' && def.scope_weeks.weeks && def.scope_weeks.weeks.length > 0) {
@@ -246,6 +245,8 @@ export function generateRuleSentence(rule: any): string {
       }
       if (isConsecutive && w.length > 1) {
         weekText = `${w[0]}. haftadan ${w[w.length-1]}. haftaya kadar`;
+      } else if (w.length === 1) {
+        weekText = `${w[0]}. haftada`;
       } else {
         weekText = `${w.join(', ')}. haftalarda`;
       }
@@ -254,47 +255,94 @@ export function generateRuleSentence(rule: any): string {
     }
     
     if (def.scope_weeks.starting_week && def.scope_weeks.starting_week > 1) {
-      if (!weekText.includes("haftadan")) {
+      if (!weekText.includes("hafta")) {
          weekText = `${def.scope_weeks.starting_week}. haftadan itibaren`;
       }
     }
   }
 
-  const prefixParts = [weekText, cond].filter(Boolean);
-  const prefix = prefixParts.length > 0 ? prefixParts.join(', ') + ', ' : '';
-
-  if (type === 'frequency') {
-    let countText = "";
-    if (def.min_count && def.max_count && def.min_count === def.max_count) {
-      countText = `${def.min_count}`;
-    } else if (def.min_count) {
-      countText = `en az ${def.min_count}`;
-    } else if (def.max_count) {
-      countText = `en fazla ${def.max_count}`;
-    }
-    
-    let periodText = "";
-    if (def.period === 'daily') periodText = "günde";
-    else if (def.period === 'per_meal') periodText = "her öğünde";
-    else periodText = "haftada";
-    
-    let subjectWithCount = countText ? `${countText} ${subject}` : subject;
-    let res = `${prefix}${periodText} ${subjectWithCount} eklenir.`;
+  if (type === 'fixed_meal') {
+    let mealText = (def.target_slot || '').toLowerCase() || 'öğüne';
+    if (mealText.includes('breakfast')) mealText = 'sabah öğününe';
+    let res = `${mealText} dönüşümlü olarak sabit bir yemek eklenir.`;
     return res.charAt(0).toUpperCase() + res.slice(1);
   }
 
-  if (type === 'affinity') {
-    let tVal = (def.trigger?.value || 'belirli bir yemek').toLowerCase();
-    let oVal = (def.outcome?.value || 'başka bir yemek').toLowerCase();
+  if (type === 'frequency') {
+    let isExact = def.min_count && def.max_count && def.min_count === def.max_count;
+    let count = def.min_count || def.max_count || 1;
+    let countPrefix = "";
+    if (!isExact && def.min_count) countPrefix = "en az ";
+    if (!isExact && !def.min_count && def.max_count) countPrefix = "en fazla ";
+
+    let res = "";
     
+    if (def.period === 'per_meal' && count === 1 && isExact) {
+      let condParts = [weekText, dayStr, mealStr].filter(Boolean);
+      let prefix = condParts.length > 0 ? condParts.join(', ') + ', ' : '';
+      if (subject.includes('yan yemek')) {
+         res = `${prefix}ana yemek yanında 1 yan yemek (meze, salata vb.) eklenir.`;
+      } else {
+         let subClean = subject.replace(' türlerinden bir tanesi', '');
+         res = `${prefix}birer ${subClean} eklenir.`;
+      }
+    } 
+    else if (def.period === 'daily' && meals.length > 1) {
+      let condParts = [weekText, dayStr].filter(Boolean);
+      let prefix = condParts.length > 0 ? condParts.join(', ') + ', ' : '';
+      let mText = meals.map((m: string) => m.toLowerCase()).join(' veya ') + ' öğününde';
+      res = `${prefix}günde ${countPrefix}${count} kez (${mText}) ${subject} eklenir.`;
+    }
+    else if (def.period === 'daily' && meals.length === 1 && count === 1 && isExact && !dayStr) {
+      let condParts = [weekText].filter(Boolean);
+      let prefix = condParts.length > 0 ? condParts.join(', ') + ', ' : '';
+      res = `${prefix}her gün ${meals[0].toLowerCase()} öğününde 1 ${subject} eklenir.`;
+    }
+    else {
+      let periodWord = def.period === 'daily' ? 'günde' : 'haftada';
+      let showCount = true;
+      let countStr = `${countPrefix}${count} kez`;
+      
+      if (count === 1 && isExact && subject === 'ekmek türlerinden bir tanesi') {
+          showCount = false;
+      }
+      
+      let condParts = [weekText].filter(Boolean);
+      let prefix = condParts.length > 0 ? condParts.join(', ') + ', ' : '';
+      
+      let middle = `${periodWord} ${showCount ? countStr : ''}`.trim();
+      
+      let endParts = [dayStr, mealStr].filter(Boolean);
+      let endStr = endParts.length > 0 ? endParts.join(', ') + ', ' : '';
+      
+      res = `${prefix}${middle}, ${endStr}${subject} eklenir.`;
+      res = res.replace(/,\s*,/g, ',');
+    }
+    
+    return res.charAt(0).toUpperCase() + res.slice(1).replace(/\s+/g, ' ').replace(/,\s+/g, ', ');
+  }
+
+  if (type === 'affinity') {
+    let tVal = (def.trigger?.value || 'belirli bir yemek').toLowerCase().replace(/l[ae]r$/i, '').replace(/ğ[ıi]$/i, 'k');
+    let oVal = (def.outcome?.value || 'başka bir yemek').toLowerCase().replace(/l[ae]r$/i, '').replace(/ğ[ıi]$/i, 'k');
+    
+    if (tVal === 'ekmek' || tVal === 'ekme') tVal = 'ekmek';
+    if (oVal === 'ekmek' || oVal === 'ekme') oVal = 'ekmek';
+
     const assoc = (def.association === 'forbidden' || def.probability === 0) 
        ? 'kesinlikle eklenmez' 
        : 'de eklenir';
        
+    let condParts = [weekText, dayStr, mealStr].filter(Boolean);
+    let prefix = condParts.length > 0 ? condParts.join(', ') + ', ' : '';
+
     let res = `${prefix}menüde ${tVal} olan öğünlerde, yanına ${oVal} ${assoc}.`;
     return res.charAt(0).toUpperCase() + res.slice(1);
   }
 
+  let condParts = [weekText, dayStr, mealStr].filter(Boolean);
+  let prefix = condParts.length > 0 ? condParts.join(', ') + ', ' : '';
+  
   if (type === 'consistency') {
     let res = `${prefix}o hafta listelere eklenecek ${subject} için hep aynı çeşit seçilir.`;
     return res.charAt(0).toUpperCase() + res.slice(1);
@@ -302,11 +350,6 @@ export function generateRuleSentence(rule: any): string {
   
   if (type === 'rotation') {
     let res = `${prefix}${subject}, menüde sürekli farklı çeşitleriyle sırayla sunulur.`;
-    return res.charAt(0).toUpperCase() + res.slice(1);
-  }
-
-  if (type === 'fixed_meal') {
-    let res = `${prefix}${(def.foods || []).join(', ')} menüye sabit olarak eklenir.`;
     return res.charAt(0).toUpperCase() + res.slice(1);
   }
 
