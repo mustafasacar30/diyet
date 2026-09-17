@@ -90,6 +90,33 @@ function isDefinitionDuplicate(defA: any, defB: any): boolean {
   }
 }
 
+function describeRuleTarget(def: any): string {
+  const t = def?.target || {};
+  const parts = [];
+  
+  if (t.meal_types && t.meal_types.length > 0) {
+    parts.push(t.meal_types.join(' ve ') + ' öğünlerinde');
+  } else if (def.scope_meals && def.scope_meals.length > 0) {
+    parts.push(def.scope_meals.join(' ve ') + ' öğünlerinde');
+  }
+  
+  if (t.categories && t.categories.length > 0) {
+    parts.push(t.categories.join(' ve ') + ' kategorisinden yemeklerin');
+  } else if (t.type === 'category') {
+    parts.push(t.value + ' kategorisinden yemeklerin');
+  } else if (t.type === 'tag') {
+    parts.push(t.value + ' özellikli yemeklerin');
+  } else if (t.type === 'name_contains') {
+    parts.push('içinde "' + t.value + '" geçen yemeklerin');
+  }
+  
+  if (parts.length === 0) {
+    return "bu besin grubunun";
+  }
+  
+  return parts.join(' ');
+}
+
 // ─── Kural Çakışma Dedektörü ───
 
 export function detectConflicts(
@@ -113,7 +140,7 @@ export function detectConflicts(
           severity: 'error', icon: '🔴',
           existing_rule_name: existing.name,
           existing_rule_id: existing.id,
-          message: `Çelişki: "${existing.name}" kuralı bu hedefe en fazla ${existDef.max_count} kez izin veriyor, ama yeni kuralınız en az ${newDef.min_count} kez istiyor.`
+          message: `Dikkat: Yeni tercihiniz ile ${describeRuleTarget(newDef)} haftada en az ${newDef.min_count} kez eklenmesi isteniyor. Ancak sistemdeki "${existing.name}" kuralı ${describeRuleTarget(existDef)} en fazla ${existDef.max_count} kez eklenmesine izin vermektedir. Bu iki kural birbiriyle çelişiyor.`
         })
       }
       if (existDef.min_count && newDef.max_count && existDef.min_count > newDef.max_count) {
@@ -121,7 +148,7 @@ export function detectConflicts(
           severity: 'error', icon: '🔴',
           existing_rule_name: existing.name,
           existing_rule_id: existing.id,
-          message: `Çelişki: "${existing.name}" kuralı en az ${existDef.min_count} kez istiyor, ama yeni kuralınız en fazla ${newDef.max_count} kez izin veriyor.`
+          message: `Dikkat: Yeni tercihiniz ${describeRuleTarget(newDef)} en fazla ${newDef.max_count} kez eklenmesine izin veriyor. Ancak sistemdeki "${existing.name}" kuralı ${describeRuleTarget(existDef)} en az ${existDef.min_count} kez eklenmesini zorunlu tutuyor. Bu iki kural birbiriyle çelişiyor.`
         })
       }
     }
@@ -134,7 +161,7 @@ export function detectConflicts(
           severity: 'warning', icon: '🟡',
           existing_rule_name: existing.name,
           existing_rule_id: existing.id,
-          message: `Uyarı: "${existing.name}" kuralı bu hedefi zorunlu kılıyor (min:${existDef.min_count}). Yasaklama kuralınız onu engelleyebilir.`
+          message: `Uyarı: "${existing.name}" kuralı bu hedefi menüde zorunlu kılıyor (en az ${existDef.min_count} kez). Ancak yeni oluşturduğunuz zıtlık kuralı bu durumu engelleyebilir.`
         })
       }
     }
@@ -151,7 +178,7 @@ export function detectConflicts(
           severity: 'error', icon: '🔴',
           existing_rule_name: existing.name,
           existing_rule_id: existing.id,
-          message: `Çelişki: "${existing.name}" kuralı bu ilişkiyi ${existIsMandatory ? 'zorunlu' : 'yasaklı'} kılıyor, ama yeni kuralınız tam tersini istiyor.`
+          message: `Çelişki: Sistemdeki "${existing.name}" kuralı bu besin ilişkisini ${existIsMandatory ? 'zorunlu' : 'yasaklı'} kılıyor, ancak yeni kuralınız tam tersi bir ilişki talep ediyor.`
         })
       }
     }
@@ -162,7 +189,7 @@ export function detectConflicts(
         severity: 'info', icon: '🔵',
         existing_rule_name: existing.name,
         existing_rule_id: existing.id,
-        message: `Bilgi: "${existing.name}" kuralı zaten aynı işlevi yapıyor. Tekrar eklemenize gerek olmayabilir.`
+        message: `Bilgi: Yeni istediğiniz kural ile sistemdeki "${existing.name}" kuralı tamamen aynı işlevi yapıyor. Yeni bir kural eklemenize gerek olmayabilir.`
       })
     }
   }
