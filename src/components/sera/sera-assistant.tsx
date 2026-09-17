@@ -8,6 +8,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { PlanningRule } from '@/types/planner'
 import { RuleReviewWizard } from './rule-review-wizard'
+import { generateRuleSentence } from '@/lib/ai/health-conflict-checker'
 import {
   Send,
   Loader2,
@@ -954,21 +955,33 @@ export function SeraAssistant({
               return a.is_active ? -1 : 1
             }).map((rule) => (
               <div key={rule.id} className="p-4 flex items-start justify-between gap-4 hover:bg-emerald-50/30 transition-colors">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-sm text-gray-800">{rule.name}</span>
-                    {!rule.is_active && rule.pending_global_approval && (
-                      <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-200 bg-amber-50">
-                        Onay Bekliyor
-                      </Badge>
-                    )}
-                    {rule.is_active && (
-                      <Badge variant="outline" className="text-[10px] text-emerald-600 border-emerald-200 bg-emerald-50">
-                        Aktif
-                      </Badge>
-                    )}
-                  </div>
-                  <p className="text-xs text-gray-500 line-clamp-2">{rule.description}</p>
+                <div className="flex-1">
+                  <details className="group">
+                    <summary className="list-none cursor-pointer flex flex-col gap-1.5 focus:outline-none">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-[13px] text-gray-800 leading-snug pr-2">{generateRuleSentence(rule)}</span>
+                        {!rule.is_active && rule.pending_global_approval && (
+                          <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-200 bg-amber-50 shrink-0">
+                            Onay Bekliyor
+                          </Badge>
+                        )}
+                        {rule.is_active && (
+                          <Badge variant="outline" className="text-[10px] text-emerald-600 border-emerald-200 bg-emerald-50 shrink-0">
+                            Aktif
+                          </Badge>
+                        )}
+                      </div>
+                      <span className="text-[10px] text-emerald-600/70 group-open:hidden transition-opacity">
+                        Sistem kayıtlarını görmek için tıklayın...
+                      </span>
+                    </summary>
+                    <div className="mt-3 pl-3 border-l-2 border-emerald-200/50">
+                      <div className="text-xs font-semibold text-gray-700 bg-gray-50 inline-block px-2 py-0.5 rounded border border-gray-100 mb-1">
+                        Sistem Kaydı: {rule.name}
+                      </div>
+                      <p className="text-xs text-gray-500 leading-relaxed">{rule.description}</p>
+                    </div>
+                  </details>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
                   <Button

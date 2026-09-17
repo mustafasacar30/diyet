@@ -111,20 +111,7 @@ function targetsOverlap(defA: any, defB: any): boolean {
   return true
 }
 
-function isDefinitionDuplicate(defA: any, defB: any): boolean {
-  // Simple structural comparison of key fields
-  const keysA = Object.keys(defA).filter(k => defA[k] !== undefined && defA[k] !== null).sort()
-  const keysB = Object.keys(defB).filter(k => defB[k] !== undefined && defB[k] !== null).sort()
-
-  if (keysA.length !== keysB.length) return false
-  try {
-    return JSON.stringify(defA, keysA) === JSON.stringify(defB, keysB)
-  } catch {
-    return false
-  }
-}
-
-function describeRuleTarget(def: any): string {
+export function describeRuleTarget(def: any): string {
   const t = def?.target || {};
   let desc = "";
   
@@ -138,7 +125,7 @@ function describeRuleTarget(def: any): string {
   } else if (t.type === 'name_contains') {
     desc += 'içinde "' + t.value + '" geçen yemeklerin ';
   } else if (t.type === 'role') {
-    desc += t.value + ' rolündeki yemeklerin ';
+    desc += (t.value === 'mainDish' ? 'ana yemek' : t.value === 'sideDish' ? 'yardımcı yemek' : t.value) + ' rolündeki yemeklerin ';
   } else {
     desc += "bu besin grubunun ";
   }
@@ -177,6 +164,64 @@ function describeRuleTarget(def: any): string {
   }
 
   return desc.trim();
+}
+
+export function isDefinitionDuplicate(defA: any, defB: any): boolean {
+  // Simple structural comparison of key fields
+  const keysA = Object.keys(defA).filter(k => defA[k] !== undefined && defA[k] !== null).sort()
+  const keysB = Object.keys(defB).filter(k => defB[k] !== undefined && defB[k] !== null).sort()
+
+  if (keysA.length !== keysB.length) return false
+  try {
+    return JSON.stringify(defA, keysA) === JSON.stringify(defB, keysB)
+  } catch {
+    return false
+  }
+}
+
+export function generateRuleSentence(rule: any): string {
+  if (!rule || !rule.definition) return rule?.name || 'Bilinmeyen Kural';
+  const type = rule.rule_type;
+  const def = (rule.definition as any)?.data || rule.definition || {};
+
+  if (type === 'frequency') {
+    let action = "menüye eklenir";
+    if (def.min_count && def.max_count && def.min_count === def.max_count) {
+      action = `tam olarak ${def.min_count} kez eklenmesi zorunludur`;
+    } else if (def.min_count) {
+      action = `en az ${def.min_count} kez eklenmesi sağlanır`;
+    } else if (def.max_count) {
+      action = `en fazla ${def.max_count} kez eklenmesine izin verilir`;
+    }
+    
+    if (def.period === 'daily') action = "günde " + action;
+    else if (def.period === 'per_meal') action = "her öğünde " + action;
+    else action = "haftada " + action;
+    
+    const targetText = describeRuleTarget(def);
+    return `${targetText.charAt(0).toUpperCase() + targetText.slice(1)}, ${action}.`;
+  }
+
+  if (type === 'affinity') {
+    const trigger = def.trigger ? `${def.trigger.value} (${def.trigger.type}) varsa` : 'Belirli bir yemek varsa';
+    const outcome = def.outcome ? `${def.outcome.value} (${def.outcome.type})` : 'başka bir yemek';
+    const assoc = (def.association === 'forbidden' || def.probability === 0) ? 'kesinlikle eklenmez' : 'mutlaka birlikte eklenir';
+    return `Menüde ${trigger}, yanına ${outcome} ${assoc}.`;
+  }
+
+  if (type === 'consistency') {
+    return `${describeRuleTarget(def).charAt(0).toUpperCase() + describeRuleTarget(def).slice(1)} seçimi, hafta veya gün boyunca değiştirilmeden aynı bırakılır.`;
+  }
+  
+  if (type === 'rotation') {
+    return `${describeRuleTarget(def).charAt(0).toUpperCase() + describeRuleTarget(def).slice(1)} seçenekleri menüde düzenli olarak sırayla sunulur.`;
+  }
+
+  if (type === 'fixed_meal') {
+    return `${def.target_slot || 'Belirli öğüne'} sabit olarak (${(def.foods || []).join(', ')}) eklenir.`;
+  }
+
+  return rule.description || rule.name;
 }
 
 

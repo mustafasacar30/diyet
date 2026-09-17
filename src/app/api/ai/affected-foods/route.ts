@@ -14,10 +14,10 @@ export async function POST(req: Request) {
 
         switch (target_type) {
             case 'category':
-                query = query.ilike('category', target_value)
+                query = query.ilike('category', `%${target_value}%`)
                 break
             case 'role':
-                query = query.ilike('role', target_value)
+                query = query.ilike('role', `%${target_value}%`)
                 break
             case 'tag':
                 query = query.contains('tags', [target_value])

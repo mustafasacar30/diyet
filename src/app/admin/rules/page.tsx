@@ -713,9 +713,18 @@ export default function RulesPage() {
                                 <div>
                                     <div className="flex items-start justify-between">
                                         <div className="font-medium text-slate-800 text-sm">{pr.name}</div>
-                                        {!pr.is_active && (
-                                            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">Duraklatıldı</span>
-                                        )}
+                                        <div className="flex items-center gap-2">
+                                            {!pr.is_active && (
+                                                <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">Duraklatıldı</span>
+                                            )}
+                                            <button 
+                                                onClick={() => handleEdit(pr)}
+                                                className="text-slate-400 hover:text-blue-600 transition-colors"
+                                                title="Düzenle"
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>
+                                            </button>
+                                        </div>
                                     </div>
                                     <div className="text-xs text-slate-500 mt-2 line-clamp-3">{pr.description}</div>
                                 </div>
