@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 
 import { useState, useCallback, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
@@ -415,14 +415,17 @@ export function SeraAssistant({
       const { error } = await supabase.from('planning_rules').insert(rulesToInsert)
       if (error) throw error
 
-      // Eski kurallarÄ± pasife alma (EÄŸer AI replaces_rule_id dÃ¶nmÃ¼ÅŸse)
-      const replacedIds = [
+      // Eski kuralları pasife alma (Eğer AI replaces_rule_id dönmüşse veya çelişki tespit edilmişse)
+      const replacedIds = Array.from(new Set([
         rule.replaces_rule_id,
-        ...(aiResult.additional_rules || []).map((r: any) => r.replaces_rule_id)
-      ].filter(Boolean)
+        ...(aiResult.additional_rules || []).map((r: any) => r.replaces_rule_id),
+        ...(aiResult.conflicts || []).map((c: any) => c.existing_rule_id)
+      ].filter(Boolean)))
 
       if (replacedIds.length > 0) {
-         await supabase.from('planning_rules').update({ is_active: false }).in('id', replacedIds)
+         console.log("Replacing old rules with IDs:", replacedIds)
+         const { data: updData, error: updErr } = await supabase.from('planning_rules').update({ is_active: false }).in('id', replacedIds).select()
+         console.log("Update result:", updData, updErr)
       }
 
       setAiResult(null)
@@ -466,7 +469,9 @@ export function SeraAssistant({
       if (error) throw error
 
       if (addRule.replaces_rule_id) {
-         await supabase.from('planning_rules').update({ is_active: false }).eq('id', addRule.replaces_rule_id)
+         console.log("Replacing old additional rule with ID:", addRule.replaces_rule_id)
+         const { data: updData, error: updErr } = await supabase.from('planning_rules').update({ is_active: false }).eq('id', addRule.replaces_rule_id).select()
+         console.log("Additional Rule Update result:", updData, updErr)
       }
       
       fetchPatientRules()

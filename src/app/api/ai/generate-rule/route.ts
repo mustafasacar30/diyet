@@ -265,6 +265,7 @@ export async function POST(request: Request) {
       if (cleanedText.startsWith('```')) cleanedText = cleanedText.slice(3)
       if (cleanedText.endsWith('```')) cleanedText = cleanedText.slice(0, -3)
       aiResponse = JSON.parse(cleanedText.trim())
+      console.log("[RAW AI RESPONSE]:", JSON.stringify(aiResponse, null, 2))
     } catch (parseError) {
       const finishReason = result.response.candidates?.[0]?.finishReason || 'UNKNOWN'
       console.error('[AI Rule Generator] JSON parse error:', parseError, 'Raw:', responseText, 'FinishReason:', finishReason)
