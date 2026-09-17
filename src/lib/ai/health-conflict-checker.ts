@@ -67,14 +67,48 @@ function targetsOverlap(defA: any, defB: any): boolean {
   const tB = getTarget(defB)
   if (!tA || !tB) return false
 
-  // Same type and same or overlapping value
-  if (tA.type === tB.type && tA.value === tB.value) return true
+  let hasTargetOverlap = false
+  if (tA.type === tB.type && tA.value === tB.value) hasTargetOverlap = true
+  else if (tA.type === 'name_contains' && tB.value.includes(tA.value)) hasTargetOverlap = true
+  else if (tB.type === 'name_contains' && tA.value.includes(tB.value)) hasTargetOverlap = true
 
-  // name_contains can overlap with category/tag matches
-  if (tA.type === 'name_contains' && tB.value.includes(tA.value)) return true
-  if (tB.type === 'name_contains' && tA.value.includes(tB.value)) return true
+  if (!hasTargetOverlap) return false
 
-  return false
+  // 1. ÖĞÜN ÇAKIŞMASI KONTROLÜ
+  const mealsA = defA.scope_meals || defA.target?.meal_types || [];
+  const mealsB = defB.scope_meals || defB.target?.meal_types || [];
+  if (mealsA.length > 0 && mealsB.length > 0) {
+    const overlapMeals = mealsA.filter((m: string) => mealsB.includes(m));
+    if (overlapMeals.length === 0) return false;
+  }
+
+  // 2. GÜN ÇAKIŞMASI KONTROLÜ
+  const daysA = defA.scope_days || [];
+  const daysB = defB.scope_days || [];
+  if (daysA.length > 0 && daysB.length > 0) {
+    const overlapDays = daysA.filter((d: number) => daysB.includes(d));
+    if (overlapDays.length === 0) return false;
+  }
+
+  // 3. HAFTA ÇAKIŞMASI KONTROLÜ
+  const wA = defA.scope_weeks;
+  const wB = defB.scope_weeks;
+  
+  if (wA?.mode === 'specific' && wA?.weeks?.length > 0 && wB?.mode === 'specific' && wB?.weeks?.length > 0) {
+    const overlapWeeks = wA.weeks.filter((w: number) => wB.weeks.includes(w));
+    if (overlapWeeks.length === 0) return false;
+  }
+  
+  if (wB?.starting_week > 1 && wA?.mode === 'specific' && wA?.weeks?.length > 0) {
+     const maxA = Math.max(...wA.weeks);
+     if (maxA < wB.starting_week) return false;
+  }
+  if (wA?.starting_week > 1 && wB?.mode === 'specific' && wB?.weeks?.length > 0) {
+     const maxB = Math.max(...wB.weeks);
+     if (maxB < wA.starting_week) return false;
+  }
+
+  return true
 }
 
 function isDefinitionDuplicate(defA: any, defB: any): boolean {
@@ -128,8 +162,12 @@ function describeRuleTarget(def: any): string {
   if (def.scope_weeks) {
     if (def.scope_weeks.mode === 'specific' && def.scope_weeks.weeks) {
       desc += `(diyetin ${def.scope_weeks.weeks.join(', ')}. haftalarında) `;
-    } else if (def.scope_weeks.mode === 'repeating') {
-      desc += `(her ${def.scope_weeks.every || '?'} haftada bir) `;
+    } else if (def.scope_weeks.mode === 'repeating' && def.scope_weeks.every > 1) {
+      desc += `(her ${def.scope_weeks.every} haftada bir) `;
+    }
+    
+    if (def.scope_weeks.starting_week && def.scope_weeks.starting_week > 1) {
+      desc += `(programın ${def.scope_weeks.starting_week}. haftasından itibaren) `;
     }
   }
   
@@ -140,6 +178,8 @@ function describeRuleTarget(def: any): string {
 
   return desc.trim();
 }
+
+
 
 // ─── Kural Çakışma Dedektörü ───
 
