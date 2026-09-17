@@ -372,6 +372,13 @@ export function SeraAssistant({
     const rule = aiResult.rule
     const rulesToInsert = []
     
+    // Çelişen/Eski kural ID'lerini toplayıp Kuralın içine (definition._replaced_ids) gömüyoruz ki Diyetisyen onayladığında iptal edilsin!
+    const replacedIds = Array.from(new Set([
+      rule.replaces_rule_id,
+      ...(aiResult.additional_rules || []).map((r: any) => r.replaces_rule_id),
+      ...(aiResult.conflicts || []).map((c: any) => c.existing_rule_id)
+    ].filter(Boolean)))
+
     // Ana Kural
     const finalDefinition = { ...rule.definition }
     if (finalDefinition.target && selectedExceptions.length > 0) {
@@ -383,7 +390,7 @@ export function SeraAssistant({
       rule_type: rule.rule_type,
       priority: rule.priority,
       is_active: !requireApproval,
-      definition: { ...finalDefinition, _source: 'sera_assistant' },
+      definition: { ...finalDefinition, _source: 'sera_assistant', _replaced_ids: replacedIds },
       scope: 'patient',
       patient_id: patientId || null,
       program_template_id: programTemplateId || null,
@@ -415,19 +422,6 @@ export function SeraAssistant({
       const { error } = await supabase.from('planning_rules').insert(rulesToInsert)
       if (error) throw error
 
-      // Eski kuralları pasife alma (Eğer AI replaces_rule_id dönmüşse veya çelişki tespit edilmişse)
-      const replacedIds = Array.from(new Set([
-        rule.replaces_rule_id,
-        ...(aiResult.additional_rules || []).map((r: any) => r.replaces_rule_id),
-        ...(aiResult.conflicts || []).map((c: any) => c.existing_rule_id)
-      ].filter(Boolean)))
-
-      if (replacedIds.length > 0) {
-         console.log("Replacing old rules with IDs:", replacedIds)
-         const { data: updData, error: updErr } = await supabase.from('planning_rules').update({ is_active: false }).in('id', replacedIds).select()
-         console.log("Update result:", updData, updErr)
-      }
-
       setAiResult(null)
       setPrompt('')
       setAffectedFoods([])
@@ -455,7 +449,11 @@ export function SeraAssistant({
       rule_type: addRule.rule_type,
       priority: addRule.priority,
       is_active: !requireApproval,
-      definition: { ...addRule.definition, _source: 'sera_assistant' },
+      definition: { 
+        ...addRule.definition, 
+        _source: 'sera_assistant',
+        _replaced_ids: addRule.replaces_rule_id ? [addRule.replaces_rule_id] : []
+      },
       scope: 'patient',
       patient_id: patientId || null,
       program_template_id: programTemplateId || null,
@@ -467,12 +465,6 @@ export function SeraAssistant({
       const { supabase } = await import('@/lib/supabase')
       const { error } = await supabase.from('planning_rules').insert(ruleData)
       if (error) throw error
-
-      if (addRule.replaces_rule_id) {
-         console.log("Replacing old additional rule with ID:", addRule.replaces_rule_id)
-         const { data: updData, error: updErr } = await supabase.from('planning_rules').update({ is_active: false }).eq('id', addRule.replaces_rule_id).select()
-         console.log("Additional Rule Update result:", updData, updErr)
-      }
       
       fetchPatientRules()
       onRuleCreated()

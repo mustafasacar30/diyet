@@ -878,6 +878,15 @@ const mergedRulesMap = new Map<string, PlanningRule>()
                     updatePayload.pending_global_approval = false
                 }
                 await supabase.from('planning_rules').update(updatePayload).eq('id', rule.id)
+                
+                // Eğer yeni kural aktif edildiyse ve Sera tarafından "eski kuralları ezecek" diye işaretlenmişse (_replaced_ids), onları pasife al!
+                if (nextActive && rule.definition && (rule.definition as any)._replaced_ids) {
+                    const replacedIds = (rule.definition as any)._replaced_ids
+                    if (Array.isArray(replacedIds) && replacedIds.length > 0) {
+                        console.log("Rule approved. Auto-pausing replaced rules:", replacedIds)
+                        await supabase.from('planning_rules').update({ is_active: false }).in('id', replacedIds)
+                    }
+                }
             }
             await fetchRules(true)
             onRulesChanged?.()
