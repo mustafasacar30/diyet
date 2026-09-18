@@ -2387,7 +2387,7 @@ export class Planner {
                 
                 plan.meals.push({
                     day: bestDay,
-                    meal: bestMeal,
+                    slot: bestMeal,
                     food: foodToInsert,
                     role: foodToInsert.category || 'side',
                     portion_multiplier: 1.0,
