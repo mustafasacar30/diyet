@@ -236,9 +236,10 @@ export async function POST(request: Request) {
       if (!ps || !ps.slot_configs) ps = await fetchLayer('team_owner_id', team_owner_id);
       if (!ps || !ps.slot_configs) ps = await fetchLayer('scope', 'global');
       
-      if (ps && ps.slot_configs) {
+      const activeConfig = ps?.slot_config || ps?.slot_configs;
+      if (activeConfig) {
         slotConfigsContext = "\n\nHASTANIN ÖĞÜN AYARLARI (MEAL SETTINGS):\n";
-        ps.slot_configs.forEach((slot: any) => {
+        activeConfig.forEach((slot: any) => {
           slotConfigsContext += `- ${slot.name}: Kapasite (Min: ${slot.min_items}, Max: ${slot.max_items})\n`;
         });
         slotConfigsContext += "\n\nÇOK KRİTİK DİKKAT: YALNIZCA YUKARIDAKİ LİSTEDE YER ALAN ÖĞÜN İSİMLERİNİ 'scope_meals' İÇİNE YAZABİLİRSİN! Yukarıda 'Ara Öğün' veya 'Kahvaltı' yoksa, hastanın böyle bir öğünü YOKTUR. Olmayan bir öğüne kesinlikle kural yazma veya öneride bulunma!";
