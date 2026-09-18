@@ -379,7 +379,7 @@ export async function POST(request: Request) {
           data: ar.definition
         }
       })),
-      explanation: "DEBUG INFO: " + slotConfigsContext,
+      explanation: aiResponse.explanation,
       conflicts,
       suggestions: Array.isArray(aiResponse.suggestions) ? aiResponse.suggestions : [],
       clarification_needed: aiResponse.clarification_needed || false,
