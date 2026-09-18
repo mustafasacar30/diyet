@@ -241,8 +241,7 @@ export async function POST(request: Request) {
         ps.slot_configs.forEach((slot: any) => {
           slotConfigsContext += `- ${slot.name}: Kapasite (Min: ${slot.min_items}, Max: ${slot.max_items})\n`;
         });
-        slotConfigsContext += "
-ÇOK KRİTİK DİKKAT: YALNIZCA YUKARIDAKİ LİSTEDE YER ALAN ÖĞÜN İSİMLERİNİ 'scope_meals' İÇİNE YAZABİLİRSİN! Yukarıda 'Ara Öğün' veya 'Kahvaltı' yoksa, hastanın böyle bir öğünü YOKTUR. Olmayan bir öğüne kesinlikle kural yazma veya öneride bulunma!";
+        slotConfigsContext += "\n\nÇOK KRİTİK DİKKAT: YALNIZCA YUKARIDAKİ LİSTEDE YER ALAN ÖĞÜN İSİMLERİNİ 'scope_meals' İÇİNE YAZABİLİRSİN! Yukarıda 'Ara Öğün' veya 'Kahvaltı' yoksa, hastanın böyle bir öğünü YOKTUR. Olmayan bir öğüne kesinlikle kural yazma veya öneride bulunma!";
       }
     }
 
