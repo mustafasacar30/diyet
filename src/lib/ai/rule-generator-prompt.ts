@@ -120,7 +120,7 @@ definition.data şeması:
   "min_count": number (opsiyonel. NOT: Eğer kullanıcı "Haftada 3 gün", "Tam 5 defa" gibi KESİN BİR SAYI verirse, hem min_count hem max_count O SAYI olmalıdır!),
   "max_count": number (opsiyonel),
   "period": "daily|weekly|per_meal",
-  "scope_meals": ["KAHVALTI", "ÖĞLEN", "AKŞAM", "ARA ÖĞÜN"] (opsiyonel),
+  "scope_meals": ["ÖĞÜN ADI", "DİĞER ÖĞÜN"] (opsiyonel - YALNIZCA AŞAĞIDA SİZE 'MEAL SETTINGS' ALTINDA VERİLEN ÖĞÜN İSİMLERİNİ KULLANIN),
   "scope_days": [1-7] (opsiyonel, 1=Pazartesi 7=Pazar),
   "random_day_count": number (opsiyonel),
   "force_inclusion": boolean (opsiyonel),
