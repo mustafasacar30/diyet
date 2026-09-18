@@ -2341,8 +2341,9 @@ export class Planner {
             const def = rawDef.data || rawDef
             if (!def.target) continue
             
-            // Only force inclusion if explicitly set to true
-            if (def.force_inclusion !== true) continue
+            // Force inclusion if explicitly set to true, or if undefined (backward compatibility / AI defaults)
+            const force_inc = def.force_inclusion !== undefined ? def.force_inclusion : true;
+            if (force_inc !== true) continue;
 
             const minCount = getWeeklyEquivalentCount(def, def.min_count) || 1
             let current = countRuleOccurrences(rule)
