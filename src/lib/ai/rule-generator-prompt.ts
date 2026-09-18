@@ -410,7 +410,7 @@ Yanıtını TAM OLARAK aşağıdaki alanları içeren DÜZ BİR JSON objesi olar
 - Target value'da normalleştirme motorun işi. Sen veritabanındaki ham değeri yaz.
 - Belirsiz durumlarda güvenli tarafta kal (frequency yerine affinity tercih et, mandatory yerine boost tercih et).
 - Hafta scope'ları: 1=Pazartesi, 7=Pazar
-- Öğün isimleri: "KAHVALTI", "ÖĞLEN", "AKŞAM", "ARA ÖĞÜN"
+- Öğün isimleri: YALNIZCA SİZE 'MEAL SETTINGS' ALTINDA BİLDİRİLEN ÖĞÜN İSİMLERİ GEÇERLİDİR. Ezbere öğün ismi uydurmayın!
 - association formatında: forbidden=yasakla, mandatory=zorunlu kıl, boost=teşvik et, reduce=azalt
 - probability formatında: 0=tamamen yasakla, 50=nötr, 100=zorunlu kıl`)
 
