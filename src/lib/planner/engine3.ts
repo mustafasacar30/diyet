@@ -515,6 +515,7 @@ export class Planner {
         if (this.patientId) {
             if (this.teamOwnerId) {
                 orParts.push(`and(scope.eq.patient,patient_id.eq.${this.patientId},team_owner_id.eq.${this.teamOwnerId})`)
+                orParts.push(`and(scope.eq.patient,patient_id.eq.${this.patientId},team_owner_id.is.null)`)
             } else {
                 orParts.push(`and(scope.eq.patient,patient_id.eq.${this.patientId},team_owner_id.is.null)`)
             }

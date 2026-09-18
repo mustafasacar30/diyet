@@ -11,7 +11,11 @@ export default function AssistantPage() {
     const { user, profile } = useAuth()
     const [loading, setLoading] = useState(true)
     const [patientId, setPatientId] = useState<string | null>(null)
+    
     const [patientName, setPatientName] = useState<string | undefined>(undefined)
+    const [teamOwnerId, setTeamOwnerId] = useState<string | undefined>(undefined)
+    const [programTemplateId, setProgramTemplateId] = useState<string | undefined>(undefined)
+
     const [requireApproval, setRequireApproval] = useState(false)
     const [canUseAI, setCanUseAI] = useState(false)
 
@@ -38,7 +42,7 @@ export default function AssistantPage() {
 
             const { data, error } = await supabase
                 .from('patients')
-                .select('full_name, preferences')
+                .select('full_name, preferences, team_owner_id, program_template_id')
                 .eq('id', actualPatientId)
                 .single()
 
@@ -46,8 +50,12 @@ export default function AssistantPage() {
                 console.error("Error fetching patient for Sera:", error)
             }
 
+            
             if (data) {
                 setPatientName(data.full_name)
+                setTeamOwnerId(data.team_owner_id)
+                setProgramTemplateId(data.program_template_id)
+
                 const prefs = data.preferences || {}
                 // If preferences object doesn't have it, default to true
                 setCanUseAI(prefs.allow_ai_rule_assistant !== undefined ? prefs.allow_ai_rule_assistant : true)
@@ -107,10 +115,14 @@ export default function AssistantPage() {
                 </CardHeader>
                 <CardContent>
                     {patientId && (
+                        
                         <SeraAssistant
                             patientId={patientId}
                             patientName={patientName}
                             requireApproval={requireApproval}
+                            teamOwnerId={teamOwnerId}
+                            programTemplateId={programTemplateId}
+
                             onRuleCreated={() => {
                                 // Rule creation callback
                             }}
