@@ -1668,6 +1668,7 @@ export class Planner {
 
         // 5. POST-PROCESSING: Enforce per-food min_weekly_freq limits (hard, best effort)
         this.enforceFoodWeeklyMinimums(plan, mealTypes, effectiveSlotConfig, targetMacros)
+        this.enforceFrequencyRuleMinimums(plan, mealTypes)
 
 
         // 5. POST-PROCESSING: Portion Adjustment (if enabled)
@@ -2312,6 +2313,86 @@ export class Planner {
         if (flexCount > 0) {
             this.log(0, 'FREQ-FLEX', 'info',
                 `Frequency Flex completed: ${flexCount} adjustment(s). Final weekly gap: ${Math.round(finalGap)}kcal (${finalGapPct.toFixed(1)}%)`)
+        }
+    }
+
+    private enforceFrequencyRuleMinimums(plan: any, mealTypes: string[]) {
+        const freqRules = this.rules.filter(r => r.is_active && r.rule_type === 'frequency')
+        if (freqRules.length === 0) return
+
+        const countRuleOccurrences = (rule: PlanningRule): number => {
+            const rawDef = rule.definition as any
+            const def = rawDef.data || rawDef
+            if (!def.target) return 0
+            return plan.meals.filter((m: any) => this.matchesTarget(m.food, def.target)).length
+        }
+
+        const getWeeklyEquivalentCount = (def: any, val: any): number => {
+            if (!val) return 0
+            const count = parseInt(val)
+            if (isNaN(count)) return 0
+            if (def.period === 'daily') return count * 7
+            if (def.period === 'per_meal') return count * 7 * Math.max(1, (def.scope_meals || []).length)
+            return count
+        }
+
+        for (const rule of freqRules) {
+            const rawDef = rule.definition as any
+            const def = rawDef.data || rawDef
+            if (!def.target) continue
+
+            const minCount = getWeeklyEquivalentCount(def, def.min_count) || 1
+            let current = countRuleOccurrences(rule)
+            if (current >= minCount) continue
+
+            const eligible = this.eligibleFoods.filter((f: any) => this.matchesTarget(f, def.target))
+            if (eligible.length === 0) {
+                this.log(0, 'FREQ-FORCE', 'error', `Cannot force freq rule ${rule.name}, no eligible foods found.`)
+                continue
+            }
+
+            const allowedMeals = Array.isArray(def.scope_meals) && def.scope_meals.length > 0 ? def.scope_meals : mealTypes
+
+            while (current < minCount) {
+                const dailyMax = def.daily_max_limit || 99
+                let bestDay = -1
+                let bestMeal = ''
+                
+                const days = [1,2,3,4,5,6,7].sort(() => Math.random() - 0.5)
+                for (const d of days) {
+                    const dayMeals = plan.meals.filter((m: any) => m.day === d)
+                    const dayRuleOccurrences = dayMeals.filter((m: any) => this.matchesTarget(m.food, def.target)).length
+                    
+                    if (dayRuleOccurrences < dailyMax) {
+                        const meals = [...allowedMeals].sort(() => Math.random() - 0.5)
+                        for (const m of meals) {
+                            bestDay = d
+                            bestMeal = m
+                            break
+                        }
+                    }
+                    if (bestDay !== -1) break
+                }
+
+                if (bestDay === -1) {
+                    bestDay = days[0]
+                    bestMeal = allowedMeals[0]
+                }
+
+                const foodToInsert = eligible[Math.floor(Math.random() * eligible.length)]
+                
+                plan.meals.push({
+                    day: bestDay,
+                    meal: bestMeal,
+                    food: foodToInsert,
+                    role: foodToInsert.category || 'side',
+                    portion_multiplier: 1.0,
+                    source: 'frequency_force'
+                })
+                
+                this.log(bestDay, bestMeal, 'info', `Forced frequency rule ${rule.name}: Added ${foodToInsert.name}`)
+                current++
+            }
         }
     }
 

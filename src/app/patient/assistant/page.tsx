@@ -42,7 +42,7 @@ export default function AssistantPage() {
 
             const { data, error } = await supabase
                 .from('patients')
-                .select('full_name, preferences, team_owner_id, program_template_id')
+                .select('full_name, preferences, program_template_id')
                 .eq('id', actualPatientId)
                 .single()
 
