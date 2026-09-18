@@ -218,19 +218,31 @@ export async function POST(request: Request) {
       const { data: pt } = await supabase.from('patients').select('diet_type').eq('id', patient_id).single();
       if (pt && pt.diet_type) dietType = pt.diet_type;
       
-      const { data: ps } = await supabase.from('planner_settings')
-        .select('slot_configs')
-        .eq('patient_id', patient_id)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single();
-        
+      let ps = null;
+      // Hierarchical fetch for settings
+      const fetchLayer = async (col, val) => {
+        if (!val) return null;
+        const { data } = await supabase.from('planner_settings')
+          .select('slot_configs')
+          .eq(col, val)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        return data;
+      };
+
+      ps = await fetchLayer('patient_id', patient_id);
+      if (!ps || !ps.slot_configs) ps = await fetchLayer('program_template_id', program_template_id);
+      if (!ps || !ps.slot_configs) ps = await fetchLayer('team_owner_id', team_owner_id);
+      if (!ps || !ps.slot_configs) ps = await fetchLayer('scope', 'global');
+      
       if (ps && ps.slot_configs) {
         slotConfigsContext = "\n\nHASTANIN ÖĞÜN AYARLARI (MEAL SETTINGS):\n";
         ps.slot_configs.forEach((slot: any) => {
           slotConfigsContext += `- ${slot.name}: Kapasite (Min: ${slot.min_items}, Max: ${slot.max_items})\n`;
         });
-        slotConfigsContext += "DİKKAT: Kapasitesi 0 veya 1 olan, ya da yukarıdaki listede hiç bulunmayan öğünlere 'Ara öğüne ekle' gibi asılsız önerilerde BULUNMA!";
+        slotConfigsContext += "
+ÇOK KRİTİK DİKKAT: YALNIZCA YUKARIDAKİ LİSTEDE YER ALAN ÖĞÜN İSİMLERİNİ 'scope_meals' İÇİNE YAZABİLİRSİN! Yukarıda 'Ara Öğün' veya 'Kahvaltı' yoksa, hastanın böyle bir öğünü YOKTUR. Olmayan bir öğüne kesinlikle kural yazma veya öneride bulunma!";
       }
     }
 

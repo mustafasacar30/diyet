@@ -90,6 +90,7 @@ function FrequencyRuleEditor({ rule, lockedMeals, draft, onChange, onAlertCheck 
   const [minOcc, setMinOcc] = useState<string>(initOccMin)
   const [maxOcc, setMaxOcc] = useState<string>(initOccMax)
   const [dailyMax, setDailyMax] = useState<string>(draft?.dailyMax || (def.daily_max_limit?.toString() || "0"))
+  const [forceInclusion, setForceInclusion] = useState<boolean>(draft?.forceInclusion ?? def.force_inclusion ?? false)
   const [selectedMeals, setSelectedMeals] = useState<string[]>(draft?.selectedMeals || def.scope_meals || def.scopes || [])
 
   // Auto-correct ranges if min > max
@@ -118,9 +119,10 @@ function FrequencyRuleEditor({ rule, lockedMeals, draft, onChange, onAlertCheck 
       daysCount: `${minDays}-${maxDays === "same" ? minDays : maxDays}`,
       occurrences: `${minOcc}-${maxOcc === "same" ? minOcc : maxOcc}`,
       dailyMax,
-      selectedMeals
+      selectedMeals,
+      forceInclusion
     })
-  }, [minDays, maxDays, minOcc, maxOcc, dailyMax, selectedMeals])
+  }, [minDays, maxDays, minOcc, maxOcc, dailyMax, selectedMeals, forceInclusion])
 
   const toggleMeal = (meal: string) => {
     if (lockedMeals.includes(meal)) return;
@@ -241,6 +243,24 @@ function FrequencyRuleEditor({ rule, lockedMeals, draft, onChange, onAlertCheck 
               <SelectItem value="2">En fazla 2 kez</SelectItem>
             </SelectContent>
           </Select>
+        </div>
+      </div>
+      <div className="flex flex-col gap-2 pt-4 border-t border-emerald-100">
+        <div className="flex items-start space-x-3 bg-orange-50/50 p-3 rounded-lg border border-orange-100">
+          <Checkbox 
+            id="force_inc" 
+            checked={forceInclusion} 
+            onCheckedChange={(c) => setForceInclusion(c === true)}
+            className="mt-1 data-[state=checked]:bg-orange-500 border-orange-300"
+          />
+          <div className="grid gap-1.5 leading-none cursor-pointer">
+            <Label htmlFor="force_inc" className="text-sm font-bold text-orange-900 cursor-pointer">
+              Kesinlikle Uygula (Zorunlu Kıl)
+            </Label>
+            <p className="text-[11px] text-orange-700 leading-relaxed">
+              Kalori limitleri aşılsa veya toleranslar dolsa bile, bu yiyeceği menüye <b>zorla</b> ekler. <br/>Sadece diyetisyen onaylı veya çok kritik tercihler için işaretleyin.
+            </p>
+          </div>
         </div>
       </div>
     </div>
@@ -474,6 +494,12 @@ export function RuleReviewWizard({ isOpen, onClose, rules, onRuleUpdated, onRule
               def.daily_max_limit = parseInt(draft.data.dailyMax)
             } else {
               delete def.daily_max_limit
+            }
+            
+            if (draft.data.forceInclusion) {
+              def.force_inclusion = true
+            } else {
+              delete def.force_inclusion
             }
           } 
           else if (draft.data.type === 'affinity') {

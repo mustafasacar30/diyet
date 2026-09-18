@@ -2340,6 +2340,9 @@ export class Planner {
             const rawDef = rule.definition as any
             const def = rawDef.data || rawDef
             if (!def.target) continue
+            
+            // Only force inclusion if explicitly set to true
+            if (def.force_inclusion !== true) continue
 
             const minCount = getWeeklyEquivalentCount(def, def.min_count) || 1
             let current = countRuleOccurrences(rule)
