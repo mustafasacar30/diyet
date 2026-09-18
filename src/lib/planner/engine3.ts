@@ -229,7 +229,7 @@ export class Planner {
                     } else {
                         // Week is active, check specific days or random days
                         const period = def.period || 'weekly'
-                        const useImplicitRandomDays = period !== 'per_meal' && (!def.scope_days || def.scope_days.length === 0) && def.max_count
+                        const useImplicitRandomDays = period === 'weekly' && (!def.scope_days || def.scope_days.length === 0) && def.max_count
                         const randomDaysTarget = def.random_day_count || (useImplicitRandomDays ? def.max_count : null)
                         
                         let activeDays: number[] | null = null
