@@ -220,7 +220,7 @@ export async function POST(request: Request) {
       
       let ps = null;
       // Hierarchical fetch for settings
-      const fetchLayer = async (col, val) => {
+      const fetchLayer = async (col: string, val: string) => {
         if (!val) return null;
         const { data } = await supabase.from('planner_settings')
           .select('slot_configs')
