@@ -379,6 +379,39 @@ export async function POST(request: Request) {
           data: ar.definition
         }
       })),
+      explanation: "DEBUG INFO: " + slotConfigsContext,
+      conflicts,
+      suggestions: Array.isArray(aiResponse.suggestions) ? aiResponse.suggestions : [],
+      clarification_needed: aiResponse.clarification_needed || false,
+      clarification_target: aiResponse.clarification_target || null,
+      clarification_message: aiResponse.clarification_message || null
+    })
+    
+    // Skip original return
+    /*
+        name: aiResponse.name,
+        description: aiResponse.description || '',
+        rule_type: aiResponse.rule_type,
+        priority: Math.min(100, Math.max(1, aiResponse.priority || 50)),
+        is_active: true,
+        replaces_rule_id: aiResponse.replaces_rule_id || null,
+        definition: {
+          type: aiResponse.rule_type,
+          data: aiResponse.definition
+        }
+      },
+      additional_rules: (aiResponse.additional_rules || []).map((ar: any) => ({
+        name: ar.name,
+        description: ar.description || '',
+        rule_type: ar.rule_type,
+        priority: Math.min(100, Math.max(1, ar.priority || 50)),
+        is_active: true,
+        replaces_rule_id: ar.replaces_rule_id || null,
+        definition: {
+          type: ar.rule_type,
+          data: ar.definition
+        }
+      })),
       explanation: aiResponse.explanation,
       conflicts,
       suggestions: Array.isArray(aiResponse.suggestions) ? aiResponse.suggestions : [],
@@ -387,6 +420,7 @@ export async function POST(request: Request) {
       clarification_message: aiResponse.clarification_message || null
     })
 
+  */
   } catch (error: any) {
     console.error('[AI Rule Generator] Error:', error)
     return NextResponse.json(
@@ -396,3 +430,4 @@ export async function POST(request: Request) {
   }
 }
  
+// Force Turbopack to rebuild after syntax error
