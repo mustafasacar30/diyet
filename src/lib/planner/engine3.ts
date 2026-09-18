@@ -2357,45 +2357,10 @@ export class Planner {
 
             const allowedMeals = Array.isArray(def.scope_meals) && def.scope_meals.length > 0 ? def.scope_meals : mealTypes
 
-            while (current < minCount) {
-                const dailyMax = def.daily_max_limit || 99
-                let bestDay = -1
-                let bestMeal = ''
-                
-                const days = [1,2,3,4,5,6,7].sort(() => Math.random() - 0.5)
-                for (const d of days) {
-                    const dayMeals = plan.meals.filter((m: any) => m.day === d)
-                    const dayRuleOccurrences = dayMeals.filter((m: any) => this.matchesTarget(m.food, def.target)).length
-                    
-                    if (dayRuleOccurrences < dailyMax) {
-                        const meals = [...allowedMeals].sort(() => Math.random() - 0.5)
-                        for (const m of meals) {
-                            bestDay = d
-                            bestMeal = m
-                            break
-                        }
-                    }
-                    if (bestDay !== -1) break
-                }
-
-                if (bestDay === -1) {
-                    bestDay = days[0]
-                    bestMeal = allowedMeals[0]
-                }
-
-                const foodToInsert = eligible[Math.floor(Math.random() * eligible.length)]
-                
-                plan.meals.push({
-                    day: bestDay,
-                    slot: bestMeal,
-                    food: foodToInsert,
-                    role: foodToInsert.category || 'side',
-                    portion_multiplier: 1.0,
-                    source: 'frequency_force'
-                })
-                
-                this.log(bestDay, bestMeal, 'info', `Forced frequency rule ${rule.name}: Added ${foodToInsert.name}`)
-                current++
+            // Bypassed forced push to prevent menu overflow and macro explosion.
+            // Frequency budget handles picking them during natural generation.
+            if (current < minCount) {
+                this.log(0, 'FREQ-FORCE', 'info', `Skipped forced add for ${rule.name} to avoid overflowing capacity (macros).`)
             }
         }
     }
@@ -5833,9 +5798,16 @@ export class Planner {
         for (const rule of this.rules) {
             if (rule.rule_type !== 'frequency' || !rule.is_active) continue
             const def = (rule.definition as any).data || rule.definition
-            if (!def.target || !def.max_count || def.period !== 'weekly') continue
+            if (!def.target) continue
+            
+            let targetCount = def.min_count || def.max_count;
+            if (!targetCount) continue;
+            
+            if (def.period === 'daily') targetCount *= 7;
+            if (def.period === 'per_meal') targetCount *= 7 * Math.max(1, (def.scope_meals || []).length);
+            
             const count = this.currentWeekFoods.filter((f: any) => this.matchesTarget(f, def.target)).length
-            const remaining = def.max_count - count
+            const remaining = targetCount - count
             if (remaining > 0) budgets.push({ target: def.target, remaining, ruleName: rule.name })
         }
         return budgets.sort((a, b) => b.remaining - a.remaining)
