@@ -67,7 +67,7 @@ interface AffectedFood {
 }
 
 interface SeraAssistantProps {
-  patientId: string
+  patientId?: string | null
   patientName?: string
   teamOwnerId?: string | null
   programTemplateId?: string | null
