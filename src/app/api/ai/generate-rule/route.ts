@@ -256,11 +256,9 @@ export async function POST(request: Request) {
 
     if (slotConfigsContext) {
       systemPrompt += slotConfigsContext;
-    } else {
-      console.log("WARNING: slotConfigsContext IS EMPTY! No settings found.");
     }
-    console.log("FINAL AI SYSTEM PROMPT LENGTH:", systemPrompt.length);
-    console.log("HAS SLOT CONTEXT:", systemPrompt.includes("HASTANIN ÖĞÜN AYARLARI"));
+    
+
 
 
     const { HarmCategory, HarmBlockThreshold } = require('@google/generative-ai')
