@@ -53,7 +53,7 @@ export default function AssistantPage() {
             
             if (data) {
                 setPatientName(data.full_name)
-                setTeamOwnerId(data.team_owner_id)
+                // setTeamOwnerId removed because column doesn't exist
                 setProgramTemplateId(data.program_template_id)
 
                 const prefs = data.preferences || {}
