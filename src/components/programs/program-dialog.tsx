@@ -1544,23 +1544,214 @@ const saveResult = await adminSaveProgramTemplateAction({
                             </div>
                         ) : rulesLoading && displayRules.length === 0 ? (
                             <div className="flex justify-center py-8">
+                                    checked={isActive}
+                                    onCheckedChange={(checked) => setIsActive(checked as boolean)}
+                                />
+                                <Label htmlFor="isActive" className="cursor-pointer">
+                                    Aktif (hasta atamalarında görünsün)
+                                </Label>
+                            </div>
+                        </div>
+                    </TabsContent>
+
+                    {/* Diet Types Tab */}
+                    <TabsContent value="diet-types" className="space-y-4 mt-4 overflow-y-auto pr-2 pb-2">
+                        {!program?.id ? (
+                            <div className="text-center py-8 text-amber-600 bg-amber-50 border-2 border-dashed border-amber-200 rounded-lg">
+                                <AlertTriangle className="mx-auto mb-2" size={24} />
+                                <p className="text-sm font-medium">Önce programı kaydedin, ardından diyet türü override düzenleyin.</p>
+                            </div>
+                        ) : (
+                            <div className="rounded-lg border p-3">
+                                <DietTypesEditor
+                                    dietTypes={dietTypes}
+                                    programTemplateId={program.id}
+                                    forcedMode={forcedMode}
+                                    onUpdate={fetchDietTypes}
+                                />
+                            </div>
+                        )}
+                    </TabsContent>
+
+                    {/* Weeks Tab */}
+                    <TabsContent value="weeks" className="space-y-4 mt-4 overflow-y-auto pr-2 pb-2">
+                        <div className="flex justify-between items-center">
+                            <p className="text-sm text-gray-500">
+                                Her hafta aralığı için diyet türü belirleyin
+                            </p>
+                            <Button variant="outline" size="sm" onClick={addWeekMapping}>
+                                <Plus size={14} className="mr-1" />
+                                Aralık Ekle
+                            </Button>
+                        </div>
+
+                        {weekMappings.length === 0 ? (
+                            <div className="text-center py-8 text-gray-400 border-2 border-dashed rounded-lg">
+                                Henüz hafta aralığı eklenmemiş
+                            </div>
+                        ) : (
+                            <div className="space-y-2">
+                                {weekMappings.map((week, index) => (
+                                    <div key={index} className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
+                                        <span className="text-sm text-gray-500 w-16">Hafta</span>
+                                        <Input
+                                            type="number"
+                                            min={1}
+                                            max={totalWeeks}
+                                            value={week.week_start}
+                                            onChange={(e) => updateWeekMapping(index, 'week_start', parseInt(e.target.value) || 1)}
+                                            className="w-16"
+                                        />
+                                        <span className="text-gray-400">-</span>
+                                        <Input
+                                            type="number"
+                                            min={week.week_start}
+                                            max={totalWeeks}
+                                            value={week.week_end}
+                                            onChange={(e) => updateWeekMapping(index, 'week_end', parseInt(e.target.value) || week.week_start)}
+                                            className="w-16"
+                                        />
+                                        <span className="text-gray-400">:</span>
+                                        <Select
+                                            value={week.diet_type_id || ''}
+                                            onValueChange={(v) => updateWeekMapping(index, 'diet_type_id', v || null)}
+                                        >
+                                            <SelectTrigger className="flex-1">
+                                                <SelectValue placeholder="Diyet türü seçin" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {dietTypes.map(dt => (
+                                                    <SelectItem key={dt.id} value={dt.id}>
+                                                        {dt.name}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => removeWeekMapping(index)}
+                                            className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                                        >
+                                            <Trash2 size={14} />
+                                        </Button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </TabsContent>
+
+                    {/* Restrictions Tab */}
+                    <TabsContent value="restrictions" className="space-y-4 mt-4 overflow-y-auto pr-2 pb-2">
+                        <div className="flex justify-between items-center mb-4">
+                            <p className="text-sm text-gray-500">
+                                Bu programda yasaklanacak yemek anahtar kelimeleri veya etiketleri
+                            </p>
+                            {program?.id && (
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={restrictions.length === 0}
+                                    onClick={async () => {
+                                        if (confirm("Tüm program yasaklarını temizleyip global yasaklara dönmek istediğinize emin misiniz?")) {
+                                            setRestrictions([])
+                                        }
+                                    }}
+                                    className="text-orange-600 hover:text-orange-700 hover:bg-orange-50 border-orange-200"
+                                    title={restrictions.length === 0 ? "Program katmaninda yasak ozellestirmesi yok" : "Program yasaklarini temizleyip global mirasa don"}
+                                >
+                                    <RotateCcw size={14} className="mr-1" /> Temizle (Global'e Dön)
+                                </Button>
+                            )}
+                        </div>
+
+                        {/* Add new restriction */}
+                        <div className="flex gap-2 p-3 bg-blue-50 rounded-lg">
+                            <Select
+                                value={newRestrictionType}
+                                onValueChange={(v) => setNewRestrictionType(v as 'keyword' | 'tag')}
+                            >
+                                <SelectTrigger className="w-32">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="keyword">Yemek İsminde Geçen Kelime</SelectItem>
+                                    <SelectItem value="tag">Etiket (Tag)</SelectItem>
+                                </SelectContent>
+                            </Select>
+                            <Input
+                                placeholder={newRestrictionType === 'keyword' ? 'İsimde geçen kelime (örn: şeker, ekmek)' : 'Veritabanı etiketi (örn: gluten, laktoz)'}
+                                value={newRestrictionValue}
+                                onChange={(e) => setNewRestrictionValue(e.target.value)}
+                                onKeyPress={(e) => e.key === 'Enter' && addRestriction()}
+                                className="flex-1"
+                            />
+                            <Select
+                                value={newRestrictionSeverity}
+                                onValueChange={(v) => setNewRestrictionSeverity(v as 'warn' | 'block')}
+                            >
+                                <SelectTrigger className="w-28">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                        <SelectItem value="warn">Uyarı</SelectItem>
+                                        <SelectItem value="block">Engelle</SelectItem>
+                                </SelectContent>
+                            </Select>
+                            <Button onClick={addRestriction} disabled={!newRestrictionValue.trim()}>
+                                <Plus size={14} />
+                            </Button>
+                        </div>
+
+                        {/* Restrictions list */}
+                        {restrictions.length === 0 ? (
+                            <div className="text-center py-8 text-gray-400 border-2 border-dashed rounded-lg">
+                                Henüz yasak eklenmemiş
+                            </div>
+                        ) : (
+                            <div className="flex flex-wrap gap-2">
+                                {restrictions.map((r, index) => (
+                                    <Badge
+                                        key={index}
+                                        variant={r.severity === 'block' ? 'destructive' : 'secondary'}
+                                        className="flex items-center gap-1 px-3 py-1"
+                                    >
+                                                            {r.severity === 'block' ? 'Engel' : 'Uyarı'}
+                                        <span className="text-xs opacity-70">{r.restriction_type === 'keyword' ? 'Kelime:' : 'Tag:'}</span>
+                                        {r.restriction_value}
+                                        <button
+                                            onClick={() => removeRestriction(index)}
+                                            className="ml-1 hover:text-red-500"
+                                        >
+                                            ×
+                                        </button>
+                                    </Badge>
+                                ))}
+                            </div>
+                        )}
+                    </TabsContent>
+
+                    {/* —————————————————————— NEW: Rules Tab —————————————————————— */}
+                    <TabsContent value="rules" className="space-y-4 mt-4 flex-1 min-h-0 flex flex-col overflow-hidden">
+                        {!program?.id ? (
+                            <div className="text-center py-8 text-slate-500">
+                                Kuralları yönetmek için önce programı kaydedin.
+                            </div>
+                        ) : rulesLoading && displayRules.length === 0 ? (
+                            <div className="flex justify-center py-8">
                                 <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
                             </div>
                         ) : (
                             <>
-                                                                <div className="mb-4">
+                                <div className="mb-4">
                                     <AIRuleAssistant 
                                         scope="program" 
-                                        programTemplateId={program.id} 
-                                        onRuleCreated={() => fetchProgramRules(program.id)}
+                                        programTemplateId={program?.id} 
+                                        onRuleCreated={() => program?.id && fetchProgramRules(program.id)}
                                         showScopeSelector={false} 
                                         isPatientSelfService={false} 
                                     />
                                 </div>
-                                <p className="text-xs text-slate-500 mb-3">
-                                    {`${inheritedRulesSourceLabel} katmanından gelen kurallar ve bu programa özel kurallar birlikte görüntüleniyor. Düzenlenen her kural programa özel olarak kaydedilir.`}
-                                </p>
-
                                 <>
                                     {displayRules.length === 0 ? (
                                         <div className="text-center py-8 text-gray-400 border-2 border-dashed rounded-lg">
