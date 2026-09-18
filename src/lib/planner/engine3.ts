@@ -3546,10 +3546,10 @@ export class Planner {
                     if (typeof t !== 'string') return false
                     const normT = t.toLowerCase().replace(/ğ/g, 'g').replace(/ı/g, 'i').replace(/ş/g, 's').replace(/\s+/g, '')
                     if (normT === reqLower) return true
-                    if (reqLower.includes('ogle') && normT.includes('ogle')) return true
-                    if (reqLower.includes('aksam') && normT.includes('aksam')) return true
-                    if (reqLower.includes('kahvalt') && normT.includes('kahvalt')) return true
-                    if (reqLower.includes('ara') && normT.includes('ara')) return true
+                    if (reqLower.includes('ogle') && (normT.includes('ogle') || normT.includes('lunch'))) return true
+                    if (reqLower.includes('aksam') && (normT.includes('aksam') || normT.includes('dinner'))) return true
+                    if (reqLower.includes('kahvalt') && (normT.includes('kahvalt') || normT.includes('breakfast'))) return true
+                    if (reqLower.includes('ara') && (normT.includes('ara') || normT.includes('snack'))) return true
 
                     // We strictly obey meal type constraints and do not allow mixing or bypassing.
 
