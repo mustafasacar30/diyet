@@ -553,7 +553,7 @@ DAVRANIŞ KURALLARI (kesin uy):
 
     // Validate rule_type only if not clarifying
     if (!isClarification) {
-      const validTypes = ['frequency', 'affinity', 'consistency', 'fixed_meal', 'nutritional', 'rotation', 'or_group', 'update_meal_settings']
+      const validTypes = ['frequency', 'affinity', 'consistency', 'fixed_meal', 'nutritional', 'rotation', 'or_group', 'update_meal_settings', 'preference_score']
       if (!validTypes.includes(aiResponse.rule_type)) {
         return NextResponse.json(
           { success: false, error: `Geçersiz kural tipi: "${aiResponse.rule_type}"` },

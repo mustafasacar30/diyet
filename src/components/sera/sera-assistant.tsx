@@ -187,6 +187,7 @@ const RULE_TYPE_LABELS_FRIENDLY: Record<string, string> = {
   nutritional: 'Besin Dengesi',
   rotation: 'Çeşitlilik',
   or_group: 'Alternatifler',
+  preference_score: 'Yemek Tercihi',
 }
 
 // ─── Sera Bileşeni ───
