@@ -161,6 +161,7 @@ export function FoodAlternativeDialog({ isOpen, onClose, originalFood, onSelect,
     const [searchOpen, setSearchOpen] = useState(false)
     const [searchQuery, setSearchQuery] = useState("")
     const [expandedFoodId, setExpandedFoodId] = useState<string | null>(null)
+    const [expandedSearchFoodId, setExpandedSearchFoodId] = useState<string | null>(null)
 
     const isTargetMainDish = useMemo(() => {
         if (!originalFood) return false
@@ -902,37 +903,82 @@ export function FoodAlternativeDialog({ isOpen, onClose, originalFood, onSelect,
 
                         {/* Search bar — compact */}
                         <div className="px-3 py-1.5 border-b border-gray-100 shrink-0">
-                            <Popover open={searchOpen} onOpenChange={setSearchOpen}>
+                            <Popover open={searchOpen} onOpenChange={(o) => { setSearchOpen(o); if (!o) setExpandedSearchFoodId(null) }}>
                                 <PopoverTrigger asChild>
                                     <button className="w-full flex items-center gap-2 bg-gray-50 rounded-lg px-2.5 py-1.5 text-[11px] text-gray-400 hover:bg-emerald-50 hover:text-gray-600 transition-colors border border-gray-100">
                                         <Search size={13} className="shrink-0" />
                                         <span className="truncate">{searchQuery || "Yemek ara (örn: kıy pat)..."}</span>
                                     </button>
                                 </PopoverTrigger>
-                                <PopoverContent className="w-[min(450px,calc(100vw-2rem))] p-0" align="start">
-                                    <Command shouldFilter={false}>
-                                        <CommandInput placeholder="Yemek ara..." value={searchQuery} onValueChange={setSearchQuery} />
-                                        <CommandList>
-                                            <CommandEmpty>Yemek bulunamadı.</CommandEmpty>
-                                            <CommandGroup className="max-h-[300px] overflow-y-auto">
-                                                {allFoodsSortedBySimilarity
-                                                    .filter(food => {
-                                                        if (!searchQuery) return true
-                                                        const terms = searchQuery.toLocaleLowerCase('tr').split(/\s+/).filter(t => t.length > 0)
-                                                        const valLower = food.name.toLocaleLowerCase('tr')
-                                                        return terms.every(term => valLower.includes(term))
-                                                    })
-                                                    .map((food) => (
-                                                        <CommandItem key={food.id} value={food.name} onSelect={() => { onSelect(food); setSearchOpen(false); setSearchQuery("") }}>
-                                                            <div className="flex items-center justify-between w-full">
-                                                                <span className="font-medium text-gray-900 text-sm">{food.name}</span>
-                                                                <span className={cn("text-[11px] font-bold", food.similarity > 80 ? "text-emerald-600" : food.similarity > 50 ? "text-yellow-600" : "text-gray-400")}>%{Math.round(food.similarity)}</span>
+                                <PopoverContent className="w-[min(450px,calc(100vw-2rem))] p-0 overflow-hidden rounded-xl" align="start" sideOffset={4}>
+                                    {/* Search header */}
+                                    <div className="px-3 py-2 bg-teal-50/80 border-b border-teal-100">
+                                        <div className="flex items-center gap-2">
+                                            <Search size={14} className="text-teal-500 shrink-0" />
+                                            <input
+                                                className="flex-1 bg-transparent text-[13px] text-gray-800 placeholder:text-teal-400 outline-none"
+                                                placeholder="Yemek ara..."
+                                                value={searchQuery}
+                                                onChange={(e) => setSearchQuery(e.target.value)}
+                                                autoFocus
+                                            />
+                                            {searchQuery && (
+                                                <button onClick={() => setSearchQuery("")} className="text-gray-400 hover:text-gray-600">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                                                </button>
+                                            )}
+                                        </div>
+                                        <p className="text-[10px] text-teal-600/70 mt-0.5">Tüm yemeklerden makro benzerliğine göre arama</p>
+                                    </div>
+                                    {/* Search results — same style as main list */}
+                                    <div className="max-h-[320px] overflow-y-auto bg-white [&::-webkit-scrollbar]:hidden">
+                                        {(() => {
+                                            const filtered = allFoodsSortedBySimilarity.filter(food => {
+                                                if (!searchQuery) return true
+                                                const terms = searchQuery.toLocaleLowerCase('tr').split(/\s+/).filter(t => t.length > 0)
+                                                const valLower = food.name.toLocaleLowerCase('tr')
+                                                return terms.every(term => valLower.includes(term))
+                                            })
+                                            if (filtered.length === 0) return <div className="py-6 text-center text-gray-400 text-sm">Yemek bulunamadı.</div>
+                                            return filtered.slice(0, 30).map((food) => {
+                                                const isExp = expandedSearchFoodId === food.id
+                                                return (
+                                                    <div key={food.id} className={cn(
+                                                        "border-b transition-all mx-1.5 my-0.5 rounded-lg",
+                                                        isExp ? "bg-teal-50/60 border-teal-200 ring-1 ring-teal-200 shadow-sm" : "border-transparent hover:bg-gray-50/80"
+                                                    )}>
+                                                        <div
+                                                            className="flex items-center gap-2 px-2.5 py-2 cursor-pointer active:bg-teal-50/60 transition-colors rounded-lg"
+                                                            onClick={() => setExpandedSearchFoodId(isExp ? null : food.id)}
+                                                        >
+                                                            <span className={cn("flex-1 text-[13px] font-medium leading-tight line-clamp-1 min-w-0", isExp ? "text-teal-800" : "text-gray-800")}>{food.name}</span>
+                                                            <span className={cn(
+                                                                "text-[12px] font-bold shrink-0 tabular-nums",
+                                                                food.similarity > 80 ? "text-teal-600" : food.similarity > 50 ? "text-yellow-600" : "text-gray-400"
+                                                            )}>%{Math.round(food.similarity)}</span>
+                                                        </div>
+                                                        {isExp && (
+                                                            <div className="pl-3 pr-2.5 pb-2 flex items-center justify-between gap-2">
+                                                                <div className="flex items-center gap-2 text-[11px]">
+                                                                    <span className="font-semibold text-gray-600">{Math.round(food.calories)} kcal</span>
+                                                                    <span className="text-orange-500">K:{Math.round(food.carbs)}g</span>
+                                                                    <span className="text-blue-500">P:{Math.round(food.protein)}g</span>
+                                                                    <span className="text-yellow-500">Y:{Math.round(food.fat)}g</span>
+                                                                </div>
+                                                                <Button
+                                                                    size="sm"
+                                                                    onClick={(e) => { e.stopPropagation(); onSelect(food); setSearchOpen(false); setSearchQuery("") }}
+                                                                    className="h-7 text-[11px] px-3 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-semibold shadow-sm"
+                                                                >
+                                                                    Değiştir
+                                                                </Button>
                                                             </div>
-                                                        </CommandItem>
-                                                    ))}
-                                            </CommandGroup>
-                                        </CommandList>
-                                    </Command>
+                                                        )}
+                                                    </div>
+                                                )
+                                            })
+                                        })()}
+                                    </div>
                                 </PopoverContent>
                             </Popover>
                         </div>
