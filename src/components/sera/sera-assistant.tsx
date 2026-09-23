@@ -95,17 +95,15 @@ interface SeraAssistantProps {
 
 // ─── Hasta-Dostu Örnek Promptlar (gerçek kural örnekleri) ───
 const ALL_SERA_PROMPTS = [
-  // Yumurta / kahvaltı
-  'Yumurtalı tariflere daha çok yer ver',
+  // Kahvaltı tercihleri
   'Sabahları mutlaka yumurta olsun',
   'Omlet ve menemen sık olsun',
   'Kahvaltıda peynir çeşidi olsun',
-  'Kahvaltıda tost veya börek olmasın',
   'Sabahları ceviz ve badem ekle',
   'Kahvaltıda sucuk salam olmasın',
+  'Yumurtalı tariflere daha çok yer ver',
   // Ekmek / karbonhidrat tercihleri
   'Akşam öğünlerinde ekmek daha fazla olsun',
-  'Beyaz ekmek yerine tam buğday olsun',
   'Ekmek tamamen çıkarılsın',
   'Pilav yerine bulgur tercih ederim',
   'Makarna haftada en fazla 1 kez olsun',
@@ -115,6 +113,7 @@ const ALL_SERA_PROMPTS = [
   'Öğlen hafif salata ağırlıklı olsun',
   'Öğle yemeğinde tavuk tercih ederim',
   'Öğle yemeğinde kuru baklagil olsun',
+  'Haftasonu öğle yemeklerinde sucuk olabilir',
   // Akşam yemeği
   'Akşamları hafif yemek istiyorum',
   'Akşam yemeğinde karbonhidrat az olsun',
@@ -150,37 +149,26 @@ const ALL_SERA_PROMPTS = [
   'Havuç ve biber her gün olabilir',
   // Meyve tercihleri
   'Çilek ve böğürtlen olsun',
-  'Meyve suyu yerine taze meyve olsun',
-  'Kuru meyve azalt',
   'Elma her gün olabilir',
+  'Kuru meyve azalt',
+  'Portakal veya mandalina her gün olabilir',
   // Süt ürünleri
-  'Süt ürünlerini azalt',
   'Yoğurt her gün olsun',
   'Kaşar peynir yerine beyaz peynir olsun',
   'Kefir ekleyebilirsiniz',
   'Ayran her gün olsun',
-  // Yağlar ve kuruyemiş
-  'Zeytinyağı ağırlıklı olsun',
-  'Tereyağı kullanılmasın',
+  // Kuruyemiş
   'Ceviz ve badem her gün olsun',
   'Keten tohumu ve chia ekleyin',
-  // Pişirme yöntemleri
-  'Kızartma olmasın',
-  'Fırında veya haşlama yemekler olsun',
-  'Izgara tercih ederim',
-  'Yağda kızartılmış hiçbir şey istemiyorum',
-  // Sağlık ve alerji
-  'Laktoz intoleransım var',
-  'Gluten hassasiyetim var',
-  'Fıstık alerjim var',
-  'Şeker tamamen çıksın',
-  'Tuz az olsun',
-  // Genel tercihler
+  // Sıklık ve çeşitlilik
   'Çeşitlilik çok olsun tekrar az olsun',
-  'Pratik hazırlanabilir yemekler olsun',
   'Her gün salata olsun',
-  'Doyurucu ama düşük kalorili yemekler',
   'Hafta sonu farklı yemekler olsun',
+  'Haftada 3 gün balık olsun',
+  'Haftada en az 2 kez mercimek olsun',
+  'Salata her öğünde olsun',
+  'Peynir sabah ve akşam olsun',
+  'Zeytinyağlılar haftada 3 kez olsun',
 ]
 
 function getRandomSeraPrompts(count: number = 5): string[] {

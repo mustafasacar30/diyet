@@ -752,6 +752,7 @@ export function FoodAlternativeDialog({ isOpen, onClose, originalFood, onSelect,
         <Dialog open={isOpen} onOpenChange={(o) => !o && onClose()}>
             <DialogContent
                 className="sm:max-w-[850px] h-auto max-h-[85vh] flex flex-col p-0 gap-0 transition-transform duration-75 overflow-hidden rounded-xl"
+                showCloseButton={false}
                 aria-describedby={undefined}
                 style={{ transform: `translate(${position.x}px, ${position.y}px)` }}
             >
@@ -1038,9 +1039,9 @@ export function FoodAlternativeDialog({ isOpen, onClose, originalFood, onSelect,
                         <div className="mb-4 sticky top-0 bg-white/95 backdrop-blur-sm z-30 pt-4 pb-2 px-2 -mx-2 border-b shadow-sm">
                             <div className="mb-3 px-1 border-b pb-3">
                                 <div className="flex justify-between text-[10px] font-medium text-gray-500 mb-2 px-1">
-                                    <span className={activeMacroPreference < 0 ? "text-emerald-600 font-bold" : ""}>Protein Öncelikli</span>
-                                    <span className={activeMacroPreference === 0 ? "text-gray-700 font-bold" : ""}>Dengeli</span>
-                                    <span className={activeMacroPreference > 0 ? "text-teal-600 font-bold" : ""}>Yağ Öncelikli</span>
+                                    <span className={activeMacroPreference < 0 ? "text-emerald-600 font-bold" : ""}>Proteine Yakın</span>
+                                    <span className={activeMacroPreference === 0 ? "text-gray-700 font-bold" : ""}>Kalori Dengeli</span>
+                                    <span className={activeMacroPreference > 0 ? "text-teal-600 font-bold" : ""}>Yağa Yakın</span>
                                 </div>
                                 <Slider
                                     defaultValue={[activeMacroPreference]}

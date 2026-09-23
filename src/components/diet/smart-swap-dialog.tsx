@@ -29,7 +29,7 @@ export function SmartSwapDialog({
             <DialogContent className="sm:max-w-[500px]">
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2 text-xl">
-                        <div className="p-2 bg-indigo-100 rounded-full text-indigo-600">
+                        <div className="p-2 bg-emerald-100 rounded-full text-emerald-600">
                             <ArrowLeftRight size={20} />
                         </div>
                         Toplu Değişiklik?
@@ -38,7 +38,7 @@ export function SmartSwapDialog({
                         <div>
                             <div>
                                 Değiştirmek istediğiniz yemek (<strong>{oldFoodName}</strong>), bu hafta içinde
-                                <span className="font-bold text-indigo-600 mx-1">{matchCount} kez</span>
+                                <span className="font-bold text-emerald-600 mx-1">{matchCount} kez</span>
                                 (<strong>{slotName}</strong>) öğününde kullanılıyor.
                             </div>
                             <div className="text-gray-500 text-sm">
@@ -58,7 +58,7 @@ export function SmartSwapDialog({
                         Sadece Bunu Değiştir
                     </Button>
 
-                    <Button onClick={onConfirmAll} className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm shadow-indigo-200">
+                    <Button onClick={onConfirmAll} className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm shadow-emerald-200">
                         <Check size={16} className="mr-2" />
                         Hepsini Değiştir ({matchCount})
                     </Button>
