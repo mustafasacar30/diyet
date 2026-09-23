@@ -75,6 +75,12 @@ function getRuleSummaryForPrompt(rule: PlanningRule): string {
     return `VEYA grubu (${optCount} seçenek, haftalık nöbet)`
   }
 
+  if (type === 'preference_score') {
+    const keyword = def.keyword || '?'
+    const score = def.score ?? '?'
+    return `"${keyword}" → skor:${score}`
+  }
+
   return JSON.stringify(def).slice(0, 100)
 }
 
@@ -92,7 +98,7 @@ ${context.dietType ? 'DİKKAT: Bu hastanın beslenme programı / diyet türü: *
 
   sections.push(`Görevin:
 1. Kullanıcının isteğini analiz et
-2. Doğru kural tipini seç (frequency, affinity, consistency, fixed_meal, nutritional, rotation, or_group, update_meal_settings)
+2. Doğru kural tipini seç (frequency, affinity, consistency, fixed_meal, nutritional, rotation, or_group, update_meal_settings, preference_score)
 3. Motorun anlayacağı geçerli bir definition JSON'ı üret
 4. Türkçe açıklama yaz
 5. Olası sorunları veya alternatifleri öner
@@ -125,7 +131,20 @@ Kullanıcı bir malzeme/besin adı verirse (peynir, tahin, sucuk, ceviz, kaşar,
 2. Yoksa tarifinde/içeriğinde [malzeme] kullanılan yemekleri de mi kastediyorsunuz (örn: 'Beşamel Soslu Karnabahar' — isminde peynir yok ama içeriğinde var)?
 3. Ya da bu malzemenin akrabalarını (peynir için: kaşar, lor, feta, parmesan gibi) da mı dahil edelim?"
 
-Kullanıcı yanıtına göre target tipi seç:
+ÖNEMLİ — TERCİH İFADELERİNDE preference_score KULLAN:
+Eğer kullanıcı GENEL BİR TERCİH belirtiyorsa (seviyorum/sevmiyorum/istemiyorum/çok istiyorum/az olsun/sık olsun) VE belirli bir SIKLIK vermiyorsa (haftada 3 kez, her gün gibi), KURAL OLUŞTURMA! Bunun yerine "preference_score" tipini kullan. Bu, food_score_overrides'a yazar ve kural enflasyonu yaratmaz.
+
+Örneğin:
+- "Mantarı çok seviyorum" → preference_score (keyword: "mantar", score: 7)
+- "Bezelyeyi pek sevmem" → preference_score (keyword: "bezelye", score: 2)
+- "Enginar hiç olmasın" → preference_score (keyword: "enginar", score: 0)
+- "Tavuk yemeklerini istiyorum" → preference_score (keyword: "tavuk", score: 7)
+
+AMA belirli sıklık istenirse:
+- "Haftada 3 gün balık olsun" → frequency kuralı (min_count: 3)
+- "Sucuk sadece hafta sonu olsun" → frequency kuralı (scope_days)
+
+Kullanıcı yanıtına göre target tipi seç (frequency/affinity için):
 - Sadece isim → target.type = "name_contains"
 - İsim + içerik → target.type = "name_or_tag"
 - İsim + içerik + aile → target.type = "name_or_tag" ile birlikte target.synonyms dizisi (Örn: ["kaşar","lor","feta","parmesan","labne","hellim"])
@@ -250,7 +269,50 @@ definition.data şeması:
           "max_items": number
         }
       ]
-    }`)
+    }
+
+### 9. preference_score (Yemek Tercih Skoru)
+Hastanın yemek tercihlerini DOĞRUDAN öncelik skoru olarak ayarlar. Kural oluşturmak yerine food_score_overrides'a yazar.
+Bu tip, hastanın "mantarı çok seviyorum", "bezelyeyi pek sevmem", "tavuk yemeklerini istiyorum" gibi genel tercihlerinde kullanılır.
+Frequency kurallarına göre AVANTAJLARI: kural enflasyonu olmaz, gradyan kontrol (0-10 arası), engine3 zaten bu skora göre sıralama ve haftalık limit uygular.
+
+KULLANIM PROTOKOLÜ:
+- Hasta bir yemek/malzeme hakkında GENEL TERCİH belirtirse (seviyorum/sevmiyorum/istemiyorum/çok istiyorum), BU TİPİ KULLAN.
+- Hasta SIKLIK belirtirse (haftada 3 kez, her gün, sadece hafta sonu), frequency kuralı kullan.
+- "Hiç istemiyorum" / "verme" → score: 0 (hard exclusion)
+- "Pek sevmem" / "az olsun" → score: 2
+- "Normal" → score: 5
+- "Çok seviyorum" / "sık olsun" → score: 7-8
+- "Mümkün olduğunca çok" → score: 9-10
+
+definition.data şeması:
+{
+  "keyword": "string" — aranacak kelime (yemek adında veya etiketinde),
+  "score": 0-10 — atanacak öncelik skoru,
+  "match_mode": "name" | "name_or_tag" — eşleşme modu (varsayılan "name")
+}
+
+Örnek: "Mantarlı yemekleri çok seviyorum" →
+{
+  "name": "Mantarlı yemek tercihi",
+  "description": "Mantarlı yemeklerin sıklığını artırır.",
+  "rule_type": "preference_score",
+  "priority": 50,
+  "definition": { "keyword": "mantar", "score": 7, "match_mode": "name" },
+  "explanation": "Adında mantar geçen yemeklerin önceliğini artırdım. Bu sayede haftalık planınızda daha sık karşılaşacaksınız.",
+  "suggestions": []
+}
+
+Örnek: "Bezelyeyi pek sevmem" →
+{
+  "name": "Bezelye tercihi (az)",
+  "description": "Bezelyeli yemeklerin sıklığını azaltır.",
+  "rule_type": "preference_score",
+  "priority": 50,
+  "definition": { "keyword": "bezelye", "score": 2, "match_mode": "name" },
+  "explanation": "Bezelyeli yemeklerin önceliğini düşürdüm. Haftada en fazla 1 kez karşılaşabilirsiniz.",
+  "suggestions": []
+}`)
 
   // ════ YEMEK VERİTABANI (DİNAMİK) ════
   if (context.foodSummary) {

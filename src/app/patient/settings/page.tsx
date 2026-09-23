@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { MultiSelectCreatable, Option } from "@/components/ui/multi-select-creatable"
-import { Loader2, Save, User, Activity, AlertCircle, Info, Leaf } from "lucide-react"
+import { Loader2, Save, User, Activity, AlertCircle, Info, Leaf, Star, ChevronRight } from "lucide-react"
 
 export default function PatientSettingsPage() {
     const { user, profile } = useAuth()
@@ -500,7 +500,24 @@ export default function PatientSettingsPage() {
                         )}
                     </div>
 
-                    {/* PREFERENCES */}
+                    {/* PREFERENCES — Link to new preferences page */}
+                    <div className="pt-4 border-t">
+                        <a
+                            href="/patient/preferences"
+                            className="flex items-center gap-3 p-4 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 hover:border-amber-300 transition-colors group"
+                        >
+                            <div className="h-10 w-10 bg-amber-100 rounded-xl flex items-center justify-center shrink-0 group-hover:bg-amber-200 transition-colors">
+                                <Star className="h-5 w-5 text-amber-600" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <span className="text-sm font-bold text-amber-900 block">Yemek Tercihlerim</span>
+                                <span className="text-[11px] text-amber-700">Yemeklere skor atayarak planınızı kişiselleştirin</span>
+                            </div>
+                            <ChevronRight className="h-4 w-4 text-amber-400 group-hover:text-amber-600 transition-colors" />
+                        </a>
+                    </div>
+
+                    {/* Legacy text preferences */}
                     <div className="space-y-4 pt-4 border-t">
                         <div className="space-y-1">
                             <Label>Sevilen Yemekler (Virgülle ayırın)</Label>

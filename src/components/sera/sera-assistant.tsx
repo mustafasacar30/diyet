@@ -512,6 +512,7 @@ export function SeraAssistant({
     ].filter(Boolean)))
 
     const mealUpdateSlots: any[] = []
+    const preferenceScoreUpdates: Array<{ keyword: string; score: number; match_mode?: string }> = []
 
     // Ana Kural
     const finalDefinition = { ...rule.definition }
@@ -519,7 +520,10 @@ export function SeraAssistant({
       finalDefinition.target.exceptions = selectedExceptions
     }
 
-    if (rule.rule_type === 'update_meal_settings') {
+    if (rule.rule_type === 'preference_score') {
+      const def = finalDefinition.data || finalDefinition
+      preferenceScoreUpdates.push({ keyword: def.keyword, score: def.score, match_mode: def.match_mode })
+    } else if (rule.rule_type === 'update_meal_settings') {
       const slots = finalDefinition.data?.slots || finalDefinition.slots;
       if (slots) mealUpdateSlots.push(...slots)
     } else {
@@ -541,7 +545,10 @@ export function SeraAssistant({
     // Ek Kurallar
     if (aiResult.additional_rules && aiResult.additional_rules.length > 0) {
       for (const ar of aiResult.additional_rules) {
-        if (ar.rule_type === 'update_meal_settings') {
+        if (ar.rule_type === 'preference_score') {
+          const arDef = ar.definition?.data || ar.definition
+          preferenceScoreUpdates.push({ keyword: arDef.keyword, score: arDef.score, match_mode: arDef.match_mode })
+        } else if (ar.rule_type === 'update_meal_settings') {
           const arSlots = ar.definition?.data?.slots || ar.definition?.slots;
           if (arSlots) mealUpdateSlots.push(...arSlots)
         } else {
@@ -568,6 +575,26 @@ export function SeraAssistant({
       if (rulesToInsert.length > 0) {
         const { error } = await supabase.from('planning_rules').insert(rulesToInsert)
         if (error) throw error
+      }
+
+      // Preference score updates (food_score_overrides)
+      if (preferenceScoreUpdates.length > 0) {
+        for (const psu of preferenceScoreUpdates) {
+          const scoreRes = await fetch('/api/food-score', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              keyword: psu.keyword,
+              score: psu.score,
+              scope: effectiveScope,
+              patient_id: patientId || null,
+              program_template_id: programTemplateId || null,
+              team_owner_id: teamOwnerId || null,
+            })
+          })
+          const scoreData = await scoreRes.json()
+          if (!scoreData.success) console.warn('Preference score update warning:', scoreData.error)
+        }
       }
 
       if (mealUpdateSlots.length > 0 && patientId) {

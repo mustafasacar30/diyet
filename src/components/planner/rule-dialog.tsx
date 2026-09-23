@@ -27,7 +27,7 @@ import { usePlannerMetadata } from "@/hooks/use-planner-metadata"
 const ruleSchema = z.object({
     name: z.string().min(2, "Kural adı en az 2 karakter olmalıdır"),
     description: z.string().optional(),
-    rule_type: z.enum(['frequency', 'affinity', 'consistency', 'preference', 'nutritional', 'fixed_meal', 'week_override', 'rotation', 'or_group']),
+    rule_type: z.enum(['frequency', 'affinity', 'consistency', 'preference', 'nutritional', 'fixed_meal', 'week_override', 'rotation', 'or_group', 'preference_score']),
     priority: z.coerce.number().min(1).max(100),
     is_active: z.boolean().default(true),
 })
