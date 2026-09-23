@@ -31,24 +31,23 @@ export async function POST(request: Request) {
         const { data: foods } = await supabase
             .from('foods')
             .select('id, name, tags')
-            .or(`name.ilike.%${searchTerm}%`)
+            .ilike('name', `%${searchTerm}%`)
             .limit(200)
 
-        if (!foods || foods.length === 0) {
-            return NextResponse.json({
-                success: true,
-                updated_count: 0,
-                message: `"${keyword}" ile eşleşen yemek bulunamadı.`,
-                matched_foods: [],
-            })
-        }
+        // Also search by tags (separate query since tags is a json array)
+        const { data: tagFoods } = await supabase
+            .from('foods')
+            .select('id, name, tags')
+            .contains('tags', [searchTerm])
+            .limit(100)
 
-        // Also check tags match
-        const matchedFoods = foods.filter(f => {
-            const nameMatch = f.name.toLowerCase().includes(searchTerm)
-            const tagMatch = (f.tags || []).some((t: string) => t.toLowerCase().includes(searchTerm))
-            return nameMatch || tagMatch
-        })
+        // Merge results, deduplicate by id
+        const allFoods = new Map<string, any>()
+        for (const f of (foods || [])) allFoods.set(f.id, f)
+        for (const f of (tagFoods || [])) allFoods.set(f.id, f)
+        const matchedFoods = Array.from(allFoods.values())
+
+        console.log(`[food-score] keyword="${searchTerm}" → name matches: ${foods?.length || 0}, tag matches: ${tagFoods?.length || 0}, total unique: ${matchedFoods.length}`)
 
         if (matchedFoods.length === 0) {
             return NextResponse.json({

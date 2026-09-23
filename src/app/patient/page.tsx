@@ -688,7 +688,7 @@ export default function PatientDashboardPage() {
                                 Sera ile Konuş
                             </div>
                         </Link>
-                        <Link href="/patient/settings#sera" className="shrink-0">
+                        <Link href="/patient/preferences" className="shrink-0">
                             <div className="bg-white text-emerald-600 text-[10px] font-semibold py-1.5 px-2.5 rounded-lg border border-emerald-200 hover:bg-emerald-50 transition-all">
                                 Tercihlerimi Ayarla
                             </div>
@@ -696,6 +696,22 @@ export default function PatientDashboardPage() {
                     </div>
                 </div>
             </div>
+
+            {/* Yemek Tercihlerim Kartı */}
+            <Link href="/patient/preferences" className="block">
+                <div className="rounded-xl bg-amber-50 border border-amber-200 shadow-sm p-3 flex items-center gap-3 hover:bg-amber-100/60 transition-colors">
+                    <div className="h-8 w-8 bg-amber-500 rounded-lg flex items-center justify-center shrink-0">
+                        <span className="text-sm">⭐</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                        <h3 className="text-[12px] font-bold text-gray-900">Yemek Tercihlerim</h3>
+                        <p className="text-[10px] text-gray-500 leading-snug">
+                            Hangi yemekleri daha çok veya az istediğini belirle
+                        </p>
+                    </div>
+                    <ArrowRight className="h-4 w-4 text-amber-400 shrink-0" />
+                </div>
+            </Link>
         </div>
     )
 }

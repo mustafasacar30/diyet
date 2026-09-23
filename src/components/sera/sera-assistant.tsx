@@ -26,7 +26,10 @@ import {
   PlusCircle,
   Activity,
   Lock,
+  Star,
+  ExternalLink,
 } from 'lucide-react'
+import Link from 'next/link'
 
 // ─── Interfaces ───
 interface ConflictInfo {
@@ -215,6 +218,8 @@ export function SeraAssistant({
   const [ruleDialogOpen, setRuleDialogOpen] = useState(false)
   const [prefillData, setPrefillData] = useState<PlanningRule | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
+  const [showPreferenceBanner, setShowPreferenceBanner] = useState(false)
+  const [showRuleBanner, setShowRuleBanner] = useState(false)
 
   // Faz 3 & 5 States
   const [patientRules, setPatientRules] = useState<any[]>([])
@@ -401,6 +406,8 @@ export function SeraAssistant({
         setAiResult(null)
     }
     setSuccessMessage(null)
+    setShowPreferenceBanner(false)
+    setShowRuleBanner(false)
 
     try {
       const response = await fetch('/api/ai/generate-rule', {
@@ -652,12 +659,19 @@ export function SeraAssistant({
       setPrompt('')
       setAffectedFoods([])
       setSelectedExceptions([])
-      
+
       if (requireApproval) {
         setSuccessMessage('Tercihiniz kaydedildi ve diyetisyeninizin onayına sunuldu 🌿')
       } else {
         setSuccessMessage('Tercihiniz kaydedildi ve hemen uygulandı 🌿')
       }
+
+      if (preferenceScoreUpdates.length > 0) {
+        setShowPreferenceBanner(true)
+      } else {
+        setShowRuleBanner(true)
+      }
+
       fetchPatientRules()
       onRuleCreated()
     } catch (err: any) {
@@ -672,7 +686,23 @@ export function SeraAssistant({
     
     try {
       const slotsToUpdate = addRule.definition?.data?.slots || addRule.definition?.slots;
-      if (addRule.rule_type === 'update_meal_settings' && slotsToUpdate && patientId) {
+      if (addRule.rule_type === 'preference_score') {
+        const def = addRule.definition?.data || addRule.definition
+        const scoreRes = await fetch('/api/food-score', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            keyword: def.keyword,
+            score: def.score,
+            scope: effectiveScope,
+            patient_id: patientId || null,
+            program_template_id: programTemplateId || null,
+            team_owner_id: teamOwnerId || null,
+          })
+        })
+        const scoreData = await scoreRes.json()
+        if (!scoreData.success) throw new Error(scoreData.error || "Tercih skoru güncellenemedi.")
+      } else if (addRule.rule_type === 'update_meal_settings' && slotsToUpdate && patientId) {
          const mealRes = await fetch('/api/ai/update-meals', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -743,14 +773,18 @@ export function SeraAssistant({
 
       fetchPatientRules()
       onRuleCreated()
-      
+
+      if (addRule.rule_type === 'preference_score') {
+        setShowPreferenceBanner(true)
+      } else {
+        setShowRuleBanner(true)
+      }
+
       setAiResult(prev => {
         if (!prev) return prev
         const newAdditional = [...(prev.additional_rules || [])]
         newAdditional.splice(index, 1)
-        
-        // If everything is saved, we can optionally clear the whole result
-        // But for now just remove the saved rule from the list
+
         if (!prev.rule && newAdditional.length === 0) {
            setPrompt('')
            return null
@@ -804,9 +838,34 @@ export function SeraAssistant({
 
             {/* Başarı Mesajı */}
             {successMessage && (
-              <div className="flex items-start gap-2 p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
-                <CheckCircle2 className="h-4 w-4 text-emerald-600 mt-0.5 shrink-0" />
-                <p className="text-sm text-emerald-700">{successMessage}</p>
+              <div className="space-y-2">
+                <div className="flex items-start gap-2 p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-600 mt-0.5 shrink-0" />
+                  <p className="text-sm text-emerald-700">{successMessage}</p>
+                </div>
+
+                {showPreferenceBanner && (
+                  <Link href="/patient/preferences">
+                    <div className="flex items-start gap-2.5 p-3 bg-amber-50 border border-amber-200 rounded-lg cursor-pointer hover:bg-amber-100/70 transition-colors group">
+                      <Star className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
+                      <div className="flex-1">
+                        <p className="text-sm text-amber-800">Yemek tercihlerinizi inceleyebilir ve dilediğinizde değiştirebilirsiniz.</p>
+                        <span className="text-xs text-amber-600 font-medium flex items-center gap-1 mt-1 group-hover:underline">
+                          Yemek Tercihlerim <ExternalLink className="h-3 w-3" />
+                        </span>
+                      </div>
+                    </div>
+                  </Link>
+                )}
+
+                {showRuleBanner && (
+                  <div className="flex items-start gap-2.5 p-3 bg-amber-50/70 border border-amber-100 rounded-lg">
+                    <Info className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
+                    <div className="flex-1">
+                      <p className="text-[13px] text-amber-700">Aşağıdaki <strong>Beslenme Tercihlerim</strong> bölümünden size özel program kurallarınızı inceleyebilirsiniz.</p>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -934,15 +993,15 @@ export function SeraAssistant({
                           Onayınıza Sunulan Tercihler:
                         </p>
                         {[aiResult.rule, ...(aiResult.additional_rules || [])].map((ruleObj, idx) => (
-                           <div key={idx} className="bg-emerald-50/50 p-2.5 rounded-lg border border-emerald-100 flex items-center justify-between gap-3 shadow-sm">
-                             <div>
-                               <p className="text-sm font-medium text-gray-800">{ruleObj.name}</p>
-                               <p className="text-[11px] text-gray-500 line-clamp-1">{ruleObj.description}</p>
+                           <div key={idx} className="bg-emerald-50/50 px-3 py-2 rounded-lg border border-emerald-100 shadow-sm">
+                             <div className="flex items-center justify-between gap-2 mb-0.5">
+                               <p className="text-[13px] font-medium text-gray-800 leading-snug">{ruleObj.name}</p>
+                               <span className="flex items-center gap-0.5 text-[9px] font-semibold text-emerald-600 bg-emerald-100/60 px-1.5 py-0.5 rounded shrink-0">
+                                 <CheckCircle2 className="h-2.5 w-2.5" />
+                                 Dahil
+                               </span>
                              </div>
-                             <div className="flex items-center gap-1 text-[10px] font-medium text-emerald-600 shrink-0 bg-emerald-100/50 px-2 py-1 rounded-md">
-                               <CheckCircle2 className="h-3 w-3" />
-                               Pakete Dahil
-                             </div>
+                             <p className="text-[11px] text-gray-500 leading-relaxed">{ruleObj.description}</p>
                            </div>
                         ))}
                       </div>

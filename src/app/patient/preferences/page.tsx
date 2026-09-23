@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react"
 import { useAuth } from "@/contexts/auth-context"
 import { supabase } from "@/lib/supabase"
-import { Star, Search, Loader2, Trash2, ChevronDown, ChevronUp, Info, Minus, Plus } from "lucide-react"
+import { Star, Search, Loader2, Trash2, ChevronDown, ChevronUp, Info, Minus, Plus, RotateCcw, Undo2, Filter, X, CheckSquare, Square } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
@@ -68,7 +68,60 @@ export default function PreferencesPage() {
     const [hasChanges, setHasChanges] = useState(false)
     const [showGuide, setShowGuide] = useState(false)
     const [sortMode, setSortMode] = useState<'score-desc' | 'score-asc' | 'name'>('score-desc')
+    const [lastSavedDate, setLastSavedDate] = useState<string | null>(null)
+    const [backupOverrides, setBackupOverrides] = useState<FoodOverride[] | null>(null)
+    const [resetting, setResetting] = useState(false)
+    const [showResetConfirm, setShowResetConfirm] = useState(false)
+    const [filterQuery, setFilterQuery] = useState("")
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+    const [bulkMode, setBulkMode] = useState(false)
+    const [bulkScore, setBulkScore] = useState("")
     const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+    // Typewriter effect for placeholders
+    const [searchPlaceholder, setSearchPlaceholder] = useState("Tüm yemeklerde arama yapın")
+    const [filterPlaceholder, setFilterPlaceholder] = useState("Listeyi filtreleyin...")
+    const typeDone = useRef(false)
+
+    useEffect(() => {
+        try { if (sessionStorage.getItem('pref-typed')) { typeDone.current = true; return } } catch { return }
+        if (typeDone.current) return
+
+        const text1 = "Tüm yemeklerde arama yapın"
+        const text2 = "Listeyi filtreleyin..."
+        let i = 0
+        let cancelled = false
+        setSearchPlaceholder("│")
+        setFilterPlaceholder("")
+
+        const timer1 = setInterval(() => {
+            if (cancelled) return
+            i++
+            setSearchPlaceholder(text1.slice(0, i) + "│")
+            if (i >= text1.length) {
+                clearInterval(timer1)
+                setSearchPlaceholder(text1)
+                setTimeout(() => {
+                    if (cancelled) return
+                    let j = 0
+                    setFilterPlaceholder("│")
+                    const timer2 = setInterval(() => {
+                        if (cancelled) return
+                        j++
+                        setFilterPlaceholder(text2.slice(0, j) + "│")
+                        if (j >= text2.length) {
+                            clearInterval(timer2)
+                            setFilterPlaceholder(text2)
+                            typeDone.current = true
+                            try { sessionStorage.setItem('pref-typed', '1') } catch {}
+                        }
+                    }, 40)
+                }, 500)
+            }
+        }, 40)
+
+        return () => { cancelled = true; clearInterval(timer1) }
+    }, [])
 
     // Resolve patient ID
     useEffect(() => {
@@ -112,12 +165,13 @@ export default function PreferencesPage() {
             // Fetch patient settings
             const { data: patientSettings } = await supabase
                 .from('planner_settings')
-                .select('id, food_score_overrides')
+                .select('id, food_score_overrides, updated_at')
                 .eq('scope', 'patient')
                 .eq('patient_id', patientId)
                 .maybeSingle()
 
             if (patientSettings?.id) setSettingsId(patientSettings.id)
+            if (patientSettings?.updated_at) setLastSavedDate(patientSettings.updated_at)
 
             // Fetch program settings if applicable
             let programSettings: any = null
@@ -278,6 +332,8 @@ export default function PreferencesPage() {
                 }
             }
             setHasChanges(false)
+            setLastSavedDate(new Date().toISOString())
+            setBackupOverrides(null)
         } catch (err) {
             console.error("Error saving overrides:", err)
         } finally {
@@ -285,12 +341,96 @@ export default function PreferencesPage() {
         }
     }
 
-    // Sort overrides
-    const sortedOverrides = [...overrides].sort((a, b) => {
+    const handleReset = async () => {
+        if (!patientId || !settingsId) return
+        setResetting(true)
+        setBackupOverrides([...overrides])
+
+        try {
+            await supabase
+                .from('planner_settings')
+                .update({ food_score_overrides: {} })
+                .eq('id', settingsId)
+            setShowResetConfirm(false)
+            await loadOverrides()
+            setHasChanges(false)
+        } catch (err) {
+            console.error("Error resetting overrides:", err)
+        } finally {
+            setResetting(false)
+        }
+    }
+
+    const handleRestore = async () => {
+        if (!backupOverrides || !patientId) return
+        setSaving(true)
+
+        const patientOverrides: Record<string, number> = {}
+        for (const o of backupOverrides) {
+            if (o.isOwn) patientOverrides[o.foodId] = o.score
+        }
+
+        try {
+            if (settingsId) {
+                await supabase
+                    .from('planner_settings')
+                    .update({ food_score_overrides: patientOverrides })
+                    .eq('id', settingsId)
+            }
+            setOverrides(backupOverrides)
+            setBackupOverrides(null)
+            setHasChanges(false)
+        } catch (err) {
+            console.error("Error restoring overrides:", err)
+        } finally {
+            setSaving(false)
+        }
+    }
+
+    // Filter + Sort overrides
+    const filteredOverrides = filterQuery.length >= 2
+        ? overrides.filter(o => o.name.toLowerCase().includes(filterQuery.toLowerCase()))
+        : overrides
+    const sortedOverrides = [...filteredOverrides].sort((a, b) => {
         if (sortMode === 'score-desc') return b.score - a.score
         if (sortMode === 'score-asc') return a.score - b.score
         return a.name.localeCompare(b.name, 'tr')
     })
+
+    const handleSelectAll = () => {
+        const ids = new Set(sortedOverrides.filter(o => o.isOwn).map(o => o.foodId))
+        setSelectedIds(ids)
+    }
+
+    const handleDeselectAll = () => setSelectedIds(new Set())
+
+    const handleBulkRemove = () => {
+        setOverrides(prev => prev.filter(o => !selectedIds.has(o.foodId) || !o.isOwn))
+        setHasChanges(true)
+        setSelectedIds(new Set())
+        setBulkMode(false)
+    }
+
+    const toggleSelect = (foodId: string) => {
+        setSelectedIds(prev => {
+            const next = new Set(prev)
+            if (next.has(foodId)) next.delete(foodId)
+            else next.add(foodId)
+            return next
+        })
+    }
+
+    const handleBulkSetScore = () => {
+        const score = parseInt(bulkScore)
+        if (isNaN(score) || score < 0 || score > 10 || selectedIds.size === 0) return
+        setOverrides(prev => prev.map(o =>
+            selectedIds.has(o.foodId) ? { ...o, score, isOwn: true, source: 'patient' as const } : o
+        ))
+        setHasChanges(true)
+        setBulkScore("")
+        setSelectedIds(new Set())
+        setBulkMode(false)
+    }
 
     if (loading) {
         return (
@@ -301,43 +441,27 @@ export default function PreferencesPage() {
     }
 
     return (
-        <div className="max-w-4xl mx-auto p-2 pb-24 sm:p-4 space-y-3">
-            {/* Hero Header */}
-            <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-amber-500 via-orange-500 to-amber-600 px-4 py-4 text-white shadow-lg">
-                <div className="absolute -right-8 -top-8 h-28 w-28 rounded-full bg-white/10 blur-2xl" />
-                <div className="relative z-10 flex items-center gap-3">
-                    <div className="h-10 w-10 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm border border-white/10 shrink-0">
-                        <Star className="h-5 w-5 text-white" />
-                    </div>
-                    <div className="min-w-0">
-                        <h1 className="text-base font-bold tracking-tight">Yemek Tercihlerim</h1>
-                        <p className="text-[11px] text-amber-100/90 mt-0.5 leading-snug">
-                            Yemeklerin öncelik skorlarını ayarlayarak diyet planınızı kişiselleştirin.
-                        </p>
-                    </div>
-                </div>
+        <div className="max-w-4xl mx-auto p-2 pb-24 sm:p-4 space-y-2">
+            {/* Page Title */}
+            <div className="flex items-center justify-between px-1 pt-1">
+                <h1 className="text-[15px] font-bold text-gray-800 flex items-center gap-1.5">
+                    <Star className="h-4 w-4 text-amber-500" />
+                    Yemek Tercihlerim
+                </h1>
+                <button
+                    onClick={() => setShowGuide(v => !v)}
+                    className="flex items-center gap-1 text-[10px] text-amber-600 hover:text-amber-800 font-medium"
+                >
+                    <Info className="h-3 w-3" />
+                    {showGuide ? "Gizle" : "Skor rehberi"}
+                </button>
             </div>
-
-            {/* Guide Toggle */}
-            <button
-                onClick={() => setShowGuide(v => !v)}
-                className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-[12px]"
-            >
-                <span className="flex items-center gap-1.5">
-                    <Info className="h-3.5 w-3.5" />
-                    Skor ne anlama gelir?
-                </span>
-                {showGuide ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-            </button>
             {showGuide && (
-                <div className="px-3 py-2.5 rounded-xl bg-amber-50/50 border border-amber-100 space-y-1.5 text-[11px] text-amber-900">
-                    <div className="flex items-center gap-2"><span className="font-bold text-red-600 w-6">0</span> Hiç verilmez (tamamen dışlanır)</div>
-                    <div className="flex items-center gap-2"><span className="font-bold text-orange-600 w-6">1-3</span> Az tercih — haftada en fazla 1 kez</div>
-                    <div className="flex items-center gap-2"><span className="font-bold text-yellow-600 w-6">4-6</span> Normal — haftada en fazla 2 kez</div>
-                    <div className="flex items-center gap-2"><span className="font-bold text-emerald-600 w-6">7-10</span> Çok tercih — haftada 3 keze kadar</div>
-                    <p className="text-[10px] text-amber-700 mt-1 italic">
-                        Varsayılan skor 5'tir. Diyetisyeniniz veya programınız tarafından ayarlanmış skorlar miras olarak görünür.
-                    </p>
+                <div className="px-2.5 py-2 rounded-lg bg-amber-50/50 border border-amber-100 space-y-1 text-[10px] text-amber-900">
+                    <div className="flex items-center gap-2"><span className="font-bold text-red-600 w-5">0</span> Hiç verilmez</div>
+                    <div className="flex items-center gap-2"><span className="font-bold text-orange-600 w-5">1-3</span> Az — haftada 1x</div>
+                    <div className="flex items-center gap-2"><span className="font-bold text-yellow-600 w-5">4-6</span> Normal — haftada 2x</div>
+                    <div className="flex items-center gap-2"><span className="font-bold text-emerald-600 w-5">7-10</span> Çok — haftada 3x</div>
                 </div>
             )}
 
@@ -349,8 +473,8 @@ export default function PreferencesPage() {
                         type="text"
                         value={searchQuery}
                         onChange={e => handleSearch(e.target.value)}
-                        placeholder="Yemek ara ve skor ata..."
-                        className="flex-1 text-[13px] outline-none bg-transparent placeholder:text-gray-400"
+                        placeholder={searchPlaceholder}
+                        className="flex-1 text-[12px] outline-none bg-transparent placeholder:text-amber-600 placeholder:font-medium"
                     />
                     {searching && <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-400" />}
                 </div>
@@ -380,119 +504,250 @@ export default function PreferencesPage() {
                 )}
             </div>
 
-            {/* Sort Toggle */}
+            {/* Reset & Restore Section */}
+            {backupOverrides && (
+                <div className="flex items-start gap-2.5 p-3 bg-blue-50 border border-blue-200 rounded-xl">
+                    <Undo2 className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
+                    <div className="flex-1">
+                        <p className="text-[13px] text-blue-800">Tercihleriniz sıfırlandı. Önceki ayarlarınıza geri dönmek ister misiniz?</p>
+                        <button
+                            onClick={handleRestore}
+                            disabled={saving}
+                            className="mt-1.5 text-[12px] font-semibold text-blue-700 hover:text-blue-900 underline underline-offset-2"
+                        >
+                            {saving ? "Geri yükleniyor..." : "Önceki Tercihlerimi Geri Yükle"}
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* Filter + Sort + Bulk */}
             {overrides.length > 0 && (
-                <div className="flex items-center justify-between px-1">
-                    <span className="text-[11px] text-gray-500">{overrides.length} yemek</span>
-                    <button
-                        onClick={() => setSortMode(m =>
-                            m === 'score-desc' ? 'score-asc' : m === 'score-asc' ? 'name' : 'score-desc'
+                <div className="space-y-1.5">
+                    {/* Filter Bar */}
+                    <div className="flex items-center gap-1.5">
+                        <div className="flex-1 flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-gray-50 border border-gray-200 focus-within:ring-1 focus-within:ring-emerald-300">
+                            <Filter className="h-3 w-3 text-gray-400 shrink-0" />
+                            <input
+                                type="text"
+                                value={filterQuery}
+                                onChange={e => { setFilterQuery(e.target.value); setSelectedIds(new Set()) }}
+                                placeholder={filterPlaceholder}
+                                className="flex-1 text-[12px] outline-none bg-transparent placeholder:text-emerald-600 placeholder:font-medium"
+                            />
+                            {filterQuery && (
+                                <button onClick={() => { setFilterQuery(""); setSelectedIds(new Set()) }}>
+                                    <X className="h-3 w-3 text-gray-400 hover:text-gray-600" />
+                                </button>
+                            )}
+                        </div>
+                        <button
+                            onClick={() => { setBulkMode(!bulkMode); setSelectedIds(new Set()); setBulkScore("") }}
+                            className={cn(
+                                "text-[10px] px-2.5 py-1.5 rounded-lg border font-semibold transition-colors",
+                                bulkMode
+                                    ? "bg-amber-500 border-amber-500 text-white shadow-sm"
+                                    : "bg-gradient-to-r from-amber-400 to-orange-400 border-amber-300 text-white shadow-sm hover:from-amber-500 hover:to-orange-500"
+                            )}
+                        >
+                            {bulkMode ? "Bitti" : "Seç"}
+                        </button>
+                    </div>
+
+                    {/* Count + Sort + Bulk Actions */}
+                    <div className="flex items-center justify-between px-0.5">
+                        <span className="text-[10px] text-gray-400">
+                            {filterQuery ? `${sortedOverrides.length}/${overrides.length}` : overrides.length} yemek
+                        </span>
+                        <div className="flex items-center gap-2">
+                            {bulkMode && sortedOverrides.some(o => o.isOwn) && (
+                                <>
+                                    <button onClick={selectedIds.size > 0 ? handleDeselectAll : handleSelectAll} className="text-[10px] text-amber-600 hover:text-amber-800 font-medium">
+                                        {selectedIds.size > 0 ? "Seçimi Kaldır" : "Tümünü Seç"}
+                                    </button>
+                                    {selectedIds.size > 0 && (
+                                        <>
+                                            <span className="text-[10px] text-gray-300">|</span>
+                                            <button onClick={handleBulkRemove} className="text-[10px] text-red-500 hover:text-red-700 font-medium">{selectedIds.size} Sil</button>
+                                        </>
+                                    )}
+                                </>
+                            )}
+                            <button
+                                onClick={() => setSortMode(m =>
+                                    m === 'score-desc' ? 'score-asc' : m === 'score-asc' ? 'name' : 'score-desc'
+                                )}
+                                className="text-[10px] text-gray-400 hover:text-gray-700"
+                            >
+                                {sortMode === 'score-desc' ? 'Skor ↓' : sortMode === 'score-asc' ? 'Skor ↑' : 'A-Z'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Reset Button */}
+            {overrides.some(o => o.isOwn) && !showResetConfirm && (
+                <div className="flex items-center justify-between px-3 py-2.5 rounded-xl bg-gray-50 border border-gray-200">
+                    <div>
+                        <p className="text-[12px] text-gray-600">Tüm kişisel tercihleri sıfırla</p>
+                        {lastSavedDate && (
+                            <p className="text-[10px] text-gray-400 mt-0.5">
+                                Son değişiklik: {new Date(lastSavedDate).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                            </p>
                         )}
-                        className="text-[11px] text-gray-500 hover:text-gray-800 flex items-center gap-1"
+                    </div>
+                    <button
+                        onClick={() => setShowResetConfirm(true)}
+                        className="flex items-center gap-1 text-[11px] text-red-500 hover:text-red-700 font-medium px-2 py-1 rounded-lg hover:bg-red-50 transition-colors"
                     >
-                        {sortMode === 'score-desc' ? 'Skor ↓' : sortMode === 'score-asc' ? 'Skor ↑' : 'İsim A-Z'}
+                        <RotateCcw className="h-3 w-3" />
+                        Sıfırla
                     </button>
                 </div>
             )}
 
+            {/* Reset Confirmation */}
+            {showResetConfirm && (
+                <div className="p-3 rounded-xl bg-red-50 border border-red-200 space-y-2">
+                    <p className="text-[13px] text-red-800 font-medium">Tüm kişisel yemek tercihleriniz silinecek ve program varsayılanlarına dönülecek.</p>
+                    <p className="text-[11px] text-red-600">Bu işlem geri alınabilir — sıfırlama sonrası önceki tercihlerinize dönebilirsiniz.</p>
+                    <div className="flex gap-2">
+                        <Button
+                            onClick={handleReset}
+                            disabled={resetting}
+                            size="sm"
+                            className="bg-red-600 hover:bg-red-700 text-white text-[12px] h-8"
+                        >
+                            {resetting ? <><Loader2 className="h-3 w-3 mr-1 animate-spin" /> Sıfırlanıyor...</> : "Evet, Sıfırla"}
+                        </Button>
+                        <Button
+                            onClick={() => setShowResetConfirm(false)}
+                            size="sm"
+                            variant="outline"
+                            className="text-[12px] h-8"
+                        >
+                            Vazgeç
+                        </Button>
+                    </div>
+                </div>
+            )}
+
+            {/* Bulk Score Bar */}
+            {bulkMode && selectedIds.size > 0 && (
+                <div className="flex items-center gap-2 px-2.5 py-2 rounded-lg bg-amber-50 border border-amber-200">
+                    <span className="text-[11px] text-amber-800 font-medium shrink-0">{selectedIds.size} yemek seçili →</span>
+                    <input
+                        type="number"
+                        min={0}
+                        max={10}
+                        value={bulkScore}
+                        onChange={e => setBulkScore(e.target.value)}
+                        placeholder="Skor"
+                        className="w-14 text-center text-[12px] font-bold px-1.5 py-1 rounded-md border border-amber-300 bg-white outline-none focus:ring-1 focus:ring-amber-400"
+                    />
+                    <Button
+                        onClick={handleBulkSetScore}
+                        disabled={!bulkScore || parseInt(bulkScore) < 0 || parseInt(bulkScore) > 10}
+                        size="sm"
+                        className="h-7 text-[11px] bg-amber-600 hover:bg-amber-700 text-white px-3"
+                    >
+                        Uygula
+                    </Button>
+                </div>
+            )}
+
             {/* Food List */}
-            <div className="space-y-1">
+            <div className="space-y-px">
                 {sortedOverrides.length === 0 ? (
-                    <div className="text-center py-8 text-gray-400 text-sm">
-                        <Star className="h-8 w-8 mx-auto mb-2 text-gray-300" />
-                        <p>Henüz özel skor atanmış yemek yok.</p>
-                        <p className="text-[11px] mt-1">Yukarıdan yemek arayarak skor ekleyebilirsiniz.</p>
+                    <div className="text-center py-6 text-gray-400 text-sm">
+                        <Star className="h-6 w-6 mx-auto mb-1.5 text-gray-300" />
+                        <p className="text-[12px]">{filterQuery ? "Filtre ile eşleşen yemek yok." : "Henüz özel skor atanmış yemek yok."}</p>
+                        {!filterQuery && <p className="text-[10px] mt-0.5">Yukarıdan yemek arayarak skor ekleyebilirsiniz.</p>}
                     </div>
                 ) : (
                     sortedOverrides.map(item => {
-                        const isExpanded = expandedId === item.foodId
+                        const isExpanded = expandedId === item.foodId && !bulkMode
+                        const isSelected = selectedIds.has(item.foodId)
                         return (
                             <div
                                 key={item.foodId}
                                 className={cn(
-                                    "rounded-xl border transition-all",
+                                    "rounded-lg border transition-all",
                                     isExpanded
-                                        ? "bg-amber-50/60 border-amber-200 ring-1 ring-amber-200 shadow-sm"
-                                        : "bg-white border-gray-100 hover:border-gray-200"
+                                        ? "bg-amber-50/60 border-amber-200 ring-1 ring-amber-200"
+                                        : isSelected
+                                            ? "bg-amber-50/40 border-amber-200"
+                                            : "bg-white border-gray-100"
                                 )}
                             >
                                 {/* Row */}
                                 <div
-                                    className="flex items-center gap-2 px-3 py-2.5 cursor-pointer"
-                                    onClick={() => setExpandedId(isExpanded ? null : item.foodId)}
+                                    className="flex items-center gap-1.5 px-2 py-1.5 cursor-pointer"
+                                    onClick={() => bulkMode && item.isOwn ? toggleSelect(item.foodId) : setExpandedId(isExpanded ? null : item.foodId)}
                                 >
-                                    <div className="flex-1 min-w-0">
-                                        <span className="text-[13px] font-medium leading-tight line-clamp-1">{item.name}</span>
-                                        <div className="flex items-center gap-1.5 mt-0.5">
-                                            <span className={cn(
-                                                "text-[9px] px-1 py-0.5 rounded",
-                                                item.isOwn ? "bg-amber-100 text-amber-700" : "bg-gray-100 text-gray-500"
-                                            )}>
-                                                {SOURCE_LABELS[item.source]}
-                                            </span>
-                                            <FrequencyHint score={item.score} />
-                                        </div>
-                                    </div>
+                                    {bulkMode && item.isOwn && (
+                                        isSelected
+                                            ? <CheckSquare className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+                                            : <Square className="h-3.5 w-3.5 text-gray-300 shrink-0" />
+                                    )}
+                                    <span className="flex-1 min-w-0 text-[12px] font-medium leading-tight truncate">{item.name}</span>
                                     <ScoreBadge score={item.score} />
-                                    {isExpanded ? <ChevronUp className="h-3.5 w-3.5 text-gray-400" /> : <ChevronDown className="h-3.5 w-3.5 text-gray-400" />}
+                                    {!bulkMode && (isExpanded ? <ChevronUp className="h-3 w-3 text-gray-400 shrink-0" /> : <ChevronDown className="h-3 w-3 text-gray-400 shrink-0" />)}
                                 </div>
 
                                 {/* Expanded Controls */}
                                 {isExpanded && (
-                                    <div className="px-3 pb-3 space-y-2">
+                                    <div className="px-2 pb-2 space-y-1.5">
                                         {/* Score Stepper */}
-                                        <div className="flex items-center justify-between gap-3">
-                                            <div className="flex items-center gap-1">
-                                                <button
-                                                    onClick={() => updateScore(item.foodId, item.score - 1)}
-                                                    disabled={item.score <= 0}
-                                                    className="h-8 w-8 rounded-lg bg-white border border-gray-200 flex items-center justify-center hover:bg-gray-50 disabled:opacity-30 transition-colors"
-                                                >
-                                                    <Minus className="h-3.5 w-3.5" />
-                                                </button>
+                                        <div className="flex items-center gap-0.5">
+                                            <button
+                                                onClick={() => updateScore(item.foodId, item.score - 1)}
+                                                disabled={item.score <= 0}
+                                                className="h-7 w-7 rounded-md bg-white border border-gray-200 flex items-center justify-center hover:bg-gray-50 disabled:opacity-30 transition-colors shrink-0"
+                                            >
+                                                <Minus className="h-3 w-3" />
+                                            </button>
 
-                                                {/* Score Dots */}
-                                                <div className="flex items-center gap-0.5 px-1">
-                                                    {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(s => (
-                                                        <button
-                                                            key={s}
-                                                            onClick={() => updateScore(item.foodId, s)}
-                                                            className={cn(
-                                                                "h-5 w-5 rounded-full text-[9px] font-bold transition-all",
-                                                                item.score === s
-                                                                    ? s === 0
-                                                                        ? "bg-red-500 text-white scale-125 shadow-sm"
-                                                                        : s <= 3
-                                                                            ? "bg-orange-500 text-white scale-125 shadow-sm"
-                                                                            : s <= 6
-                                                                                ? "bg-yellow-500 text-white scale-125 shadow-sm"
-                                                                                : "bg-emerald-500 text-white scale-125 shadow-sm"
-                                                                    : "bg-gray-100 text-gray-400 hover:bg-gray-200"
-                                                            )}
-                                                        >
-                                                            {s}
-                                                        </button>
-                                                    ))}
-                                                </div>
-
-                                                <button
-                                                    onClick={() => updateScore(item.foodId, item.score + 1)}
-                                                    disabled={item.score >= 10}
-                                                    className="h-8 w-8 rounded-lg bg-white border border-gray-200 flex items-center justify-center hover:bg-gray-50 disabled:opacity-30 transition-colors"
-                                                >
-                                                    <Plus className="h-3.5 w-3.5" />
-                                                </button>
+                                            <div className="flex items-center gap-px flex-1 justify-center">
+                                                {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(s => (
+                                                    <button
+                                                        key={s}
+                                                        onClick={() => updateScore(item.foodId, s)}
+                                                        className={cn(
+                                                            "h-5 w-5 rounded-full text-[8px] font-bold transition-all",
+                                                            item.score === s
+                                                                ? s === 0
+                                                                    ? "bg-red-500 text-white scale-110"
+                                                                    : s <= 3
+                                                                        ? "bg-orange-500 text-white scale-110"
+                                                                        : s <= 6
+                                                                            ? "bg-yellow-500 text-white scale-110"
+                                                                            : "bg-emerald-500 text-white scale-110"
+                                                                : "bg-gray-100 text-gray-400 hover:bg-gray-200"
+                                                        )}
+                                                    >
+                                                        {s}
+                                                    </button>
+                                                ))}
                                             </div>
+
+                                            <button
+                                                onClick={() => updateScore(item.foodId, item.score + 1)}
+                                                disabled={item.score >= 10}
+                                                className="h-7 w-7 rounded-md bg-white border border-gray-200 flex items-center justify-center hover:bg-gray-50 disabled:opacity-30 transition-colors shrink-0"
+                                            >
+                                                <Plus className="h-3 w-3" />
+                                            </button>
                                         </div>
 
-                                        {/* Remove */}
                                         {item.isOwn && (
                                             <button
                                                 onClick={() => removeOverride(item.foodId)}
-                                                className="flex items-center gap-1 text-[11px] text-red-500 hover:text-red-700 transition-colors"
+                                                className="flex items-center gap-1 text-[10px] text-red-500 hover:text-red-700"
                                             >
-                                                <Trash2 className="h-3 w-3" />
-                                                Kaldır (varsayılana dön)
+                                                <Trash2 className="h-2.5 w-2.5" />
+                                                Kaldır
                                             </button>
                                         )}
                                     </div>
