@@ -160,6 +160,7 @@ export function FoodAlternativeDialog({ isOpen, onClose, originalFood, onSelect,
     const [editingFood, setEditingFood] = useState<any>(null)
     const [searchOpen, setSearchOpen] = useState(false)
     const [searchQuery, setSearchQuery] = useState("")
+    const [expandedFoodId, setExpandedFoodId] = useState<string | null>(null)
 
     const isTargetMainDish = useMemo(() => {
         if (!originalFood) return false
@@ -748,337 +749,169 @@ export function FoodAlternativeDialog({ isOpen, onClose, originalFood, onSelect,
         return scored.sort((a, b) => b.similarity - a.similarity)
     }, [foods, normalizedOriginalFood, prefs.weights, activeDietRules, patientDiseases, patientLabs, patientMedicationRules, activeMacroPreference])
 
+    const portionOptions = useMemo(() => {
+        const meta = originalFood?.food_meta || originalFood?.meta || {}
+        const min = originalFood?.min_quantity ?? meta.min_quantity ?? 0.5
+        const max = originalFood?.max_quantity ?? meta.max_quantity ?? 3
+        const step = originalFood?.step ?? meta.step ?? 0.5
+        const options: { value: number; label: string }[] = []
+        const LABELS: Record<number, string> = {
+            0.25: 'Çeyrek', 0.5: 'Yarım', 0.75: 'Üç Çeyrek',
+            1: 'Tam', 1.5: 'Bir Buçuk', 2: 'İki Katı',
+            2.5: 'İki Buçuk', 3: 'Üç Katı'
+        }
+        for (let v = min; v <= max + 0.001; v = Math.round((v + step) * 100) / 100) {
+            const label = LABELS[v] ? `x${v} (${LABELS[v]})` : `x${v}`
+            options.push({ value: Math.round(v * 100) / 100, label })
+        }
+        if (options.length === 0) options.push({ value: 1, label: 'x1 (Tam)' })
+        return options
+    }, [originalFood])
+
     return (
         <Dialog open={isOpen} onOpenChange={(o) => !o && onClose()}>
             <DialogContent
-                className="sm:max-w-[850px] h-auto max-h-[85vh] flex flex-col p-0 gap-0 transition-transform duration-75 overflow-hidden rounded-xl"
+                className="sm:max-w-[500px] w-[calc(100vw-1rem)] h-auto max-h-[85vh] flex flex-col p-0 gap-0 overflow-hidden rounded-2xl"
                 showCloseButton={false}
                 aria-describedby={undefined}
                 style={{ transform: `translate(${position.x}px, ${position.y}px)` }}
             >
+                {/* Compact header — food name + portion + close */}
                 <DialogHeader
-                    className="p-3 border-b border-emerald-100 bg-emerald-50/60 cursor-move select-none active:cursor-grabbing shrink-0 z-20"
+                    className="px-3 py-2.5 border-b border-emerald-100 bg-emerald-50/60 shrink-0 z-20 cursor-move select-none active:cursor-grabbing"
                     onMouseDown={(e) => {
                         setIsDragging(true)
-                        setDragStart({
-                            x: e.clientX - position.x,
-                            y: e.clientY - position.y
-                        })
+                        setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y })
                     }}
                 >
-                    <DialogTitle className="flex flex-col gap-2 pointer-events-none">
+                    <DialogTitle className="pointer-events-none">
                         <div className="sr-only">Alternatif Seçenekleri</div>
-                        <div className="flex items-center justify-between pointer-events-auto w-full">
-                            <div className="flex flex-col lg:flex-row items-start lg:items-center gap-2 lg:gap-4 flex-1 min-w-0 pr-2">
-                                <div className="flex flex-col gap-0.5">
-                                    <div className="flex flex-wrap items-center gap-1 md:gap-2 leading-tight">
-                                        <span className="font-semibold whitespace-nowrap text-emerald-700 text-sm md:text-base">Akıllı Alternatif Bul:</span>
-                                        <span className="text-emerald-700 bg-emerald-100 px-2 py-1 rounded text-[10px] sm:text-xs md:text-sm text-balance max-w-full font-medium">{originalFood?.name}</span>
-                                    </div>
-                                    <span className="text-[9px] sm:text-[10px] text-gray-400 font-medium leading-tight">Bu liste diyet uyumuna ve günlük makro hedeflerine göre özel olarak hesaplanmıştır.</span>
-                                </div>
-
-                                {/* Portion Selector */}
-                                <div className="flex items-center bg-gray-50 border border-gray-200 rounded px-2 py-1 sm:py-0.5 shadow-sm mt-1 lg:mt-0 w-max max-w-full">
-                                    <span className="text-xs text-gray-500 mr-2 font-medium hidden sm:inline">Porsiyon:</span>
+                        <div className="flex items-center gap-2 pointer-events-auto">
+                            <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                    <RefreshCw size={14} className="text-emerald-600 shrink-0" />
+                                    <span className="text-[13px] font-semibold text-emerald-800 truncate">{originalFood?.name}</span>
                                     <select
                                         value={portionMultiplier}
                                         onChange={(e) => handlePortionChange(Number(e.target.value))}
-                                        className="bg-transparent text-sm font-bold text-gray-800 outline-none cursor-pointer"
+                                        className="bg-emerald-100/80 text-emerald-700 text-[11px] font-bold rounded px-1.5 py-0.5 outline-none cursor-pointer border border-emerald-200"
                                     >
-                                        {(() => {
-                                            // min_quantity, max_quantity, step are DIRECT columns on the foods table
-                                            // Also check food_meta/meta as fallback for compatibility
-                                            const meta = originalFood?.food_meta || originalFood?.meta || {}
-                                            const min = originalFood?.min_quantity ?? meta.min_quantity ?? 0.5
-                                            const max = originalFood?.max_quantity ?? meta.max_quantity ?? 3
-                                            const step = originalFood?.step ?? meta.step ?? 0.5
-                                            const options: { value: number; label: string }[] = []
-                                            const LABELS: Record<number, string> = {
-                                                0.25: 'Çeyrek', 0.5: 'Yarım', 0.75: 'Üç Çeyrek',
-                                                1: 'Tam', 1.5: 'Bir Buçuk', 2: 'İki Katı',
-                                                2.5: 'İki Buçuk', 3: 'Üç Katı'
-                                            }
-                                            for (let v = min; v <= max + 0.001; v = Math.round((v + step) * 100) / 100) {
-                                                const label = LABELS[v] ? `x${v} (${LABELS[v]})` : `x${v}`
-                                                options.push({ value: Math.round(v * 100) / 100, label })
-                                            }
-                                            if (options.length === 0) options.push({ value: 1, label: 'x1 (Tam)' })
-                                            return options.map(o => (
-                                                <option key={o.value} value={o.value}>{o.label}</option>
-                                            ))
-                                        })()}
+                                        {portionOptions.map(o => (
+                                            <option key={o.value} value={o.value}>{o.label}</option>
+                                        ))}
                                     </select>
                                     {portionMultiplier !== (originalFood?.portion_multiplier || 1) && (
-                                        <Button
-                                            variant="default"
-                                            size="sm"
+                                        <button
                                             onClick={() => {
                                                 if (originalFood) {
-                                                    onSelect({
-                                                        ...originalFood,
-                                                        id: originalFood.id, // Ensure real_food_id maps correctly
-                                                        portion_multiplier: portionMultiplier
-                                                    });
+                                                    onSelect({ ...originalFood, id: originalFood.id, portion_multiplier: portionMultiplier });
                                                 }
                                             }}
-                                            className="h-6 ml-2 text-[10px] px-2 bg-green-600 hover:bg-green-700 font-bold tracking-wider rounded"
+                                            className="text-[10px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded px-2 py-0.5"
                                         >
-                                            KAYDET
-                                        </Button>
+                                            Kaydet
+                                        </button>
                                     )}
                                 </div>
                             </div>
-                            <div className="flex items-center gap-1">
+                            <div className="flex items-center gap-0.5 shrink-0">
                                 {!hideSettings && (
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
+                                    <button
                                         onClick={() => saveSettings({ ...prefs, showSettingsPanel: !prefs.showSettingsPanel })}
-                                        className={prefs.showSettingsPanel ? "bg-gray-100" : ""}
+                                        className={cn("p-1.5 rounded-full transition-colors", prefs.showSettingsPanel ? "bg-emerald-200 text-emerald-700" : "text-gray-400 hover:text-gray-600")}
                                     >
-                                        <Settings size={16} className="mr-1" /> Kriterler
-                                    </Button>
+                                        <Settings size={14} />
+                                    </button>
                                 )}
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-8 w-8 text-gray-500 hover:bg-red-50 hover:text-red-600 rounded-full"
+                                <button
                                     onClick={onClose}
+                                    className="p-1.5 rounded-full text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors"
                                 >
-                                    <span className="sr-only">Kapat</span>
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
-                                </Button>
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+                                </button>
                             </div>
-                        </div>
-                        <div className="flex gap-4 text-xs text-gray-500 font-normal ml-1">
-                            {prefs.useGapClosingMode ? (
-                                <>
-                                    <span className="text-emerald-600 font-bold flex items-center gap-1">
-                                        <Target size={12} /> HEDEF AÇIK:
-                                    </span>
-                                    {(() => {
-                                        const c = (dailyTotals?.calories || 0) - (originalFood?.calories || 0)
-                                        const gapKcal = Math.max(0, (dailyTargets?.calories || 0) - c)
-                                        const gapP = Math.max(0, (dailyTargets?.protein || 0) - ((dailyTotals?.protein || 0) - (originalFood?.protein || 0)))
-                                        const gapC = Math.max(0, (dailyTargets?.carb || 0) - ((dailyTotals?.carbs || 0) - (originalFood?.carbs || 0)))
-                                        const gapF = Math.max(0, (dailyTargets?.fat || 0) - ((dailyTotals?.fat || 0) - (originalFood?.fat || 0)))
-                                        return (
-                                            <div className="flex flex-col gap-0.5">
-                                                <div className="flex gap-2 items-center">
-                                                    <span className="font-semibold text-gray-700">{Math.round(gapKcal)} kcal</span>
-                                                    <span className="text-orange-600">K: {Math.round(gapC)}g</span>
-                                                    <span className="text-blue-600">P: {Math.round(gapP)}g</span>
-                                                    <span className="text-yellow-600">Y: {Math.round(gapF)}g</span>
-                                                </div>
-                                                <div className="text-[9px] text-gray-400 font-normal">
-                                                    (Hedef: {dailyTargets?.calories} - Mevcut: {Math.round(c)})
-                                                </div>
-                                            </div>
-                                        )
-                                    })()}
-                                </>
-                            ) : (
-                                <>
-                                    <span>Hedef (Orijinal):</span>
-                                    <span className="font-semibold text-gray-700">{Math.round((originalFood?.calories || 0) * portionMultiplier)} kcal</span>
-                                    <span className="text-orange-600">K: {Math.round((originalFood?.carbs || 0) * portionMultiplier)}g</span>
-                                    <span className="text-blue-600">P: {Math.round((originalFood?.protein || 0) * portionMultiplier)}g</span>
-                                    <span className="text-yellow-600">Y: {Math.round((originalFood?.fat || 0) * portionMultiplier)}g</span>
-                                </>
-                            )}
                         </div>
                     </DialogTitle>
                 </DialogHeader>
 
-                <div className={`flex flex-1 relative ${prefs.showSettingsPanel && !hideSettings ? 'min-h-[450px]' : 'min-h-[400px]'}`}>
+                <div className="flex flex-1 overflow-hidden">
+                    {/* Settings panel — slides from left */}
                     {prefs.showSettingsPanel && !hideSettings && (
-                        <div className="w-full md:w-[360px] border-r border-emerald-100 bg-emerald-50/30 p-4 max-h-[calc(85vh-4rem)] overflow-y-auto shrink-0 space-y-3 text-sm [&::-webkit-scrollbar]:hidden">
-                            <div className="space-y-2">
-                                <h4 className="font-semibold text-xs text-gray-900 uppercase tracking-wider">Genel</h4>
-                                <div className="p-3 bg-white rounded-lg border shadow-sm">
-                                    <label htmlFor="limit" className="text-xs font-medium text-gray-700 block mb-2">
-                                        Maksimum Sonuç: <span className="text-blue-600 font-bold">{prefs.limit}</span>
-                                    </label>
-                                    <input
-                                        id="limit"
-                                        type="range"
-                                        min="1"
-                                        max="50"
-                                        className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-emerald-600"
-                                        value={prefs.limit}
-                                        onChange={(e) => saveSettings({ ...prefs, limit: Number(e.target.value) })}
-                                    />
-                                </div>
+                        <div className="w-full md:w-[300px] border-r border-emerald-100 bg-emerald-50/30 p-3 overflow-y-auto shrink-0 space-y-2.5 text-sm [&::-webkit-scrollbar]:hidden max-h-[calc(85vh-3rem)]">
+                            <div className="p-2.5 bg-white rounded-lg border shadow-sm">
+                                <label htmlFor="limit" className="text-[11px] font-medium text-gray-600 flex justify-between mb-1">
+                                    <span>Sonuç sayısı</span>
+                                    <span className="text-emerald-600 font-bold">{prefs.limit}</span>
+                                </label>
+                                <input id="limit" type="range" min="1" max="50" className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-emerald-600" value={prefs.limit} onChange={(e) => saveSettings({ ...prefs, limit: Number(e.target.value) })} />
                             </div>
-
-                            <div className="p-3 bg-emerald-50 rounded-lg border border-emerald-200 shadow-sm flex items-start gap-2">
-                                <Checkbox
-                                    id="gapMode"
-                                    checked={prefs.useGapClosingMode}
-                                    onCheckedChange={(c) => saveSettings({ ...prefs, useGapClosingMode: !!c })}
-                                    className="data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600 mt-0.5"
-                                />
+                            <div className="p-2.5 bg-emerald-50 rounded-lg border border-emerald-200 flex items-start gap-2">
+                                <Checkbox id="gapMode" checked={prefs.useGapClosingMode} onCheckedChange={(c) => saveSettings({ ...prefs, useGapClosingMode: !!c })} className="data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600 mt-0.5" />
                                 <div>
-                                    <Label htmlFor="gapMode" className="cursor-pointer font-semibold text-emerald-900">Hedef Açığını Kapat</Label>
-                                    <p className="text-[10px] text-emerald-700 leading-tight mt-1">
-                                        Alternatifler orijinal yemeğe göre değil, günlük hedefteki açığı doldurmaya göre puanlanır.
-                                    </p>
+                                    <Label htmlFor="gapMode" className="cursor-pointer font-semibold text-emerald-900 text-xs">Hedef Açığını Kapat</Label>
+                                    <p className="text-[10px] text-emerald-700 leading-tight mt-0.5">Günlük hedefteki açığa göre puanla.</p>
                                 </div>
                             </div>
-
-                            <div className="space-y-2">
-                                <h4 className="font-semibold text-xs text-gray-900 uppercase tracking-wider">Filtreler</h4>
-                                <div className="p-3 bg-white rounded-lg border shadow-sm space-y-3">
-                                    <div className="flex items-center space-x-2">
-                                        <Checkbox
-                                            id="checkSeason"
-                                            checked={prefs.checkSeason}
-                                            onCheckedChange={(c) => saveSettings({ ...prefs, checkSeason: !!c })}
-                                        />
-                                        <div className="leading-none">
-                                            <Label htmlFor="checkSeason" className="cursor-pointer">Mevsim Uyumu</Label>
-                                            <div className="text-[9px] text-gray-400 mt-0.5">
-                                                Şu an: {["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"][currentMonth - 1] || currentMonth + '. Ay'}
-                                            </div>
-                                        </div>
+                            <div className="p-2.5 bg-white rounded-lg border shadow-sm space-y-2">
+                                <h4 className="font-semibold text-[10px] text-gray-500 uppercase tracking-wider">Filtreler</h4>
+                                {[
+                                    { id: 'checkSeason', label: 'Mevsim Uyumu', key: 'checkSeason' as const },
+                                    { id: 'cat', label: 'Kategori', key: 'includeCategory' as const },
+                                    { id: 'role', label: 'Rol', key: 'includeRole' as const },
+                                    { id: 'diet', label: 'Diyet Türü', key: 'includeDietType' as const },
+                                    { id: 'mealType', label: 'Öğün Tipi', key: 'includeMealType' as const },
+                                ].map(f => (
+                                    <div key={f.id} className="flex items-center space-x-2">
+                                        <Checkbox id={f.id} checked={prefs[f.key] as boolean} onCheckedChange={(c) => saveSettings({ ...prefs, [f.key]: !!c })} />
+                                        <Label htmlFor={f.id} className="cursor-pointer text-xs">{f.label}</Label>
                                     </div>
-                                    <div className="flex items-center space-x-2">
-                                        <Checkbox id="cat" checked={prefs.includeCategory} onCheckedChange={(c) => saveSettings({ ...prefs, includeCategory: !!c })} />
-                                        <Label htmlFor="cat" className="cursor-pointer">Kategori Uyumlu</Label>
-                                    </div>
-                                    <div className="flex items-center space-x-2">
-                                        <Checkbox id="role" checked={prefs.includeRole} onCheckedChange={(c) => saveSettings({ ...prefs, includeRole: !!c })} />
-                                        <Label htmlFor="role" className="cursor-pointer">Rol Uyumlu</Label>
-                                    </div>
-                                    <div className="flex items-center space-x-2">
-                                        <Checkbox id="diet" checked={prefs.includeDietType} onCheckedChange={(c) => saveSettings({ ...prefs, includeDietType: !!c })} />
-                                        <Label htmlFor="diet" className="cursor-pointer">Diyet Türü Uyumlu</Label>
-                                    </div>
-                                    <div className="flex items-center space-x-2">
-                                        <Checkbox id="mealType" checked={prefs.includeMealType} onCheckedChange={(c) => saveSettings({ ...prefs, includeMealType: !!c })} />
-                                        <Label htmlFor="mealType" className="cursor-pointer">Öğün Tipi Uyumlu</Label>
-                                    </div>
-                                </div>
+                                ))}
                             </div>
-
-                            <div className="space-y-2">
-                                <h4 className="font-semibold text-xs text-gray-900 uppercase tracking-wider">Dışlama</h4>
-                                <div className="p-3 bg-white rounded-lg border shadow-sm space-y-3">
-                                    <div className="flex items-start space-x-2">
-                                        <Checkbox id="consecutive" checked={prefs.excludeConsecutive} onCheckedChange={(c) => saveSettings({ ...prefs, excludeConsecutive: !!c })} className="mt-0.5" />
-                                        <div className="leading-none">
-                                            <Label htmlFor="consecutive" className="block cursor-pointer">Ardışık Gün Çakışması</Label>
-                                            <span className="text-[10px] text-gray-400">Yakın zamanda yenildiyse gizle</span>
-                                        </div>
-                                    </div>
-                                    <div className="flex items-start space-x-2">
-                                        <Checkbox id="names" checked={prefs.excludeNameCollision} onCheckedChange={(c) => saveSettings({ ...prefs, excludeNameCollision: !!c })} className="mt-0.5" />
-                                        <div className="leading-none w-full">
-                                            <Label htmlFor="names" className="block cursor-pointer">İsim Benzerliği</Label>
-                                            {prefs.excludeNameCollision && (
-                                                <div className="mt-2">
-                                                    <span className="text-[10px] font-bold text-gray-500 block mb-1">Yoksayılacaklar:</span>
-                                                    <Input className="h-7 text-xs w-full" value={prefs.ignoredWords} onChange={(e) => saveSettings({ ...prefs, ignoredWords: e.target.value })} placeholder="gram, adet..." />
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                    <div className="flex items-start space-x-2">
-                                        <Checkbox id="tagsCollision" checked={prefs.excludeTagsCollision} onCheckedChange={(c) => saveSettings({ ...prefs, excludeTagsCollision: !!c })} className="mt-0.5" />
-                                        <div className="leading-none w-full">
-                                            <Label htmlFor="tagsCollision" className="block cursor-pointer">Etiket Benzerliği</Label>
-                                            {prefs.excludeTagsCollision && (
-                                                <div className="mt-2">
-                                                    <span className="text-[10px] font-bold text-gray-500 block mb-1">Yoksayılacaklar:</span>
-                                                    <Input className="h-7 text-xs w-full" value={prefs.ignoredTagWords} onChange={(e) => saveSettings({ ...prefs, ignoredTagWords: e.target.value })} placeholder="ör: kahvaltılık..." />
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
+                            <div className="p-2.5 bg-white rounded-lg border shadow-sm space-y-2">
+                                <h4 className="font-semibold text-[10px] text-gray-500 uppercase tracking-wider">Dışlama</h4>
+                                <div className="flex items-center space-x-2">
+                                    <Checkbox id="consecutive" checked={prefs.excludeConsecutive} onCheckedChange={(c) => saveSettings({ ...prefs, excludeConsecutive: !!c })} />
+                                    <Label htmlFor="consecutive" className="cursor-pointer text-xs">Ardışık Gün</Label>
                                 </div>
-                            </div>
-
-                            <div className="space-y-2">
-                                <h4 className="font-semibold text-xs text-gray-900 uppercase tracking-wider">Ağırlıklar</h4>
-                                <div className="p-3 bg-white rounded-lg border shadow-sm space-y-4">
-                                    {[
-                                        { key: 'calories', label: 'Kalori', color: 'bg-gray-500' },
-                                        { key: 'carbs', label: 'Karb (K)', color: 'bg-orange-500' },
-                                        { key: 'protein', label: 'Protein (P)', color: 'bg-blue-500' },
-                                        { key: 'fat', label: 'Yağ (Y)', color: 'bg-yellow-500' },
-                                        { key: 'mainDishCompat', label: 'Ana Yemek Uyumu', color: 'bg-green-600' }
-                                    ].map((item) => (
-                                        <div key={item.key} className={`space-y-1 ${item.key === 'mainDishCompat' ? 'pt-2 border-t mt-2' : ''}`}>
-                                            <div className="flex justify-between text-xs">
-                                                <span className={`font-medium ${item.key === 'mainDishCompat' ? 'text-green-700' : ''}`}>{item.label}</span>
-                                                <span className="text-gray-500">{prefs.weights[item.key as keyof typeof prefs.weights]}</span>
-                                            </div>
-                                            {(item.key !== 'mainDishCompat' || (!isTargetMainDish && mainDishOfSlot)) && (
-                                                <input
-                                                    type="range" min="0" max="100" step="10"
-                                                    className="w-full h-1.5 rounded-lg appearance-none cursor-pointer bg-gray-200"
-                                                    value={prefs.weights[item.key as keyof typeof prefs.weights]}
-                                                    onChange={(e) => saveSettings({ ...prefs, weights: { ...prefs.weights, [item.key]: Number(e.target.value) } })}
-                                                />
-                                            )}
-                                        </div>
-                                    ))}
+                                <div className="flex items-center space-x-2">
+                                    <Checkbox id="names" checked={prefs.excludeNameCollision} onCheckedChange={(c) => saveSettings({ ...prefs, excludeNameCollision: !!c })} />
+                                    <Label htmlFor="names" className="cursor-pointer text-xs">İsim Benzerliği</Label>
+                                </div>
+                                <div className="flex items-center space-x-2">
+                                    <Checkbox id="tagsCollision" checked={prefs.excludeTagsCollision} onCheckedChange={(c) => saveSettings({ ...prefs, excludeTagsCollision: !!c })} />
+                                    <Label htmlFor="tagsCollision" className="cursor-pointer text-xs">Etiket Benzerliği</Label>
                                 </div>
                             </div>
                         </div>
                     )}
 
-                    <div
-                        className={`overflow-y-auto p-4 bg-white/50 [&::-webkit-scrollbar]:hidden 
-                        ${prefs.showSettingsPanel && !hideSettings
-                                ? 'absolute top-0 right-0 bottom-0 left-0 md:left-[360px] border-l'
-                                : 'flex-1 w-full max-h-[calc(85vh-4rem)]'
-                            }`}
-                    >
-                        <div className="mb-4 sticky top-0 bg-white/95 backdrop-blur-sm z-30 pt-4 pb-2 px-2 -mx-2 border-b shadow-sm">
-                            <div className="mb-3 px-1 border-b pb-3">
-                                <div className="flex justify-between text-[10px] font-medium text-gray-500 mb-2 px-1">
-                                    <span className={activeMacroPreference < 0 ? "text-emerald-600 font-bold" : ""}>Proteine Yakın</span>
-                                    <span className={activeMacroPreference === 0 ? "text-gray-700 font-bold" : ""}>Kalori Dengeli</span>
-                                    <span className={activeMacroPreference > 0 ? "text-teal-600 font-bold" : ""}>Yağa Yakın</span>
-                                </div>
-                                <Slider
-                                    defaultValue={[activeMacroPreference]}
-                                    value={[activeMacroPreference]}
-                                    min={-100}
-                                    max={100}
-                                    step={5}
-                                    onValueChange={(vals) => setMacroPreference(vals[0])}
-                                />
+                    {/* Main content */}
+                    <div className={cn(
+                        "flex-1 flex flex-col overflow-hidden bg-white",
+                        prefs.showSettingsPanel && !hideSettings ? 'hidden md:flex' : ''
+                    )}>
+                        {/* Slider — flush, compact */}
+                        <div className="px-3 pt-2 pb-1.5 border-b border-gray-100 bg-gray-50/50 shrink-0">
+                            <div className="flex justify-between text-[10px] font-medium text-gray-400 mb-1">
+                                <span className={activeMacroPreference < 0 ? "text-emerald-600 font-bold" : ""}>Proteine Yakın</span>
+                                <span className={activeMacroPreference === 0 ? "text-gray-600 font-bold" : ""}>Dengeli</span>
+                                <span className={activeMacroPreference > 0 ? "text-teal-600 font-bold" : ""}>Yağa Yakın</span>
                             </div>
+                            <Slider defaultValue={[activeMacroPreference]} value={[activeMacroPreference]} min={-100} max={100} step={5} onValueChange={(vals) => setMacroPreference(vals[0])} />
+                        </div>
 
+                        {/* Search bar — compact */}
+                        <div className="px-3 py-1.5 border-b border-gray-100 shrink-0">
                             <Popover open={searchOpen} onOpenChange={setSearchOpen}>
                                 <PopoverTrigger asChild>
-                                    <Button
-                                        variant="outline"
-                                        role="combobox"
-                                        aria-expanded={searchOpen}
-                                        className="w-full justify-between bg-white h-10 border-emerald-200 hover:border-emerald-400 hover:bg-emerald-50 text-gray-600"
-                                    >
-                                        <div className="flex items-center gap-2 overflow-hidden">
-                                            <Search className="h-4 w-4 shrink-0 opacity-50" />
-                                            {searchQuery ? searchQuery : "Akıllı Arama (Örn: 'kıy pat' -> 'Kıymalı Patlıcan')..."}
-                                        </div>
-                                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                                    </Button>
+                                    <button className="w-full flex items-center gap-2 bg-gray-50 rounded-lg px-2.5 py-1.5 text-[11px] text-gray-400 hover:bg-emerald-50 hover:text-gray-600 transition-colors border border-gray-100">
+                                        <Search size={13} className="shrink-0" />
+                                        <span className="truncate">{searchQuery || "Yemek ara (örn: kıy pat)..."}</span>
+                                    </button>
                                 </PopoverTrigger>
-                                <PopoverContent className="w-[450px] p-0" align="start">
-                                    <div className="p-2 bg-emerald-50/50 border-b border-emerald-100 flex flex-col gap-0.5">
-                                        <span className="text-xs font-semibold text-emerald-900">Spesifik Yemek Arama</span>
-                                        <span className="text-[10px] text-emerald-700/80 leading-tight">İstediğiniz yemeği arayın. Yüzdeler hedefinize olan makro benzerliğini gösterir.</span>
-                                    </div>
+                                <PopoverContent className="w-[min(450px,calc(100vw-2rem))] p-0" align="start">
                                     <Command shouldFilter={false}>
-                                        <CommandInput
-                                            placeholder="Yemek ara (Örn: 'tav sal')..."
-                                            value={searchQuery}
-                                            onValueChange={setSearchQuery}
-                                        />
+                                        <CommandInput placeholder="Yemek ara..." value={searchQuery} onValueChange={setSearchQuery} />
                                         <CommandList>
                                             <CommandEmpty>Yemek bulunamadı.</CommandEmpty>
                                             <CommandGroup className="max-h-[300px] overflow-y-auto">
@@ -1090,112 +923,10 @@ export function FoodAlternativeDialog({ isOpen, onClose, originalFood, onSelect,
                                                         return terms.every(term => valLower.includes(term))
                                                     })
                                                     .map((food) => (
-                                                        <CommandItem
-                                                            key={food.id}
-                                                            value={food.name}
-                                                            onSelect={() => {
-                                                                onSelect(food)
-                                                                setSearchOpen(false)
-                                                                setSearchQuery("")
-                                                            }}
-                                                        >
+                                                        <CommandItem key={food.id} value={food.name} onSelect={() => { onSelect(food); setSearchOpen(false); setSearchQuery("") }}>
                                                             <div className="flex items-center justify-between w-full">
-                                                                <div className="flex flex-col gap-0.5">
-                                                                    <div className="flex items-center gap-1.5">
-                                                                        <Check className={cn("h-3 w-3 text-emerald-600", originalFood?.id === food.id ? "opacity-100" : "opacity-0")} />
-                                                                        {/* Compatibility Indicators */}
-                                                                        {food._compatibility && (
-                                                                            <TooltipProvider>
-                                                                                <Tooltip>
-                                                                                    <TooltipTrigger asChild>
-                                                                                        <span className="cursor-help inline-flex items-center gap-0.5">
-                                                                                            {!food._compatibility.compatible && <AlertTriangle size={12} className={food._compatibility.severity === 'block' ? "text-red-600" : "text-yellow-600"} />}
-                                                                                            {food._compatibility.recommended && <Heart size={12} fill="currentColor" className="text-blue-600" />}
-                                                                                            {food._compatibility.medicationWarning && (
-                                                                                                <span className={cn(
-                                                                                                    "text-[10px]",
-                                                                                                    food._compatibility.medicationWarning.type === 'negative' ? "text-red-600" :
-                                                                                                        food._compatibility.medicationWarning.type === 'warning' ? "text-yellow-600" : "text-green-600"
-                                                                                                )}>💊</span>
-                                                                                            )}
-                                                                                        </span>
-                                                                                    </TooltipTrigger>
-                                                                                    <TooltipContent side="right" align="start" sideOffset={10} collisionPadding={20} className="w-[380px] p-0 overflow-hidden shadow-2xl border-none z-[100]">
-                                                                                        <div className="flex flex-col gap-2 p-2 bg-gray-50/50">
-                                                                                            {food._compatibility.warnings?.length > 0 ? (
-                                                                                                food._compatibility.warnings.map((w: any, wi: number) => {
-                                                                                                    const isNegative = w.type === 'negative';
-                                                                                                    const isPositive = w.type === 'positive';
-                                                                                                    return (
-                                                                                                        <div key={wi} className={cn(
-                                                                                                            "rounded-xl border p-3 flex flex-col gap-2 shadow-sm",
-                                                                                                            isPositive ? "bg-blue-50/50 border-blue-100" :
-                                                                                                                isNegative ? "bg-red-50/50 border-red-100" : "bg-amber-50/50 border-amber-100"
-                                                                                                        )}>
-                                                                                                            <div className="flex items-center justify-between">
-                                                                                                                <div className="flex items-center gap-2">
-                                                                                                                    <span className="font-bold text-gray-700 lowercase">{w.keyword || food.name}</span>
-                                                                                                                    {isPositive ? (
-                                                                                                                        <CheckCircle2 size={16} className="text-green-500" />
-                                                                                                                    ) : (
-                                                                                                                        <MinusCircle size={16} className="text-red-500" />
-                                                                                                                    )}
-                                                                                                                    <span className={cn(
-                                                                                                                        "font-bold",
-                                                                                                                        isPositive ? "text-blue-800" : "text-gray-800"
-                                                                                                                    )}>{w.sourceName}</span>
-                                                                                                                </div>
-                                                                                                                <div className="text-gray-400">
-                                                                                                                    {w.source === 'medication' ? <Pill size={16} /> :
-                                                                                                                        w.source === 'lab' ? <FlaskConical size={16} /> : <Stethoscope size={16} />}
-                                                                                                                </div>
-                                                                                                            </div>
-                                                                                                            <div className="space-y-1.5">
-                                                                                                                {w.warning && (
-                                                                                                                    <div className="flex gap-2 items-start text-[11px] leading-relaxed">
-                                                                                                                        <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-600" />
-                                                                                                                        <span className="text-gray-700 font-medium">{w.warning}</span>
-                                                                                                                    </div>
-                                                                                                                )}
-                                                                                                                {w.info && (
-                                                                                                                    <div className="flex gap-2 items-start text-[11px] leading-relaxed">
-                                                                                                                        <Info size={14} className="mt-0.5 shrink-0 text-blue-600" />
-                                                                                                                        <span className="text-gray-600">{w.info}</span>
-                                                                                                                    </div>
-                                                                                                                )}
-                                                                                                            </div>
-                                                                                                        </div>
-                                                                                                    );
-                                                                                                })
-                                                                                            ) : (
-                                                                                                <div className="p-4 text-center text-gray-500 italic text-xs bg-white rounded-xl border border-dashed border-gray-200">
-                                                                                                    {food._compatibility.reason || "Bu hasta için herhangi bir kısıtlama veya uyarı bulunamadı."}
-                                                                                                </div>
-                                                                                            )}
-                                                                                        </div>
-                                                                                    </TooltipContent>
-                                                                                </Tooltip>
-                                                                            </TooltipProvider>
-                                                                        )}
-                                                                        <span className="font-medium text-gray-900">{food.name}</span>
-                                                                    </div>
-                                                                    <div className="text-[10px] text-gray-500 flex items-center gap-1.5 pl-5">
-                                                                        <span>{Math.round(food.calories)} kcal</span>
-                                                                        <span className="text-orange-600">K:{Math.round(food.carbs)}</span>
-                                                                        <span className="text-blue-600">P:{Math.round(food.protein)}</span>
-                                                                        <span className="text-yellow-600">Y:{Math.round(food.fat)}</span>
-                                                                    </div>
-                                                                </div>
-                                                                <div className="text-right">
-                                                                    <span className={cn(
-                                                                        "text-xs font-bold px-1.5 py-0.5 rounded",
-                                                                        food.similarity > 80 ? "bg-green-100 text-green-700" :
-                                                                            food.similarity > 50 ? "bg-yellow-100 text-yellow-700" :
-                                                                                "bg-gray-100 text-gray-600"
-                                                                    )}>
-                                                                        %{Math.round(food.similarity)}
-                                                                    </span>
-                                                                </div>
+                                                                <span className="font-medium text-gray-900 text-sm">{food.name}</span>
+                                                                <span className={cn("text-[11px] font-bold", food.similarity > 80 ? "text-emerald-600" : food.similarity > 50 ? "text-yellow-600" : "text-gray-400")}>%{Math.round(food.similarity)}</span>
                                                             </div>
                                                         </CommandItem>
                                                     ))}
@@ -1206,142 +937,90 @@ export function FoodAlternativeDialog({ isOpen, onClose, originalFood, onSelect,
                             </Popover>
                         </div>
 
-                        {targetToRevert && (
-                            <div
-                                className="mb-4 bg-gradient-to-r from-emerald-50 to-white border border-emerald-200 rounded-lg p-3 hover:border-emerald-300 hover:shadow-md transition-all cursor-pointer group"
-                                onClick={() => onSelect(targetToRevert)}
-                            >
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-2">
-                                        <div className="p-1.5 bg-emerald-100 text-emerald-600 rounded-full">
-                                            <RefreshCw size={14} />
-                                        </div>
-                                        <div>
-                                            <div className="font-bold text-emerald-800 text-sm">Orijinale Dön: {targetToRevert.name}</div>
-                                            <div className="text-[10px] text-emerald-600/70">Bu öğün değiştirilmeden önce bu yemek vardı.</div>
-                                        </div>
-                                    </div>
-                                    <div className="text-emerald-600 text-xs font-semibold px-2 py-1 bg-emerald-100 rounded">Geri Al</div>
-                                </div>
-                            </div>
-                        )}
+                        {/* Food list */}
+                        <div className="flex-1 overflow-y-auto [&::-webkit-scrollbar]:hidden">
+                            {/* Revert to original */}
+                            {targetToRevert && (
+                                <button
+                                    className="w-full flex items-center gap-2 px-3 py-2 bg-emerald-50/80 border-b border-emerald-100 hover:bg-emerald-100/80 transition-colors text-left"
+                                    onClick={() => onSelect(targetToRevert)}
+                                >
+                                    <RefreshCw size={13} className="text-emerald-600 shrink-0" />
+                                    <span className="text-[12px] font-medium text-emerald-700 truncate flex-1">Orijinale Dön: {targetToRevert.name}</span>
+                                    <span className="text-[10px] text-emerald-600 font-semibold bg-emerald-100 px-1.5 py-0.5 rounded shrink-0">Geri Al</span>
+                                </button>
+                            )}
 
-                        {foods.length === 0 ? (
-                            <div className="text-center py-10 text-gray-500">Yemek listesi yükleniyor...</div>
-                        ) : calculatedAlternatives.length === 0 ? (
-                            <div className="text-center py-10">
-                                <AlertTriangle className="mx-auto h-8 w-8 text-yellow-500 mb-2" />
-                                <h3 className="font-medium">Eşleşen yemek bulunamadı.</h3>
-                            </div>
-                        ) : (
-                            <div className="space-y-2">
-                                <div className="text-xs text-gray-500 mb-2 flex justify-between sticky top-[68px] bg-white/95 backdrop-blur-sm z-20 py-3 border-b shadow-sm px-2">
-                                    <div className="flex gap-1 items-center">
-                                        <span className="font-bold text-gray-900 text-lg">{calculatedAlternatives.length}</span>
-                                        <span>yemek bulundu</span>
-                                    </div>
-                                    <span className="font-semibold text-emerald-700 w-16 text-center">Uyum</span>
+                            {foods.length === 0 ? (
+                                <div className="text-center py-10 text-gray-400 text-sm">Yükleniyor...</div>
+                            ) : calculatedAlternatives.length === 0 ? (
+                                <div className="text-center py-10">
+                                    <AlertTriangle className="mx-auto h-6 w-6 text-yellow-400 mb-1" />
+                                    <p className="text-sm text-gray-500">Eşleşen yemek bulunamadı.</p>
                                 </div>
-                                {calculatedAlternatives.slice(0, prefs.limit).map((food) => (
-                                    <div
-                                        key={food.id}
-                                        className="flex items-center justify-between p-3 border border-gray-100 rounded-lg hover:border-emerald-300 hover:bg-emerald-50/50 hover:shadow-sm transition-all cursor-pointer group bg-white"
-                                        onClick={() => handleSelectWithPortion(food)}
-                                    >
-                                        <div className="flex-1">
-                                            <div className="flex items-center gap-2 mb-1">
-                                                {/* Compatibility Indicators */}
-                                                {food._compatibility && (
-                                                    <TooltipProvider>
-                                                        <Tooltip>
-                                                            <TooltipTrigger asChild>
-                                                                <span className="cursor-help inline-flex items-center gap-0.5">
-                                                                    {!food._compatibility.compatible && <AlertTriangle size={14} className={food._compatibility.severity === 'block' ? "text-red-600" : "text-yellow-600"} />}
-                                                                    {food._compatibility.recommended && <Heart size={14} fill="currentColor" className="text-emerald-600" />}
-                                                                    {food._compatibility.medicationWarning && (
-                                                                        <span className={cn(
-                                                                            "text-xs",
-                                                                            food._compatibility.medicationWarning.type === 'negative' ? "text-red-600" :
-                                                                                food._compatibility.medicationWarning.type === 'warning' ? "text-yellow-600" : "text-green-600"
-                                                                        )}>💊</span>
-                                                                    )}
-                                                                </span>
-                                                            </TooltipTrigger>
-                                                            <TooltipContent side="right" align="start" sideOffset={10} collisionPadding={20} className="w-[380px] p-0 overflow-hidden shadow-2xl border-none z-[100]">
-                                                                <div className="flex flex-col gap-2 p-2 bg-gray-50/50">
-                                                                    {food._compatibility.warnings?.length > 0 ? (
-                                                                        food._compatibility.warnings.map((w: any, wi: number) => {
-                                                                            const isNegative = w.type === 'negative';
-                                                                            const isPositive = w.type === 'positive';
-                                                                            return (
-                                                                                <div key={wi} className={cn(
-                                                                                    "rounded-xl border p-3 flex flex-col gap-2 shadow-sm",
-                                                                                    isPositive ? "bg-blue-50/50 border-blue-100" :
-                                                                                        isNegative ? "bg-red-50/50 border-red-100" : "bg-amber-50/50 border-amber-100"
-                                                                                )}>
-                                                                                    <div className="flex items-center justify-between">
-                                                                                        <div className="flex items-center gap-2">
-                                                                                            <span className="font-bold text-gray-700 lowercase">{w.keyword || food.name}</span>
-                                                                                            {isPositive ? (
-                                                                                                <CheckCircle2 size={16} className="text-green-500" />
-                                                                                            ) : (
-                                                                                                <MinusCircle size={16} className="text-red-500" />
-                                                                                            )}
-                                                                                            <span className={cn(
-                                                                                                "font-bold",
-                                                                                                isPositive ? "text-blue-800" : "text-gray-800"
-                                                                                            )}>{w.sourceName}</span>
-                                                                                        </div>
-                                                                                        <div className="text-gray-400">
-                                                                                            {w.source === 'medication' ? <Pill size={16} /> :
-                                                                                                w.source === 'lab' ? <FlaskConical size={16} /> : <Stethoscope size={16} />}
-                                                                                        </div>
-                                                                                    </div>
-                                                                                    <div className="space-y-1.5">
-                                                                                        {w.warning && (
-                                                                                            <div className="flex gap-2 items-start text-[11px] leading-relaxed">
-                                                                                                <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-600" />
-                                                                                                <span className="text-gray-700 font-medium">{w.warning}</span>
-                                                                                            </div>
-                                                                                        )}
-                                                                                        {w.info && (
-                                                                                            <div className="flex gap-2 items-start text-[11px] leading-relaxed">
-                                                                                                <Info size={14} className="mt-0.5 shrink-0 text-blue-600" />
-                                                                                                <span className="text-gray-600">{w.info}</span>
-                                                                                            </div>
-                                                                                        )}
-                                                                                    </div>
-                                                                                </div>
-                                                                            );
-                                                                        })
-                                                                    ) : (
-                                                                        <div className="p-4 text-center text-gray-500 italic text-xs bg-white rounded-xl border border-dashed border-gray-200">
-                                                                            {food._compatibility.reason || "Bu hasta için herhangi bir kısıtlama veya uyarı bulunamadı."}
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                            </TooltipContent>
-                                                        </Tooltip>
-                                                    </TooltipProvider>
-                                                )}
-                                                <span className="font-medium text-gray-900">{food.name}</span>
-                                                {food.similarity > 90 && <span className="text-[10px] bg-green-100 text-green-700 px-1.5 rounded-full font-bold">Mükemmel</span>}
-                                                {!hideSettings && <button className="p-1 text-gray-400 hover:text-emerald-600 opacity-0 group-hover:opacity-100" onClick={(e) => { e.stopPropagation(); setEditingFood(food) }}><Pencil size={12} /></button>}
-                                            </div>
-                                            <div className="text-xs text-gray-500 flex items-center gap-3">
-                                                <span className="font-semibold text-gray-700">{Math.round(food.calories)} kcal</span>
-                                                <span className="text-orange-600">K: {Math.round(food.carbs)}g</span>
-                                                <span className="text-blue-600">P: {Math.round(food.protein)}g</span>
-                                                <span className="text-yellow-600">Y: {Math.round(food.fat)}g</span>
-                                            </div>
-                                        </div>
-                                        <div className="w-16 text-center">
-                                            <div className="text-lg font-bold text-emerald-600">%{Math.round(food.similarity)}</div>
-                                        </div>
+                            ) : (
+                                <div>
+                                    {/* Result count */}
+                                    <div className="px-3 py-1.5 flex justify-between items-center text-[11px] text-gray-400 border-b border-gray-50">
+                                        <span><strong className="text-gray-700">{calculatedAlternatives.length}</strong> alternatif</span>
                                     </div>
-                                ))}
-                            </div>
-                        )}
+
+                                    {/* Food rows — like plan food rows */}
+                                    {calculatedAlternatives.slice(0, prefs.limit).map((food) => {
+                                        const isExpanded = expandedFoodId === food.id
+                                        return (
+                                            <div key={food.id} className={cn("border-b border-gray-50 transition-colors", isExpanded && "bg-emerald-50/30")}>
+                                                {/* Main row */}
+                                                <div
+                                                    className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-emerald-50/40 active:bg-emerald-50/60 transition-colors"
+                                                    onClick={() => setExpandedFoodId(isExpanded ? null : food.id)}
+                                                >
+                                                    {/* Compatibility icon */}
+                                                    <div className="w-4 shrink-0 flex items-center justify-center">
+                                                        {food._compatibility && !food._compatibility.compatible ? (
+                                                            <AlertTriangle size={12} className={food._compatibility.severity === 'block' ? "text-red-500" : "text-yellow-500"} />
+                                                        ) : food._compatibility?.recommended ? (
+                                                            <Heart size={12} fill="currentColor" className="text-emerald-500" />
+                                                        ) : null}
+                                                    </div>
+
+                                                    {/* Food name — takes full width */}
+                                                    <span className="flex-1 text-[13px] font-medium text-gray-800 leading-tight line-clamp-1 min-w-0">{food.name}</span>
+
+                                                    {/* Similarity badge */}
+                                                    <span className={cn(
+                                                        "text-[12px] font-bold shrink-0 tabular-nums",
+                                                        food.similarity > 80 ? "text-emerald-600" :
+                                                            food.similarity > 50 ? "text-yellow-600" : "text-gray-400"
+                                                    )}>
+                                                        %{Math.round(food.similarity)}
+                                                    </span>
+                                                </div>
+
+                                                {/* Expanded — macros + swap button */}
+                                                {isExpanded && (
+                                                    <div className="px-3 pb-2.5 pt-0.5 flex items-center justify-between gap-2">
+                                                        <div className="flex items-center gap-2.5 text-[11px]">
+                                                            <span className="font-semibold text-gray-600">{Math.round(food.calories)} kcal</span>
+                                                            <span className="text-orange-500">K:{Math.round(food.carbs)}g</span>
+                                                            <span className="text-blue-500">P:{Math.round(food.protein)}g</span>
+                                                            <span className="text-yellow-500">Y:{Math.round(food.fat)}g</span>
+                                                        </div>
+                                                        <Button
+                                                            size="sm"
+                                                            onClick={(e) => { e.stopPropagation(); handleSelectWithPortion(food) }}
+                                                            className="h-7 text-[11px] px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold shadow-sm"
+                                                        >
+                                                            Değiştir
+                                                        </Button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )
+                                    })}
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
 
