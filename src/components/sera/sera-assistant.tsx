@@ -53,9 +53,20 @@ interface GenerateRuleResponse {
   conflicts: ConflictInfo[]
   suggestions: string[]
   affected_foods?: AffectedFood[]
+  duplicate_warnings?: { id: string; name: string; scope: string; rule_type: string; summary: string }[]
+  engine_rule_count?: number
   clarification_needed?: boolean
   clarification_target?: any
   clarification_message?: string
+  budget_impact?: {
+    dailyTarget: number
+    existingRulesCal: number
+    newRulesCal: number
+    totalEstimatedCal: number
+    overflowPercent: number
+    overflowingRules: string[]
+    recommendation: string | null
+  }
 }
 
 interface AffectedFood {
@@ -73,16 +84,111 @@ interface SeraAssistantProps {
   programTemplateId?: string | null
   onRuleCreated: () => void
   requireApproval: boolean
+  /** 'patient' (default) | 'program' | 'team' | 'global'
+   *  When embedded on a dietitian panel Sera still writes rules to the current scope layer.
+   *  Backend API receives this and injects the correct rules context + phase map.
+   */
+  scope?: 'patient' | 'program' | 'team' | 'global'
+  /** Compact mode: hides the outer card wrapper (for embedding in a tab/sheet). */
+  compact?: boolean
 }
 
-// ─── Hasta-Dostu Örnek Promptlar ───
-const SERA_EXAMPLE_PROMPTS = [
-  'Akşamları kırmızı et olmasın',
+// ─── Hasta-Dostu Örnek Promptlar (gerçek kural örnekleri) ───
+const ALL_SERA_PROMPTS = [
+  // Yumurta / kahvaltı
+  'Yumurtalı tariflere daha çok yer ver',
   'Sabahları mutlaka yumurta olsun',
-  'Süt ürünlerini azalt',
-  'Her gün salata olsun',
+  'Omlet ve menemen sık olsun',
+  'Kahvaltıda peynir çeşidi olsun',
+  'Kahvaltıda tost veya börek olmasın',
+  'Sabahları ceviz ve badem ekle',
+  'Kahvaltıda sucuk salam olmasın',
+  // Ekmek / karbonhidrat tercihleri
+  'Akşam öğünlerinde ekmek daha fazla olsun',
+  'Beyaz ekmek yerine tam buğday olsun',
+  'Ekmek tamamen çıkarılsın',
+  'Pilav yerine bulgur tercih ederim',
+  'Makarna haftada en fazla 1 kez olsun',
+  'Tam tahıllı ürünler olsun',
+  // Öğle yemeği
+  'Öğlen mutlaka çorba olsun',
+  'Öğlen hafif salata ağırlıklı olsun',
+  'Öğle yemeğinde tavuk tercih ederim',
+  'Öğle yemeğinde kuru baklagil olsun',
+  // Akşam yemeği
+  'Akşamları hafif yemek istiyorum',
+  'Akşam yemeğinde karbonhidrat az olsun',
+  'Akşamları sebze ağırlıklı olsun',
+  'Akşam yemeğinde hamur işi olmasın',
+  'Akşamları çorba ve salata yeterli',
+  // Ara öğünler
+  'Ara öğünlerde meyve olsun',
+  'Ara öğünde kuruyemiş tercih ederim',
+  'Ara öğünlerde yoğurt istiyorum',
+  'Gece atıştırmalığı olmasın',
+  // Sevmediğim yemekler
+  'Enginar sevmem, listelere ekleme',
+  'Brokoli ve karnabahar sevmiyorum',
+  'Patlıcan yemem',
+  'Kereviz yemem',
+  'Bamya olmasın',
+  'Mantar sevmiyorum',
+  'Ciğer yemem',
+  'Ton balığı sevmiyorum',
   'Tahin yemem',
+  'Muz yemem',
+  // Et ve protein
+  'Kırmızı eti haftada en fazla 2 kez istiyorum',
+  'Balık haftada mutlaka 2 kez olsun',
+  'Et yerine baklagil protein kaynağı olsun',
+  'Somon haftada bir olsun',
+  'Hindi eti tercih ederim',
+  // Sebze tercihleri
+  'Ispanak sık olsun',
+  'Kabak seviyorum sık olsun',
+  'Yeşil yapraklı sebzeler çok olsun',
+  'Havuç ve biber her gün olabilir',
+  // Meyve tercihleri
+  'Çilek ve böğürtlen olsun',
+  'Meyve suyu yerine taze meyve olsun',
+  'Kuru meyve azalt',
+  'Elma her gün olabilir',
+  // Süt ürünleri
+  'Süt ürünlerini azalt',
+  'Yoğurt her gün olsun',
+  'Kaşar peynir yerine beyaz peynir olsun',
+  'Kefir ekleyebilirsiniz',
+  'Ayran her gün olsun',
+  // Yağlar ve kuruyemiş
+  'Zeytinyağı ağırlıklı olsun',
+  'Tereyağı kullanılmasın',
+  'Ceviz ve badem her gün olsun',
+  'Keten tohumu ve chia ekleyin',
+  // Pişirme yöntemleri
+  'Kızartma olmasın',
+  'Fırında veya haşlama yemekler olsun',
+  'Izgara tercih ederim',
+  'Yağda kızartılmış hiçbir şey istemiyorum',
+  // Sağlık ve alerji
+  'Laktoz intoleransım var',
+  'Gluten hassasiyetim var',
+  'Fıstık alerjim var',
+  'Şeker tamamen çıksın',
+  'Tuz az olsun',
+  // Genel tercihler
+  'Çeşitlilik çok olsun tekrar az olsun',
+  'Pratik hazırlanabilir yemekler olsun',
+  'Her gün salata olsun',
+  'Doyurucu ama düşük kalorili yemekler',
+  'Hafta sonu farklı yemekler olsun',
 ]
+
+function getRandomSeraPrompts(count: number = 5): string[] {
+  const shuffled = [...ALL_SERA_PROMPTS].sort(() => Math.random() - 0.5)
+  return shuffled.slice(0, count)
+}
+
+const SERA_EXAMPLE_PROMPTS = getRandomSeraPrompts(5)
 
 // ─── Kural Tipi Etiketleri (Hasta-Dostu) ───
 const RULE_TYPE_LABELS_FRIENDLY: Record<string, string> = {
@@ -103,7 +209,10 @@ export function SeraAssistant({
   programTemplateId,
   onRuleCreated,
   requireApproval,
+  scope = 'patient',
+  compact = false,
 }: SeraAssistantProps) {
+  const effectiveScope = scope
   const [prompt, setPrompt] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [aiResult, setAiResult] = useState<GenerateRuleResponse | null>(null)
@@ -170,8 +279,8 @@ export function SeraAssistant({
         .select('*')
         .eq('scope', 'patient')
         .eq('patient_id', patientId)
-        .order('created_at', { ascending: false })
-      
+        .order('sort_order', { ascending: true })
+
       if (data) setPatientRules(data)
     } catch (e) {
       console.error('Error fetching patient rules:', e)
@@ -310,7 +419,7 @@ export function SeraAssistant({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prompt: activePrompt,
-          scope: 'patient',
+          scope: effectiveScope,
           patient_id: patientId,
           program_template_id: programTemplateId || undefined,
           team_owner_id: teamOwnerId || undefined,
@@ -353,7 +462,7 @@ export function SeraAssistant({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prompt: appendPrompt,
-          scope: 'patient',
+          scope: effectiveScope,
           patient_id: patientId,
           program_template_id: programTemplateId || undefined,
           team_owner_id: teamOwnerId || undefined,
@@ -402,7 +511,13 @@ export function SeraAssistant({
     const rulesToInsert = []
     
     // Çelişen/Eski kural ID'lerini toplayıp Kuralın içine (definition._replaced_ids) gömüyoruz ki Diyetisyen onayladığında iptal edilsin!
+    // API artık aynı hedefe sahip TÜM aktif kuralları definition._replaced_ids'e önceden koyuyor —
+    // bunu da toplama sonuçlarına dahil et ki hiçbir çakışan kural aktif kalmasın.
+    const apiReplacedIds = ((rule.definition as any)?._replaced_ids || []) as string[]
+    const additionalReplacedIds = (aiResult.additional_rules || []).flatMap((ar: any) => (ar.definition?._replaced_ids || []) as string[])
     const replacedIds = Array.from(new Set([
+      ...apiReplacedIds,
+      ...additionalReplacedIds,
       (rule as any).replaces_rule_id,
       ...(aiResult.additional_rules || []).map((r: any) => r.replaces_rule_id),
       ...(aiResult.conflicts || []).map((c: any) => c.existing_rule_id)
@@ -427,7 +542,7 @@ export function SeraAssistant({
         priority: rule.priority,
         is_active: !requireApproval,
         definition: { ...finalDefinition, _source: 'sera_assistant', _replaced_ids: replacedIds },
-        scope: 'patient',
+        scope: effectiveScope,
         patient_id: patientId || null,
         program_template_id: programTemplateId || null,
         team_owner_id: teamOwnerId || null,
@@ -449,7 +564,7 @@ export function SeraAssistant({
             priority: ar.priority,
             is_active: !requireApproval,
             definition: { ...ar.definition, _source: 'sera_assistant' },
-            scope: 'patient',
+            scope: effectiveScope,
             patient_id: patientId || null,
             program_template_id: programTemplateId || null,
             team_owner_id: teamOwnerId || null,
@@ -506,7 +621,7 @@ export function SeraAssistant({
                 priority: repRule.priority,
                 is_active: false,
                 definition: repRule.definition,
-                scope: 'patient',
+                scope: effectiveScope,
                 patient_id: patientId || null,
                 team_owner_id: teamOwnerId || null,
                 source_rule_id: repRule.id,
@@ -555,31 +670,37 @@ export function SeraAssistant({
          const mealData = await mealRes.json()
          if (!mealData.success) throw new Error(mealData.error || "Öğün ayarları güncellenemedi.")
       } else {
+        // API artık definition._replaced_ids içine tüm çakışan aktif kural id'lerini koyuyor.
+        // Bunu Sera'nın tek replaces_rule_id'siyle birleştir (her ikisini de kabul et).
+        const apiReplacedIds = ((addRule.definition as any)?._replaced_ids || []) as string[]
+        const singleReplaceId = addRule.replaces_rule_id
+        const allReplacedIds = Array.from(new Set([...apiReplacedIds, singleReplaceId].filter(Boolean))) as string[]
+
         const ruleData = {
           name: addRule.name,
           description: addRule.description,
           rule_type: addRule.rule_type,
           priority: addRule.priority,
           is_active: !requireApproval,
-          definition: { 
-            ...addRule.definition, 
+          definition: {
+            ...addRule.definition,
             _source: 'sera_assistant',
-            _replaced_ids: addRule.replaces_rule_id ? [addRule.replaces_rule_id] : []
+            _replaced_ids: allReplacedIds
           },
-          scope: 'patient',
+          scope: effectiveScope,
           patient_id: patientId || null,
           program_template_id: programTemplateId || null,
           team_owner_id: teamOwnerId || null,
           pending_global_approval: requireApproval,
         }
-        
+
         const { supabase } = await import('@/lib/supabase')
         const { error } = await supabase.from('planning_rules').insert(ruleData)
         if (error) throw error
-        
-        // Eğer Diyetisyen kendi ekliyorsa (direkt aktif oluyorsa), çelişenleri HEMEN ez/pause yap!
-        if (!requireApproval && addRule.replaces_rule_id) {
-          const { data: replacedRules } = await supabase.from('planning_rules').select('*').eq('id', addRule.replaces_rule_id)
+
+        // Diyetisyen kendi ekliyorsa (direkt aktif oluyorsa), çelişenleri HEMEN ez/pause yap!
+        if (!requireApproval && allReplacedIds.length > 0) {
+          const { data: replacedRules } = await supabase.from('planning_rules').select('*').in('id', allReplacedIds)
           if (replacedRules && replacedRules.length > 0) {
             for (const repRule of replacedRules) {
               if (repRule.scope === 'patient') {
@@ -592,7 +713,7 @@ export function SeraAssistant({
                   priority: repRule.priority,
                   is_active: false,
                   definition: repRule.definition,
-                  scope: 'patient',
+                  scope: effectiveScope,
                   patient_id: patientId,
                   team_owner_id: teamOwnerId || null,
                   source_rule_id: repRule.id,
@@ -681,7 +802,7 @@ export function SeraAssistant({
                     value={prompt}
                     onChange={(e) => setPrompt(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    placeholder="Bana ne tür yemekleri sevmediğini veya hangi tercihlerin olduğunu yaz..."
+                    placeholder="Sen de isteklerini belirt... (örn: enginar sevmem)"
                     className="min-h-[44px] max-h-[100px] text-sm resize-none bg-white border-emerald-200 focus-visible:ring-emerald-400 placeholder:text-emerald-400/60"
                     rows={1}
                     disabled={isLoading}
@@ -703,7 +824,7 @@ export function SeraAssistant({
                 {/* Örnek İpuçları */}
                 {!aiResult && !error && !isLoading && (
                   <div className="flex flex-wrap gap-1.5">
-                    {SERA_EXAMPLE_PROMPTS.slice(0, 3).map((example, i) => (
+                    {SERA_EXAMPLE_PROMPTS.slice(0, 4).map((example, i) => (
                       <button
                         key={i}
                         onClick={() => setPrompt(example)}
@@ -838,6 +959,85 @@ export function SeraAssistant({
                               <span>Bu tercihi onayladığınızda, yukarıda belirtilen çelişkili eski kurallarınız otomatik olarak duraklatılacaktır.</span>
                             </div>
                           )}
+                        </div>
+                      )}
+
+                      {/* Duplikat Uyarısı */}
+                      {aiResult.duplicate_warnings && aiResult.duplicate_warnings.length > 0 && (
+                        <div className="pt-3 border-t border-amber-100 mt-3">
+                          <div className="p-2.5 rounded-lg border border-amber-300 bg-amber-50 text-sm">
+                            <div className="flex items-center gap-1.5 font-medium text-amber-800 mb-1.5">
+                              <AlertTriangle className="h-4 w-4 shrink-0" />
+                              Benzer kural zaten mevcut
+                            </div>
+                            <div className="space-y-1 ml-5">
+                              {aiResult.duplicate_warnings.map((dw, i) => {
+                                const scopeLabels: Record<string, string> = { global: 'Genel', team: 'Takım', program: 'Program', patient: 'Kişisel' }
+                                return (
+                                  <div key={i} className="text-amber-700 text-xs">
+                                    <span className="font-medium">"{dw.name}"</span>
+                                    <span className="ml-1 px-1 py-0.5 rounded bg-amber-100 text-[10px] font-medium">{scopeLabels[dw.scope] || dw.scope}</span>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                            <p className="text-xs text-amber-700 mt-2 ml-5">
+                              Onayladığınızda eski kural(lar) otomatik duraklatılıp yenisi devreye girecek.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Motor bilgisi */}
+                      {aiResult.engine_rule_count != null && aiResult.engine_rule_count > 0 && (
+                        <div className="text-[10px] text-slate-400 pt-2 text-right">
+                          Motor bu hasta için {aiResult.engine_rule_count} aktif kural kullanıyor
+                        </div>
+                      )}
+
+                      {/* Bütçe Etki Uyarısı (Karar Destek) */}
+                      {aiResult.budget_impact && aiResult.budget_impact.overflowPercent > 15 && (
+                        <div className={`mt-3 p-3 rounded-lg border ${
+                          aiResult.budget_impact.overflowPercent > 30
+                            ? 'bg-red-50 border-red-200'
+                            : 'bg-amber-50 border-amber-200'
+                        }`}>
+                          <div className="flex items-start gap-2">
+                            <Activity className={`h-4 w-4 mt-0.5 shrink-0 ${
+                              aiResult.budget_impact.overflowPercent > 30 ? 'text-red-500' : 'text-amber-500'
+                            }`} />
+                            <div className="space-y-1 text-sm">
+                              <p className={`font-medium ${
+                                aiResult.budget_impact.overflowPercent > 30 ? 'text-red-800' : 'text-amber-800'
+                              }`}>
+                                Makro Bütçe Uyarısı
+                              </p>
+                              <p className={aiResult.budget_impact.overflowPercent > 30 ? 'text-red-700' : 'text-amber-700'}>
+                                Tüm aktif kuralların tahmini günlük etkisi: ~{aiResult.budget_impact.totalEstimatedCal} kcal
+                                (hedef: {aiResult.budget_impact.dailyTarget} kcal, aşım: %{aiResult.budget_impact.overflowPercent})
+                              </p>
+                              {aiResult.budget_impact.recommendation && (
+                                <p className={`text-xs ${
+                                  aiResult.budget_impact.overflowPercent > 30 ? 'text-red-600' : 'text-amber-600'
+                                }`}>
+                                  {aiResult.budget_impact.recommendation}
+                                </p>
+                              )}
+                              <div className="flex items-center gap-2 mt-1.5">
+                                <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
+                                  <div
+                                    className={`h-full rounded-full transition-all ${
+                                      aiResult.budget_impact.overflowPercent > 30 ? 'bg-red-500' : 'bg-amber-500'
+                                    }`}
+                                    style={{ width: `${Math.min(100, (aiResult.budget_impact.totalEstimatedCal / aiResult.budget_impact.dailyTarget) * 100)}%` }}
+                                  />
+                                </div>
+                                <span className="text-[10px] text-gray-500 shrink-0">
+                                  {Math.round((aiResult.budget_impact.totalEstimatedCal / aiResult.budget_impact.dailyTarget) * 100)}%
+                                </span>
+                              </div>
+                            </div>
+                          </div>
                         </div>
                       )}
 
@@ -996,8 +1196,8 @@ export function SeraAssistant({
         )}
       </div>
 
-      {/* ── Beslenme Tercihlerim (Faz 5) ── */}
-      {patientRules.length > 0 && (
+      {/* ── Beslenme Tercihlerim (Faz 5) — compact modda gizle, diyetisyen PatientRulesDialog kullanır ── */}
+      {!compact && patientRules.length > 0 && (
         <div className="mt-6 border border-emerald-100 bg-white rounded-xl overflow-hidden shadow-sm">
           <div className="bg-emerald-50/50 px-4 py-3 border-b border-emerald-100 flex flex-col gap-3">
             <div className="flex items-center justify-between gap-2">
@@ -1024,17 +1224,27 @@ export function SeraAssistant({
           {isRulesExpanded && (
             <div className="divide-y divide-emerald-50">
               {[...patientRules].sort((a, b) => {
-              if (a.is_active === b.is_active) {
-                return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-              }
-              return a.is_active ? -1 : 1
+              // 1. Aktif kurallar üstte
+              if (a.is_active !== b.is_active) return a.is_active ? -1 : 1
+              // 2. Diyetisyenin belirlediği sort_order (yukarıdan aşağıya öncelik)
+              const aOrder = Number((a as any).sort_order)
+              const bOrder = Number((b as any).sort_order)
+              const aOrderVal = Number.isFinite(aOrder) ? aOrder : Number.MAX_SAFE_INTEGER
+              const bOrderVal = Number.isFinite(bOrder) ? bOrder : Number.MAX_SAFE_INTEGER
+              if (aOrderVal !== bOrderVal) return aOrderVal - bOrderVal
+              // 3. Priority desc
+              const aPri = Number(a.priority) || 0
+              const bPri = Number(b.priority) || 0
+              if (aPri !== bPri) return bPri - aPri
+              // 4. Son eklenen üstte (tie-breaker)
+              return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
             }).map((rule) => (
-              <div key={rule.id} className="p-4 flex items-start justify-between gap-4 hover:bg-emerald-50/30 transition-colors">
+              <div key={rule.id} className="px-3 py-2.5 flex items-start justify-between gap-3 hover:bg-emerald-50/30 transition-colors">
                 <div className="flex-1">
                   <details className="group">
                     <summary className="list-none cursor-pointer flex flex-col gap-1.5 focus:outline-none">
                       <div className="flex items-center gap-2">
-                        <span className="font-medium text-[13px] text-gray-800 leading-snug pr-2">{generateRuleSentence(rule)}</span>
+                        <span className="font-medium text-[13px] text-gray-800 leading-snug pr-2 line-clamp-3">{generateRuleSentence(rule)}</span>
                           {!rule.is_active && rule.pending_global_approval && (
                             <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-200 bg-amber-50 shrink-0">
                               Onay Bekliyor

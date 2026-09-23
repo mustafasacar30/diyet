@@ -756,7 +756,7 @@ export function FoodAlternativeDialog({ isOpen, onClose, originalFood, onSelect,
                 style={{ transform: `translate(${position.x}px, ${position.y}px)` }}
             >
                 <DialogHeader
-                    className="p-3 border-b bg-white cursor-move select-none active:cursor-grabbing shrink-0 z-20"
+                    className="p-3 border-b border-emerald-100 bg-emerald-50/60 cursor-move select-none active:cursor-grabbing shrink-0 z-20"
                     onMouseDown={(e) => {
                         setIsDragging(true)
                         setDragStart({
@@ -771,8 +771,8 @@ export function FoodAlternativeDialog({ isOpen, onClose, originalFood, onSelect,
                             <div className="flex flex-col lg:flex-row items-start lg:items-center gap-2 lg:gap-4 flex-1 min-w-0 pr-2">
                                 <div className="flex flex-col gap-0.5">
                                     <div className="flex flex-wrap items-center gap-1 md:gap-2 leading-tight">
-                                        <span className="font-semibold whitespace-nowrap text-gray-700 text-sm md:text-base">Akıllı Alternatif Bul:</span>
-                                        <span className="text-blue-600 bg-blue-50 px-2 py-1 rounded text-[10px] sm:text-xs md:text-sm text-balance max-w-full">{originalFood?.name}</span>
+                                        <span className="font-semibold whitespace-nowrap text-emerald-700 text-sm md:text-base">Akıllı Alternatif Bul:</span>
+                                        <span className="text-emerald-700 bg-emerald-100 px-2 py-1 rounded text-[10px] sm:text-xs md:text-sm text-balance max-w-full font-medium">{originalFood?.name}</span>
                                     </div>
                                     <span className="text-[9px] sm:text-[10px] text-gray-400 font-medium leading-tight">Bu liste diyet uyumuna ve günlük makro hedeflerine göre özel olarak hesaplanmıştır.</span>
                                 </div>
@@ -853,7 +853,7 @@ export function FoodAlternativeDialog({ isOpen, onClose, originalFood, onSelect,
                         <div className="flex gap-4 text-xs text-gray-500 font-normal ml-1">
                             {prefs.useGapClosingMode ? (
                                 <>
-                                    <span className="text-purple-600 font-bold flex items-center gap-1">
+                                    <span className="text-emerald-600 font-bold flex items-center gap-1">
                                         <Target size={12} /> HEDEF AÇIK:
                                     </span>
                                     {(() => {
@@ -892,7 +892,7 @@ export function FoodAlternativeDialog({ isOpen, onClose, originalFood, onSelect,
 
                 <div className={`flex flex-1 relative ${prefs.showSettingsPanel && !hideSettings ? 'min-h-[450px]' : 'min-h-[400px]'}`}>
                     {prefs.showSettingsPanel && !hideSettings && (
-                        <div className="w-full md:w-[360px] border-r bg-gray-50 p-4 max-h-[calc(85vh-4rem)] overflow-y-auto shrink-0 space-y-3 text-sm [&::-webkit-scrollbar]:hidden">
+                        <div className="w-full md:w-[360px] border-r border-emerald-100 bg-emerald-50/30 p-4 max-h-[calc(85vh-4rem)] overflow-y-auto shrink-0 space-y-3 text-sm [&::-webkit-scrollbar]:hidden">
                             <div className="space-y-2">
                                 <h4 className="font-semibold text-xs text-gray-900 uppercase tracking-wider">Genel</h4>
                                 <div className="p-3 bg-white rounded-lg border shadow-sm">
@@ -904,23 +904,23 @@ export function FoodAlternativeDialog({ isOpen, onClose, originalFood, onSelect,
                                         type="range"
                                         min="1"
                                         max="50"
-                                        className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                                        className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-emerald-600"
                                         value={prefs.limit}
                                         onChange={(e) => saveSettings({ ...prefs, limit: Number(e.target.value) })}
                                     />
                                 </div>
                             </div>
 
-                            <div className="p-3 bg-purple-50 rounded-lg border border-purple-100 shadow-sm flex items-start gap-2">
+                            <div className="p-3 bg-emerald-50 rounded-lg border border-emerald-200 shadow-sm flex items-start gap-2">
                                 <Checkbox
                                     id="gapMode"
                                     checked={prefs.useGapClosingMode}
                                     onCheckedChange={(c) => saveSettings({ ...prefs, useGapClosingMode: !!c })}
-                                    className="data-[state=checked]:bg-purple-600 data-[state=checked]:border-purple-600 mt-0.5"
+                                    className="data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600 mt-0.5"
                                 />
                                 <div>
-                                    <Label htmlFor="gapMode" className="cursor-pointer font-semibold text-purple-900">Hedef Açığını Kapat</Label>
-                                    <p className="text-[10px] text-purple-700 leading-tight mt-1">
+                                    <Label htmlFor="gapMode" className="cursor-pointer font-semibold text-emerald-900">Hedef Açığını Kapat</Label>
+                                    <p className="text-[10px] text-emerald-700 leading-tight mt-1">
                                         Alternatifler orijinal yemeğe göre değil, günlük hedefteki açığı doldurmaya göre puanlanır.
                                     </p>
                                 </div>
@@ -1038,9 +1038,9 @@ export function FoodAlternativeDialog({ isOpen, onClose, originalFood, onSelect,
                         <div className="mb-4 sticky top-0 bg-white/95 backdrop-blur-sm z-30 pt-4 pb-2 px-2 -mx-2 border-b shadow-sm">
                             <div className="mb-3 px-1 border-b pb-3">
                                 <div className="flex justify-between text-[10px] font-medium text-gray-500 mb-2 px-1">
-                                    <span className={activeMacroPreference < 0 ? "text-blue-600 font-bold" : ""}>Protein Öncelikli Alternatifler</span>
-                                    <span className={activeMacroPreference === 0 ? "text-gray-700 font-bold" : ""}>Sadece Kalori</span>
-                                    <span className={activeMacroPreference > 0 ? "text-yellow-600 font-bold" : ""}>Yağ Öncelikli Alternatifler</span>
+                                    <span className={activeMacroPreference < 0 ? "text-emerald-600 font-bold" : ""}>Protein Öncelikli</span>
+                                    <span className={activeMacroPreference === 0 ? "text-gray-700 font-bold" : ""}>Dengeli</span>
+                                    <span className={activeMacroPreference > 0 ? "text-teal-600 font-bold" : ""}>Yağ Öncelikli</span>
                                 </div>
                                 <Slider
                                     defaultValue={[activeMacroPreference]}
@@ -1058,7 +1058,7 @@ export function FoodAlternativeDialog({ isOpen, onClose, originalFood, onSelect,
                                         variant="outline"
                                         role="combobox"
                                         aria-expanded={searchOpen}
-                                        className="w-full justify-between bg-white h-10 border-blue-200 hover:border-blue-400 hover:bg-blue-50 text-gray-600"
+                                        className="w-full justify-between bg-white h-10 border-emerald-200 hover:border-emerald-400 hover:bg-emerald-50 text-gray-600"
                                     >
                                         <div className="flex items-center gap-2 overflow-hidden">
                                             <Search className="h-4 w-4 shrink-0 opacity-50" />
@@ -1068,9 +1068,9 @@ export function FoodAlternativeDialog({ isOpen, onClose, originalFood, onSelect,
                                     </Button>
                                 </PopoverTrigger>
                                 <PopoverContent className="w-[450px] p-0" align="start">
-                                    <div className="p-2 bg-blue-50/50 border-b border-blue-100 flex flex-col gap-0.5">
-                                        <span className="text-xs font-semibold text-blue-900">Spesifik Yemek Arama (Sadece Makro Eşleşmesi)</span>
-                                        <span className="text-[10px] text-blue-700/80 leading-tight">İstediğiniz yemeği arayın. Yüzdeler sadece hedefinize olan ham makro benzerliğini gösterir (diyet kurallarını yok sayar).</span>
+                                    <div className="p-2 bg-emerald-50/50 border-b border-emerald-100 flex flex-col gap-0.5">
+                                        <span className="text-xs font-semibold text-emerald-900">Spesifik Yemek Arama</span>
+                                        <span className="text-[10px] text-emerald-700/80 leading-tight">İstediğiniz yemeği arayın. Yüzdeler hedefinize olan makro benzerliğini gösterir.</span>
                                     </div>
                                     <Command shouldFilter={false}>
                                         <CommandInput
@@ -1101,7 +1101,7 @@ export function FoodAlternativeDialog({ isOpen, onClose, originalFood, onSelect,
                                                             <div className="flex items-center justify-between w-full">
                                                                 <div className="flex flex-col gap-0.5">
                                                                     <div className="flex items-center gap-1.5">
-                                                                        <Check className={cn("h-3 w-3 text-blue-600", originalFood?.id === food.id ? "opacity-100" : "opacity-0")} />
+                                                                        <Check className={cn("h-3 w-3 text-emerald-600", originalFood?.id === food.id ? "opacity-100" : "opacity-0")} />
                                                                         {/* Compatibility Indicators */}
                                                                         {food._compatibility && (
                                                                             <TooltipProvider>
@@ -1207,20 +1207,20 @@ export function FoodAlternativeDialog({ isOpen, onClose, originalFood, onSelect,
 
                         {targetToRevert && (
                             <div
-                                className="mb-4 bg-gradient-to-r from-violet-50 to-white border border-violet-200 rounded-lg p-3 hover:border-violet-300 hover:shadow-md transition-all cursor-pointer group"
+                                className="mb-4 bg-gradient-to-r from-emerald-50 to-white border border-emerald-200 rounded-lg p-3 hover:border-emerald-300 hover:shadow-md transition-all cursor-pointer group"
                                 onClick={() => onSelect(targetToRevert)}
                             >
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-2">
-                                        <div className="p-1.5 bg-violet-100 text-violet-600 rounded-full">
+                                        <div className="p-1.5 bg-emerald-100 text-emerald-600 rounded-full">
                                             <RefreshCw size={14} />
                                         </div>
                                         <div>
-                                            <div className="font-bold text-violet-800 text-sm">Orijinale Dön: {targetToRevert.name}</div>
-                                            <div className="text-[10px] text-violet-600/70">Bu öğün değiştirilmeden önce bu yemek vardı.</div>
+                                            <div className="font-bold text-emerald-800 text-sm">Orijinale Dön: {targetToRevert.name}</div>
+                                            <div className="text-[10px] text-emerald-600/70">Bu öğün değiştirilmeden önce bu yemek vardı.</div>
                                         </div>
                                     </div>
-                                    <div className="text-violet-600 text-xs font-semibold px-2 py-1 bg-violet-100 rounded">Geri Al</div>
+                                    <div className="text-emerald-600 text-xs font-semibold px-2 py-1 bg-emerald-100 rounded">Geri Al</div>
                                 </div>
                             </div>
                         )}
@@ -1239,12 +1239,12 @@ export function FoodAlternativeDialog({ isOpen, onClose, originalFood, onSelect,
                                         <span className="font-bold text-gray-900 text-lg">{calculatedAlternatives.length}</span>
                                         <span>yemek bulundu</span>
                                     </div>
-                                    <span className="font-semibold text-gray-700 w-16 text-center">Uyumluluk</span>
+                                    <span className="font-semibold text-emerald-700 w-16 text-center">Uyum</span>
                                 </div>
                                 {calculatedAlternatives.slice(0, prefs.limit).map((food) => (
                                     <div
                                         key={food.id}
-                                        className="flex items-center justify-between p-3 border rounded-lg hover:border-blue-400 hover:bg-blue-50 hover:shadow-sm transition-all cursor-pointer group bg-white"
+                                        className="flex items-center justify-between p-3 border border-gray-100 rounded-lg hover:border-emerald-300 hover:bg-emerald-50/50 hover:shadow-sm transition-all cursor-pointer group bg-white"
                                         onClick={() => handleSelectWithPortion(food)}
                                     >
                                         <div className="flex-1">
@@ -1256,7 +1256,7 @@ export function FoodAlternativeDialog({ isOpen, onClose, originalFood, onSelect,
                                                             <TooltipTrigger asChild>
                                                                 <span className="cursor-help inline-flex items-center gap-0.5">
                                                                     {!food._compatibility.compatible && <AlertTriangle size={14} className={food._compatibility.severity === 'block' ? "text-red-600" : "text-yellow-600"} />}
-                                                                    {food._compatibility.recommended && <Heart size={14} fill="currentColor" className="text-blue-600" />}
+                                                                    {food._compatibility.recommended && <Heart size={14} fill="currentColor" className="text-emerald-600" />}
                                                                     {food._compatibility.medicationWarning && (
                                                                         <span className={cn(
                                                                             "text-xs",
@@ -1325,7 +1325,7 @@ export function FoodAlternativeDialog({ isOpen, onClose, originalFood, onSelect,
                                                 )}
                                                 <span className="font-medium text-gray-900">{food.name}</span>
                                                 {food.similarity > 90 && <span className="text-[10px] bg-green-100 text-green-700 px-1.5 rounded-full font-bold">Mükemmel</span>}
-                                                {!hideSettings && <button className="p-1 text-gray-400 hover:text-blue-600 opacity-0 group-hover:opacity-100" onClick={(e) => { e.stopPropagation(); setEditingFood(food) }}><Pencil size={12} /></button>}
+                                                {!hideSettings && <button className="p-1 text-gray-400 hover:text-emerald-600 opacity-0 group-hover:opacity-100" onClick={(e) => { e.stopPropagation(); setEditingFood(food) }}><Pencil size={12} /></button>}
                                             </div>
                                             <div className="text-xs text-gray-500 flex items-center gap-3">
                                                 <span className="font-semibold text-gray-700">{Math.round(food.calories)} kcal</span>
@@ -1335,7 +1335,7 @@ export function FoodAlternativeDialog({ isOpen, onClose, originalFood, onSelect,
                                             </div>
                                         </div>
                                         <div className="w-16 text-center">
-                                            <div className="text-lg font-bold text-blue-600">%{Math.round(food.similarity)}</div>
+                                            <div className="text-lg font-bold text-emerald-600">%{Math.round(food.similarity)}</div>
                                         </div>
                                     </div>
                                 ))}

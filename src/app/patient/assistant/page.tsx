@@ -102,34 +102,34 @@ export default function AssistantPage() {
     }
 
     return (
-        <div className="max-w-4xl mx-auto p-2 pb-20 sm:p-4">
-            <Card className="border-emerald-100 shadow-sm bg-white/80 backdrop-blur-sm">
-                <CardHeader className="pb-4">
-                    <CardTitle className="flex items-center gap-2 text-xl text-emerald-800">
-                        <Leaf className="h-6 w-6 text-emerald-600" />
-                        Sera — Kişisel Asistanınız
-                    </CardTitle>
-                    <CardDescription className="text-emerald-700/80">
-                        Beslenme tercihlerinizi bana anlatın. Sizin için en uygun düzenlemeyi yaparım.
-                    </CardDescription>
-                </CardHeader>
-                <CardContent>
-                    {patientId && (
-                        
-                        <SeraAssistant
-                            patientId={patientId}
-                            patientName={patientName}
-                            requireApproval={requireApproval}
-                            teamOwnerId={teamOwnerId}
-                            programTemplateId={programTemplateId}
+        <div className="max-w-4xl mx-auto p-2 pb-24 sm:p-4 space-y-3">
+            {/* Sera Hero Header */}
+            <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-600 via-teal-500 to-emerald-700 px-4 py-4 text-white shadow-lg">
+                <div className="absolute -right-8 -top-8 h-28 w-28 rounded-full bg-white/10 blur-2xl" />
+                <div className="relative z-10 flex items-center gap-3">
+                    <div className="h-10 w-10 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm border border-white/10 shrink-0">
+                        <Leaf className="h-5 w-5 text-white" />
+                    </div>
+                    <div className="min-w-0">
+                        <h1 className="text-base font-bold tracking-tight">Sera — Kişisel Asistanınız</h1>
+                        <p className="text-[11px] text-emerald-100/90 mt-0.5 leading-snug">
+                            Beslenme tercihlerinizi bana anlatın. Sizin için en uygun düzenlemeyi yaparım.
+                        </p>
+                    </div>
+                </div>
+            </div>
 
-                            onRuleCreated={() => {
-                                // Rule creation callback
-                            }}
-                        />
-                    )}
-                </CardContent>
-            </Card>
+            {/* Sera Content */}
+            {patientId && (
+                <SeraAssistant
+                    patientId={patientId}
+                    patientName={patientName}
+                    requireApproval={requireApproval}
+                    teamOwnerId={teamOwnerId}
+                    programTemplateId={programTemplateId}
+                    onRuleCreated={() => {}}
+                />
+            )}
         </div>
     )
 }

@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import React, { useMemo, useState, useEffect, useRef } from "react"
-import { Pencil, Check, Wand2, Lock, Unlock, Scale, ChevronUp, ChevronDown, RotateCcw, UtensilsCrossed } from "lucide-react"
+import { Pencil, Check, Wand2, Lock, Unlock, Scale, ChevronUp, ChevronDown, RotateCcw, UtensilsCrossed, Copy, HelpCircle } from "lucide-react"
 import { FoodEditDialog } from "@/components/diet/food-sidebar"
 import { SettingsDialog } from "@/components/planner/settings-dialog"
 import { PatientRulesDialog } from "@/components/planner/patient-rules-dialog"
@@ -22,6 +22,155 @@ import { saveFoodMicronutrientsByScope } from "@/lib/team-food-micronutrient-ove
 import { FOOD_ROLES, LEGACY_ROLE_LABELS } from "@/lib/constants/food-roles"
 import { Planner } from "@/lib/planner/engine3"
 import { BalanceConfirmModal, BalanceChange } from "@/components/diet/balance-confirm-modal"
+
+// ═══════════════════════════════════════════════
+// Karar Raporu — self-documenting helpers
+// ═══════════════════════════════════════════════
+
+const DAY_NAMES_TR = ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar']
+
+/** G1 KAH → "Gün 1 (Pazartesi) — Kahvaltı" gibi insan-okunur açıklama (tooltip için). */
+function describeSlotCode(day: number, slot?: string): string {
+    if (day === 0) return 'Tüm hafta seviyesindeki adjustment / post-process log'
+    const dayName = DAY_NAMES_TR[day - 1] || `Gün ${day}`
+    if (!slot) return `Gün ${day} (${dayName})`
+    const s = slot.toUpperCase()
+    // Özel işaretler: ITE = Iteration re-plan, CRO = Cross-day debt hesabı, GEN = Genel
+    if (s.startsWith('ITE')) return `Gün ${day} (${dayName}) — Iteration re-plan (slot sapması >tolerans, engine slotu yeniden dener)`
+    if (s.startsWith('CRO')) return `Gün ${day} (${dayName}) — Cross-day cumulative debt hesabı`
+    if (s.startsWith('GEN')) return `Gün ${day} (${dayName}) — Genel adjustment`
+    return `Gün ${day} (${dayName}) — ${slot}`
+}
+
+/** Karar Raporu üstünde legend + AI için kopyala düğmesi. */
+function ReportLegendHeader({ plan, target, tolerances }: { plan: any, target: any, tolerances: any }) {
+    const [copied, setCopied] = useState(false)
+    const [showLegend, setShowLegend] = useState(false)
+
+    const copyForAI = async () => {
+        if (!plan?.logs) return
+        const lines: string[] = []
+        lines.push('═══════════════════════════════════════════════')
+        lines.push('OTOMATIK PLAN — KARAR RAPORU (self-documenting)')
+        lines.push('═══════════════════════════════════════════════')
+        lines.push('')
+        lines.push('## LEGEND (kısaltmalar)')
+        lines.push('G1..G7        → Gün 1..7 (Pazartesi..Pazar, 1-based)')
+        lines.push('KAH           → Kahvaltı slotu')
+        lines.push('ÖĞL           → Öğlen slotu')
+        lines.push('AKŞ           → Akşam slotu')
+        lines.push('ARA           → Ara Öğün slotu')
+        lines.push('ITE           → Iteration: slot makro sapması >tolerans → engine slotu 1-3 kez yeniden dener')
+        lines.push('CRO           → Cross-day: bir önceki günün kalori/makro açığını sonraki güne aktarır (compensated targets)')
+        lines.push('GEN / GENEL   → Post-process (Freq-Flex, portion scaling, forced-add skips)')
+        lines.push('')
+        lines.push('## EVENT TİPLERİ')
+        lines.push('Uygulandı (select) → yemek eklendi / kural doldurdu')
+        lines.push('Bilgi (info)       → durum bildirimi (arama, bütçe, iterasyon vb.)')
+        lines.push('Atlandı (reject)   → yemek reddedildi (tag conflict, cap, meal_types)')
+        lines.push('Hata (error)       → kural zorla eklenemedi / veri bulunamadı')
+        lines.push('')
+        lines.push('## SIK GÖRÜLEN LOG SATIRLARININ ANLAMI')
+        lines.push('- Fixed meal selected [match:X]     → fixed_meal kuralı yemeği buldu (X = exact/normalized/folded/fuzzy/id)')
+        lines.push('- Required role X intersected with Y → slot_config gerektirdiği rol (Örn: mainDish) frequency kuralı Y ile kesişti')
+        lines.push('- Pass 1: Direct name/tag pool match → name_or_tag / name_contains / tag hedefli kural role-agnostic pool taramayla yemek buldu')
+        lines.push('- Pass 1: Could not find food       → havuzda uygun yemek yok (eligibility, meal_types, tag conflict, weekly cap)')
+        lines.push('- Pass 1: Fallback fill              → normal aramada bulamadı, gevşetilmiş kısıtlarla tekrar denedi')
+        lines.push('- Budget reached (X/Y)              → slot kalori bütçesi doldu, Pass 2 (optional) durdu (X=harcanan, Y=budget)')
+        lines.push('- Iteration N: F=X%, C=Y%, P=Z%     → slot makro sapması N. iterasyonda hâlâ tolerans dışı')
+        lines.push('- Affinity injection X triggered    → trigger yemeği geldi, affinity kuralı outcome ekledi')
+        lines.push('- Day N deviation ... Cumulative debt → gün sonu kalori/makro açığı ve haftalık kümülatif borç')
+        lines.push('- Compensated targets P=A (base B)   → sonraki günün hedefi debt ile telafi edildi')
+        lines.push('- Freq-Flex: Removed X (Ykcal)      → kural min üstünde doldurulmuştu, kalori tasarrufu için Y çıkarıldı')
+        lines.push('- Reduced portion x0.5              → adjustWeekPortions() MACRO_CONVERGENCE ile yemek porsiyonunu yarıya indirdi')
+        lines.push('- Reduced huge meal >40%            → tek yemek gün toplamının %40+ı, MAX_LIMIT_PROTECTION ile küçültüldü')
+        lines.push('- Skipped forced add for X         → force_inclusion olsa da makro kapasitesi doldu, atlandı')
+        lines.push('- Cannot force freq rule X, no eligible foods found → DB\'de kural için hiç uygun yemek yok (meal_types, banned, diet phase)')
+        lines.push('')
+        // Aktif kural özeti
+        if (Array.isArray(plan.activeRules)) {
+            lines.push('## AKTIF KURALLAR (özet)')
+            for (const r of plan.activeRules.slice(0, 40)) {
+                const def = r.definition?.data || r.definition || {}
+                const t = def.target
+                lines.push(`- [${r.rule_type}] "${r.name}" p=${r.priority} scope=${r.scope} target=${t ? `${t.type}:${t.value}` : '-'} period=${def.period || '-'} min=${def.min_count ?? '-'} max=${def.max_count ?? '-'} force=${def.force_inclusion || false}`)
+            }
+            lines.push('')
+        }
+        // Plan hedefleri
+        lines.push('## HEDEF vs GERÇEK (haftalık ortalama)')
+        lines.push(`- Kalori: hedef=${target.calories}kcal, tolerans=[${tolerances.calories?.min || 80}%..${tolerances.calories?.max || 120}%]`)
+        lines.push(`- Protein: hedef=${target.protein}g`)
+        lines.push(`- Karb:   hedef=${target.carbs}g`)
+        lines.push(`- Yağ:    hedef=${target.fat}g`)
+        lines.push('')
+        // Loglar
+        lines.push('## LOG SATIRLARI (kronolojik)')
+        for (const log of plan.logs) {
+            const prefix = log.day === 0 ? 'GENEL      ' : `G${log.day} ${(log.slot || '').substring(0, 3).padEnd(3)}`.padEnd(11)
+            const eventLabel = ({ select: 'Uygulandı', info: 'Bilgi     ', reject: 'Atlandı   ', error: 'Hata      ' } as any)[log.event] || (log.event || 'Kayıt     ')
+            const food = log.food ? ` [${log.food}]` : ''
+            lines.push(`${prefix} | ${eventLabel} | ${log.reason}${food}`)
+        }
+        lines.push('')
+        lines.push('---')
+        lines.push('Kaynak: engine3 (src/lib/planner/engine3.ts). Detaylı sistem referansı: docs/engine3-reference.md')
+
+        try {
+            await navigator.clipboard.writeText(lines.join('\n'))
+            setCopied(true)
+            setTimeout(() => setCopied(false), 2000)
+        } catch (e) {
+            console.error('Copy failed', e)
+        }
+    }
+
+    return (
+        <div className="px-4 py-2 border-b bg-slate-50/50 shrink-0 flex items-center gap-2 flex-wrap">
+            <div className="text-[10px] text-slate-600 flex-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span className="font-semibold text-slate-700">Kısaltmalar:</span>
+                <span><b>G1..G7</b>=gün</span>
+                <span><b>KAH</b>=Kahvaltı</span>
+                <span><b>ÖĞL</b>=Öğlen</span>
+                <span><b>AKŞ</b>=Akşam</span>
+                <span><b>ITE</b>=Slot yeniden dener</span>
+                <span><b>CRO</b>=Kalori borcu aktarımı</span>
+                <span><b>GENEL</b>=Post-process</span>
+                <button
+                    onClick={() => setShowLegend(!showLegend)}
+                    className="text-slate-500 hover:text-slate-700 inline-flex items-center gap-0.5 underline"
+                >
+                    <HelpCircle size={11} /> {showLegend ? 'gizle' : 'detay'}
+                </button>
+            </div>
+            <Button variant="outline" size="sm" onClick={copyForAI} className="h-7 gap-1 text-xs">
+                <Copy size={12} className="text-blue-600" />
+                {copied ? 'Kopyalandı!' : 'AI\'ye kopyala'}
+            </Button>
+            {showLegend && (
+                <div className="w-full mt-2 p-3 bg-white border rounded text-[11px] leading-relaxed text-slate-700 space-y-1">
+                    <div><b>Uygulandı</b>: yemek eklendi. <b>Bilgi</b>: durum bildirimi. <b>Atlandı</b>: yemek reddedildi. <b>Hata</b>: kural zorla eklenemedi.</div>
+                    <div><b>Fixed meal selected [match:X]</b>: fixed_meal kuralı yemeği buldu (X=exact/normalized/folded/fuzzy/id).</div>
+                    <div><b>Required role X intersected with Y</b>: slot_config gerektirdiği rol Y frequency kuralıyla kesişti.</div>
+                    <div><b>Pass 1: Direct name/tag pool match</b>: name_or_tag/name_contains/tag hedefli kural role-agnostic pool taramayla yemek buldu.</div>
+                    <div><b>Pass 1: Could not find food</b>: havuzda uygun yemek yok — meal_types, tag conflict, weekly cap, diet phase yasak.</div>
+                    <div><b>Budget reached (X/Y)</b>: slot kalori bütçesi doldu (X=harcanan, Y=budget).</div>
+                    <div><b>Iteration N: F=X%, C=Y%, P=Z%, Cal=W%</b>: slot makro sapması hâlâ toleransta değil, engine slotu 3 kez yeniden dener.</div>
+                    <div><b>Day N deviation ... Cumulative debt</b>: gün sonu kalori/makro açığı, sonraki güne aktarılır.</div>
+                    <div><b>Compensated targets P=A (base B)</b>: sonraki günün hedefi kümülatif borçla telafi edildi.</div>
+                    <div><b>Freq-Flex: Removed X (Ykcal)</b>: kural min üstünde doldurulmuştu, hafta kalori fazlası için Y çıkarıldı.</div>
+                    <div><b>Reduced portion x0.5</b>: <code>adjustWeekPortions()</code> yemek porsiyonunu yarıya indirdi (MACRO_CONVERGENCE).</div>
+                    <div><b>Reduced huge meal &gt;40%</b>: tek yemek gün toplamının %40'ından fazla, MAX_LIMIT_PROTECTION ile küçültüldü.</div>
+                    <div><b>Skipped forced add for X</b>: force_inclusion olsa da makro doldu, atlandı.</div>
+                    <div><b>Cannot force freq rule X</b>: DB'de kural için hiç uygun yemek yok (meal_types kısıtı, banned_keywords, phase).</div>
+                    <div className="mt-2 pt-2 border-t text-slate-500">
+                        Kod referansı: <code>src/lib/planner/engine3.ts</code>. Detaylı sistem haritası: <code>docs/engine3-reference.md</code>.
+                    </div>
+                </div>
+            )}
+        </div>
+    )
+}
 
 function MacroBar({ label, actual, target, unit = 'g', minTolerance = 80, maxTolerance = 120 }: { label: string, actual: number, target: number, unit?: string, minTolerance?: number, maxTolerance?: number }) {
     const percentage = target > 0 ? Math.min((actual / target) * 100, 150) : 0
@@ -183,41 +332,55 @@ function getMealRuleSources(meal: any): MealRuleSourceChip[] {
 
 
 // SAFE HELPER FOR COMPATIBILITY BADGE
+function getSlotCompatibilityMap(slotMeals: any[]): Map<string, string> {
+    const map = new Map<string, string>()
+    try {
+        if (!slotMeals?.length) return map
+        const mainDishMeal = slotMeals.find((m: any) =>
+            m.food?.role === 'mainDish' ||
+            (typeof m.food?.role === 'string' && m.food.role.toLowerCase().includes('ana yemek'))
+        )
+        const mainDish = mainDishMeal?.food
+        if (!mainDish) return map
+        const targetTags = Array.isArray(mainDish.compatibility_tags) ? mainDish.compatibility_tags : []
+        if (!targetTags.length) return map
+
+        for (const meal of slotMeals) {
+            if (!meal?.food || meal.food.id === mainDish.id) continue
+            const myTags = [
+                ...(Array.isArray(meal.food.tags) ? meal.food.tags : []),
+                ...(Array.isArray(meal.food.compatibility_tags) ? meal.food.compatibility_tags : [])
+            ]
+            if (!myTags.length) continue
+            const foodName = (meal.food.name || '').toLowerCase()
+            const match = targetTags.find((t: any) => {
+                if (typeof t !== 'string') return false
+                const tLower = t.trim().toLowerCase()
+                if (myTags.some((mt: any) => typeof mt === 'string' && mt.trim().toLowerCase() === tLower)) return true
+                if (foodName.includes(tLower)) return true
+                return false
+            })
+            if (match) map.set(meal.food.id, match)
+        }
+    } catch { /* silent */ }
+    return map
+}
+
 function renderCompatibilityBadge(meal: any, slotMeals: any[]) {
     try {
         if (!meal?.food || !slotMeals) return null
-
-        // Resolve slotMainDish from the parent scope's slotMeals
-        const slotMainDish = slotMeals.find((m: any) =>
-            m.food?.role === 'mainDish' ||
-            (typeof m.food?.role === 'string' && m.food.role.toLowerCase().includes('ana yemek'))
-        )?.food
-
-        if (slotMainDish && meal.food && slotMainDish.id !== meal.food.id) {
-            // Strict array checks
-            const targetTags = Array.isArray(slotMainDish.compatibility_tags) ? slotMainDish.compatibility_tags : []
-            const myTags = Array.isArray(meal.food.tags) ? meal.food.tags : []
-
-            if (!targetTags.length || !myTags.length) return null
-
-            const match = targetTags.find((t: any) =>
-                typeof t === 'string' &&
-                myTags.some((mt: any) => typeof mt === 'string' && mt.trim().toLowerCase() === t.trim().toLowerCase())
-            )
-
-            if (match) {
-                return (
-                    <span className="inline-flex items-center px-1 py-0 rounded text-[9px] font-medium bg-yellow-200 text-yellow-800 border border-yellow-300 leading-none" title="Ana yemekle uyumlu">
-                        ({match})
-                    </span>
-                )
-            }
-        }
-    } catch (e) {
-        // Silent fail
+        const compatMap = getSlotCompatibilityMap(slotMeals)
+        const match = compatMap.get(meal.food.id)
+        if (!match) return null
+        return (
+            <span className="inline-flex items-center gap-0.5 px-1 py-0 rounded text-[9px] font-medium bg-amber-100 text-amber-700 border border-amber-300 leading-none ml-1" title={`Ana yemekle uyumlu: ${match}`}>
+                <svg className="w-2.5 h-2.5" viewBox="0 0 12 12" fill="none"><path d="M3 6h6M6 3v6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+                {match}
+            </span>
+        )
+    } catch {
         return null
     }
-    return null
 }
 
 import { useScalableUnits, getScaledFoodName } from "@/lib/planner/portion-scaler"
@@ -1211,14 +1374,21 @@ export function AutoPlanDialog({ open, onOpenChange, plan, onConfirm, loading, m
 
                                                         {/* Foods in this slot - sorted by role order */}
                                                         <div className="space-y-0.5">
-                                                            {[...slotMeals].sort((a: any, b: any) => {
-                                                                const roleA = a.food?.role || ''
-                                                                const roleB = b.food?.role || ''
-                                                                const orderA = ROLE_ORDER.indexOf(roleA)
-                                                                const orderB = ROLE_ORDER.indexOf(roleB)
-                                                                return (orderA === -1 ? 99 : orderA) - (orderB === -1 ? 99 : orderB)
-                                                            }).map((meal: any, idx: number) => {
+                                                            {(() => {
+                                                                const compatMap = getSlotCompatibilityMap(slotMeals)
+                                                                const hasAnyCompat = compatMap.size > 0
+                                                                const sortedMeals = [...slotMeals].sort((a: any, b: any) => {
+                                                                    const roleA = a.food?.role || ''
+                                                                    const roleB = b.food?.role || ''
+                                                                    const orderA = ROLE_ORDER.indexOf(roleA)
+                                                                    const orderB = ROLE_ORDER.indexOf(roleB)
+                                                                    return (orderA === -1 ? 99 : orderA) - (orderB === -1 ? 99 : orderB)
+                                                                })
+                                                                return sortedMeals.map((meal: any, idx: number) => {
                                                                 if (!meal.food) return null
+
+                                                                const isCompat = compatMap.has(meal.food.id)
+                                                                const isMainDish = meal.food.role === 'mainDish'
 
                                                                 const isFixed = meal.food.portion_fixed === true || (
                                                                     meal.food.min_quantity !== null &&
@@ -1235,7 +1405,8 @@ export function AutoPlanDialog({ open, onOpenChange, plan, onConfirm, loading, m
                                                                 const ruleSources = getMealRuleSources(meal)
 
                                                                 return (
-                                                                    <div key={idx} className="flex items-center gap-2 text-[11px] group">
+                                                                    <div key={idx} className={`flex items-center text-[11px] group ${isCompat ? 'border-l-2 border-amber-400 bg-amber-50/50 pl-1 rounded-r' : ''}`}>
+                                                                        <div className="flex items-center gap-2 flex-1 min-w-0">
                                                                         {/* PORTION CONTROL COLUMN */}
                                                                         <div className="shrink-0 w-14">
                                                                             {(() => {
@@ -1336,6 +1507,11 @@ export function AutoPlanDialog({ open, onOpenChange, plan, onConfirm, loading, m
                                                                         <span className="flex-1 truncate text-slate-700 ml-1" title={meal.food.name}>
                                                                             {getScaledFoodName(meal.food.name, currentMult, scalableUnits)}
                                                                             {meal.food.unit && <span className="text-slate-400 ml-1 text-[9px]">({meal.food.unit})</span>}
+                                                                            {isMainDish && hasAnyCompat && (
+                                                                                <span className="inline-flex items-center px-1 py-0 rounded text-[9px] font-medium bg-amber-100 text-amber-600 border border-amber-200 leading-none ml-1" title="Bu ana yemeğe uyumlu yemekler var">
+                                                                                    uyum kaynağı
+                                                                                </span>
+                                                                            )}
                                                                             {renderCompatibilityBadge(meal, slotMeals)}
                                                                         </span>
 
@@ -1370,8 +1546,9 @@ export function AutoPlanDialog({ open, onOpenChange, plan, onConfirm, loading, m
                                                                             </span>
                                                                         </div>
                                                                     </div>
+                                                                    </div>
                                                                 )
-                                                            })}
+                                                            })})()}
                                                         </div>
                                                     </div>
                                                 )
@@ -1383,12 +1560,14 @@ export function AutoPlanDialog({ open, onOpenChange, plan, onConfirm, loading, m
                         </TabsContent>
 
                         <TabsContent value="report" className="flex-1 min-h-0 overflow-hidden mt-0 flex flex-col">
+                            {/* Legend + AI-copy header */}
+                            <ReportLegendHeader plan={plan} target={target} tolerances={tolerances} />
                             <div className="flex-1 overflow-y-auto p-4">
                                 {plan?.logs && plan.logs.length > 0 ? (
                                     <div className="space-y-1 font-mono text-xs">
                                         {plan.logs.map((log: any, idx: number) => (
                                             <div key={idx} className={`flex gap-2 py-1 border-b border-slate-100 ${getLogEventClass(log.event)}`}>
-                                                <span className="w-24 shrink-0 font-semibold text-slate-400">
+                                                <span className="w-24 shrink-0 font-semibold text-slate-400" title={describeSlotCode(log.day, log.slot)}>
                                                     {log.day === 0 ? 'GENEL' : `G${log.day} ${log.slot?.substring(0, 3)} `}
                                                 </span>
                                                 <span className="uppercase font-bold shrink-0 w-16 text-[10px] pt-0.5">

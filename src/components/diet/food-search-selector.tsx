@@ -115,6 +115,36 @@ export function FoodSearchSelector({
         }
     }, [open])
 
+    // Typewriter animation for placeholder — only on first session open
+    const [typedPlaceholder, setTypedPlaceholder] = useState("")
+    const [showCursor, setShowCursor] = useState(false)
+    const typewriterDone = useRef(false)
+
+    useEffect(() => {
+        if (variant !== 'inline' || typewriterDone.current) return
+        try {
+            if (sessionStorage.getItem('food-search-typed')) {
+                typewriterDone.current = true
+                return
+            }
+        } catch { return }
+
+        const text = "Yeni yemek ekle (örn: pey yum)"
+        let i = 0
+        setShowCursor(true)
+        const timer = setInterval(() => {
+            i++
+            setTypedPlaceholder(text.slice(0, i))
+            if (i >= text.length) {
+                clearInterval(timer)
+                typewriterDone.current = true
+                setShowCursor(false)
+                try { sessionStorage.setItem('food-search-typed', '1') } catch {}
+            }
+        }, 45)
+        return () => clearInterval(timer)
+    }, [variant])
+
     const [aiSuggestions, setAiSuggestions] = useState<Food[]>([])
     const [aiLoading, setAiLoading] = useState(false)
     const aiTimerRef = useRef<NodeJS.Timeout | null>(null)
@@ -363,8 +393,8 @@ export function FoodSearchSelector({
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 group-focus-within:text-emerald-500 transition-colors" />
                         <input
                             ref={triggerInputRef}
-                            className="w-full bg-white ring-1 ring-gray-100 shadow-sm rounded-xl py-3 pl-9 pr-3 text-[13px] outline-none focus:bg-emerald-50/60 focus:ring-2 focus:ring-emerald-400 caret-emerald-600 transition-all placeholder:font-medium placeholder:text-gray-400 scroll-mt-[70px] sm:scroll-mt-[130px]"
-                            placeholder="Yeni yemek ekle (örn: pey yum)"
+                            className="w-full bg-emerald-50/70 ring-1 ring-emerald-200 shadow-sm rounded-lg py-2 pl-9 pr-3 text-[12px] outline-none focus:bg-emerald-50 focus:ring-2 focus:ring-emerald-400 caret-emerald-600 transition-all placeholder:font-medium placeholder:text-gray-400 scroll-mt-[70px] sm:scroll-mt-[130px]"
+                            placeholder={typewriterDone.current ? "Yeni yemek ekle (örn: pey yum)" : (typedPlaceholder + (showCursor ? "│" : ""))}
                             value={query}
                             onChange={(e) => { setQuery(e.target.value); if (!open) onOpenChange(true); }}
                             onClick={(e) => { 

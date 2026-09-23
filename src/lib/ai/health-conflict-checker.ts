@@ -56,7 +56,7 @@ function extractTargetValues(rule: any): string[] {
   return values
 }
 
-function targetsOverlap(defA: any, defB: any): boolean {
+export function targetsOverlap(defA: any, defB: any): boolean {
   const getTarget = (d: any) => {
     if (d.target) return { type: normalizeStr(d.target.type), value: normalizeStr(d.target.value) }
     if (d.trigger) return { type: normalizeStr(d.trigger.type), value: normalizeStr(d.trigger.value) }
@@ -211,7 +211,15 @@ export function generateRuleSentence(rule: any): string {
     let tv = (t.value || '').toLowerCase();
     subject = `${tv} içeren yemek`;
   } else if (t.type === 'name_contains') {
-    subject = `içinde "${(t.value || '').toLowerCase()}" olan yemek`;
+    const v = (t.value || '').toLowerCase();
+    subject = `içinde ${v} geçen yemek`;
+  } else if (t.type === 'name_or_tag' || t.type === 'ingredient') {
+    // Malzeme scope: hem isim hem tarif içeriğine bakar.
+    const v = (t.value || '').toLowerCase();
+    const syn = Array.isArray(t.synonyms) && t.synonyms.length > 0
+      ? ` (${t.synonyms.slice(0, 6).map((s: string) => s.toLowerCase()).join(', ')} dahil)`
+      : '';
+    subject = `${v} içeren yemek${syn}`;
   } else if (t.type === 'role') {
     const roleMap: Record<string, string> = { mainDish: 'ana yemek', sideDish: 'yan yemek (meze, salata vb.)' };
     subject = roleMap[t.value] || t.value;
@@ -264,10 +272,73 @@ export function generateRuleSentence(rule: any): string {
   }
 
   if (type === 'fixed_meal') {
-    let mealText = (def.target_slot || '').toLowerCase();
-    if (mealText.includes('breakfast') || mealText === 'kahvaltı' || mealText === 'kahvalti') mealText = 'Sabah öğünü';
-    else if (!mealText) mealText = 'Belirli bir öğün';
-    let res = `${mealText} için dönüşümlü olarak sabit bir yemek eklenir.`;
+    // Slot label
+    let slot = (def.target_slot || '').toLowerCase();
+    if (slot.includes('breakfast') || slot === 'kahvaltı' || slot === 'kahvalti') slot = 'kahvaltı';
+    else if (slot.includes('lunch') || slot === 'öğlen' || slot === 'oglen') slot = 'öğle';
+    else if (slot.includes('dinner') || slot === 'akşam' || slot === 'aksam') slot = 'akşam';
+    else if (slot.includes('snack') || slot.includes('ara')) slot = 'ara öğün';
+    else if (!slot) slot = 'belirli bir öğün';
+
+    // Day label (Salı, Çarşamba, ...)
+    let dayPrefix = '';
+    if (Array.isArray(def.scope_days) && def.scope_days.length > 0) {
+      const dayNames = ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar'];
+      const days = def.scope_days.map((d: number) => dayNames[d - 1]).filter(Boolean);
+      if (days.length > 0) dayPrefix = `${days.join(', ')} ${slot} öğünlerine`;
+    }
+    if (!dayPrefix) dayPrefix = `Her ${slot} öğününe`;
+
+    // Foods: prefer human-readable labels stashed by the API (def._food_labels),
+    // otherwise fall back to raw entries (may include UUIDs, filter them out).
+    // Last resort: try to extract a food name from the rule.name field (e.g., "Çarşamba Akşamı Kremalı Kabak Çorbası").
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    let namedFoods: string[] = [];
+    if (Array.isArray(def._food_labels) && def._food_labels.length > 0) {
+      namedFoods = def._food_labels.filter((f: any) => typeof f === 'string' && f.length > 0 && !UUID_RE.test(f));
+    }
+    if (namedFoods.length === 0 && Array.isArray(def.foods)) {
+      namedFoods = def.foods.filter((f: any) => typeof f === 'string' && f.length > 0 && !UUID_RE.test(f));
+    }
+    // Fallback: extract food name from rule.name if it follows "Gün Slot FoodName" pattern.
+    // Common patterns: "Salı Akşam Domates Çorbası", "Çarşamba Akşamı Kremalı Kabak Çorbası".
+    if (namedFoods.length === 0 && typeof rule?.name === 'string') {
+      const nameLower = rule.name.toLowerCase();
+      const daySlotStrips = [
+        'pazartesi ', 'salı ', 'çarşamba ', 'perşembe ', 'cuma ', 'cumartesi ', 'pazar ',
+        'kahvaltı ', 'kahvalti ', 'öğle ', 'öğlen ', 'ogle ', 'oglen ',
+        'akşam ', 'akşamı ', 'aksam ', 'aksami ', 'ara öğün ', 'ara ögün ',
+      ];
+      let extracted = nameLower;
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (const strip of daySlotStrips) {
+          if (extracted.startsWith(strip)) {
+            extracted = extracted.slice(strip.length).trim();
+            changed = true;
+          }
+        }
+      }
+      // Capitalize first letter of each word for readability
+      if (extracted && extracted.length > 3 && extracted.length < 120) {
+        const capped = extracted.split(' ').map((w: string) => w ? w.charAt(0).toLocaleUpperCase('tr-TR') + w.slice(1) : w).join(' ');
+        namedFoods = [capped];
+      }
+    }
+
+    let foodPart = '';
+    if (namedFoods.length === 1) foodPart = `${namedFoods[0]} eklenir.`;
+    else if (namedFoods.length > 1) {
+      const mode = def.selection_mode || 'all';
+      if (mode === 'rotate') foodPart = `${namedFoods.join(', ')} arasından dönüşümlü olarak bir yemek eklenir.`;
+      else if (mode === 'random') foodPart = `${namedFoods.join(', ')} arasından rastgele seçilen bir yemek eklenir.`;
+      else foodPart = `${namedFoods.join(', ')} eklenir.`;
+    } else {
+      foodPart = 'sabit bir yemek eklenir.';
+    }
+
+    const res = `${dayPrefix} ${foodPart}`;
     return res.charAt(0).toUpperCase() + res.slice(1);
   }
 

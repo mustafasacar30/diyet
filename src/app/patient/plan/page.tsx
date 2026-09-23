@@ -314,7 +314,7 @@ function MacroDashboard({ totals, targets, isVisible, onClose, days, patientInfo
         }, 2000)
     }, [isVisible, targets, hasWeeklyLargeDeviation])
 
-    if (!isVisible || !targets) return null
+    if (!targets) return null
 
     // Softer modern colors
     const colors = { fat: '#FBBF24', prot: '#60A5FA', carb: '#F87171' }
@@ -334,17 +334,17 @@ function MacroDashboard({ totals, targets, isVisible, onClose, days, patientInfo
         const pct = tgt > 0 ? Math.round((act / tgt) * 100) : 0
         return (
             <div className="flex items-center justify-between py-0.5">
-                <div className="flex items-center gap-1 sm:gap-1.5 w-[24px] sm:w-[42px] shrink-0">
+                <div className="flex items-center gap-0.5 sm:gap-1.5 w-[20px] sm:w-[42px] shrink-0">
                     <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full shrink-0" style={{ background: clr }} />
-                    <span className="text-[11px] sm:text-[11px] font-bold text-gray-600 tracking-tighter sm:tracking-normal">{lbl}</span>
+                    <span className="text-[9px] sm:text-[11px] font-bold text-gray-600 tracking-tighter sm:tracking-normal">{lbl}</span>
                 </div>
                 <div className="flex items-center justify-end gap-0.5 sm:gap-1 flex-1 min-w-0">
                     <div className="flex items-baseline gap-px sm:gap-0.5 min-w-0">
-                        <span className="text-[12px] sm:text-[11px] font-bold tabular-nums text-gray-800 leading-none">{act}</span>
-                        <span className="text-[10px] sm:text-[12px] text-gray-400">/</span>
-                        <span className="text-[11px] sm:text-[10px] text-gray-500 tabular-nums leading-none truncate">{Math.round(tgt)}<span className="hidden sm:inline">g</span></span>
+                        <span className="text-[10px] sm:text-[11px] font-bold tabular-nums text-gray-800 leading-none">{act}</span>
+                        <span className="text-[9px] sm:text-[12px] text-gray-400">/</span>
+                        <span className="text-[9px] sm:text-[10px] text-gray-500 tabular-nums leading-none truncate">{Math.round(tgt)}<span className="hidden sm:inline">g</span></span>
                     </div>
-                    <span className={cn("text-[11px] sm:text-[10px] font-black tabular-nums text-right ml-0.5 shrink-0", pct > 105 ? "text-red-500" : pct >= 95 ? "text-green-600" : "text-gray-400")}>
+                    <span className={cn("text-[9px] sm:text-[10px] font-black tabular-nums text-right ml-0.5 shrink-0", pct > 105 ? "text-red-500" : pct >= 95 ? "text-green-600" : "text-gray-400")}>
                         %{pct}
                     </span>
                 </div>
@@ -363,43 +363,43 @@ function MacroDashboard({ totals, targets, isVisible, onClose, days, patientInfo
                     <div className="flex flex-row items-stretch gap-1 sm:gap-3">
                         {/* Daily Cell */}
                         <div className="flex-1 flex items-center gap-1 sm:gap-3 bg-gray-50/50 rounded-lg sm:rounded-xl p-1 sm:p-2.5 border border-gray-100/50 min-w-0">
-                            <div className="shrink-0 scale-90 sm:scale-100 origin-left">
+                            <div className="shrink-0 scale-[0.75] sm:scale-100 origin-left -mr-2 sm:mr-0">
                                 <ConcentricRings data={dRings} label="GÜNLÜK" size={64} />
                             </div>
-                            <div className="flex-1 flex flex-col justify-center gap-0 sm:gap-1 min-w-0 -ml-1 sm:ml-0">
+                            <div className="flex-1 flex flex-col justify-center gap-0 sm:gap-1 min-w-0">
                                 <div className="flex items-center justify-between mb-0.5 sm:mb-1">
-                                    <span className="text-[11px] sm:text-[11px] font-black text-gray-400 uppercase tracking-tight sm:tracking-wide">Kalori</span>
+                                    <span className="text-[9px] sm:text-[11px] font-black text-gray-400 uppercase tracking-tight sm:tracking-wide">Kalori</span>
                                     <div className="flex items-baseline gap-0.5 min-w-0">
                                         <span className="text-[10px] sm:text-sm font-black text-gray-800 tabular-nums leading-none">{dCals}</span>
-                                        <span className="text-[10px] sm:text-[12px] text-gray-400">/</span>
-                                        <span className="text-[11px] sm:text-[11px] text-gray-500 tabular-nums leading-none truncate">{Math.round(tCals)}</span>
+                                        <span className="text-[9px] sm:text-[12px] text-gray-400">/</span>
+                                        <span className="text-[9px] sm:text-[11px] text-gray-500 tabular-nums leading-none truncate">{Math.round(tCals)}</span>
                                     </div>
                                 </div>
                                 <div className="w-full h-px bg-gray-200/50 my-0.5" />
-                                <Row lbl="KH" act={dCarb} tgt={tCarb} clr={colors.carb} />
-                                <Row lbl="Pro" act={dProt} tgt={tProt} clr={colors.prot} />
-                                <Row lbl="Yağ" act={dFat} tgt={tFat} clr={colors.fat} />
+                                <Row lbl="K" act={dCarb} tgt={tCarb} clr={colors.carb} />
+                                <Row lbl="P" act={dProt} tgt={tProt} clr={colors.prot} />
+                                <Row lbl="Y" act={dFat} tgt={tFat} clr={colors.fat} />
                             </div>
                         </div>
 
                         {/* Weekly Cell */}
                         <div className="flex-1 flex items-center gap-1 sm:gap-3 bg-gray-50/50 rounded-lg sm:rounded-xl p-1 sm:p-2.5 border border-gray-100/50 relative min-w-0 pr-6 sm:pr-8">
-                            <div className="shrink-0 scale-90 sm:scale-100 origin-left">
+                            <div className="shrink-0 scale-[0.75] sm:scale-100 origin-left -mr-2 sm:mr-0">
                                 <ConcentricRings data={wRings} label="HAFTALIK" size={64} />
                             </div>
-                            <div className="flex-1 flex flex-col justify-center gap-0 sm:gap-1 min-w-0 -ml-1 sm:ml-0">
+                            <div className="flex-1 flex flex-col justify-center gap-0 sm:gap-1 min-w-0">
                                 <div className="flex items-center justify-between mb-0.5 sm:mb-1">
-                                    <span className="text-[11px] sm:text-[11px] font-black text-gray-400 uppercase tracking-tight sm:tracking-wide">Kalori</span>
+                                    <span className="text-[9px] sm:text-[11px] font-black text-gray-400 uppercase tracking-tight sm:tracking-wide">Kalori</span>
                                     <div className="flex items-baseline gap-0.5 min-w-0">
                                         <span className="text-[10px] sm:text-sm font-black text-gray-800 tabular-nums leading-none">{wAvg.calories}</span>
-                                        <span className="text-[10px] sm:text-[12px] text-gray-400">/</span>
-                                        <span className="text-[11px] sm:text-[11px] text-gray-500 tabular-nums leading-none truncate">{Math.round(tCals)}</span>
+                                        <span className="text-[9px] sm:text-[12px] text-gray-400">/</span>
+                                        <span className="text-[9px] sm:text-[11px] text-gray-500 tabular-nums leading-none truncate">{Math.round(tCals)}</span>
                                     </div>
                                 </div>
                                 <div className="w-full h-px bg-gray-200/50 my-0.5" />
-                                <Row lbl="KH" act={wAvg.carbs} tgt={tCarb} clr={colors.carb} />
-                                <Row lbl="Pro" act={wAvg.protein} tgt={tProt} clr={colors.prot} />
-                                <Row lbl="Yağ" act={wAvg.fat} tgt={tFat} clr={colors.fat} />
+                                <Row lbl="K" act={wAvg.carbs} tgt={tCarb} clr={colors.carb} />
+                                <Row lbl="P" act={wAvg.protein} tgt={tProt} clr={colors.prot} />
+                                <Row lbl="Y" act={wAvg.fat} tgt={tFat} clr={colors.fat} />
                             </div>
 
                             <Button
@@ -931,7 +931,7 @@ export default function PatientPlanPage() {
     // Store original custom food state before swapping (for revert)
     const [originalCustomFoods, setOriginalCustomFoods] = useState<Map<string, DietFood>>(new Map())
     const [dashboardTab, setDashboardTab] = useState<'daily' | 'weekly'>('daily')
-    const [isDashboardVisible, setIsDashboardVisible] = useState(true)
+    const [isDashboardVisible, setIsDashboardVisible] = useState(false)
 
     const [autoPlanEligibility, setAutoPlanEligibility] = useState<{
         isEligible: boolean;
@@ -1402,10 +1402,20 @@ export default function PatientPlanPage() {
         fetchDefs()
     }, [patientInfo?.id])
 
-    // Initialize dashboard state from preferences
+    // Initialize dashboard state from preferences, with first-visit auto-show
     useEffect(() => {
         if (patientInfo?.preferences?.is_dashboard_visible !== undefined) {
             setIsDashboardVisible(patientInfo.preferences.is_dashboard_visible)
+        } else {
+            try {
+                const shown = localStorage.getItem('plan_summary_intro_shown')
+                if (!shown) {
+                    setIsDashboardVisible(true)
+                    localStorage.setItem('plan_summary_intro_shown', '1')
+                    const timer = setTimeout(() => setIsDashboardVisible(false), 4000)
+                    return () => clearTimeout(timer)
+                }
+            } catch { /* private browsing */ }
         }
     }, [patientInfo?.preferences])
 
@@ -3540,6 +3550,33 @@ export default function PatientPlanPage() {
 
                 // Also refresh days explicitly
                 await fetchWeekDays(activeWeek.id)
+
+                // Save Karar Raporu to plan_generation_reports (non-blocking)
+                try {
+                    const { data: userRes } = await supabase.auth.getUser()
+                    fetch('/api/plan-reports', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            patient_id: patientInfo?.id,
+                            diet_plan_id: (activeWeek as any)?.diet_plan_id || null,
+                            week_id: activeWeek.id,
+                            week_number: activeWeek.week_number,
+                            source: 'patient',
+                            generated_by_user_id: userRes?.user?.id,
+                            target_macros: planToUse.targetMacros || null,
+                            weekly_totals: planToUse.weeklyTotals || null,
+                            active_rules_summary: planToUse.activeRules?.map((r: any) => ({
+                                id: r.id, name: r.name, rule_type: r.rule_type, scope: r.scope, priority: r.priority
+                            })) || null,
+                            logs: planToUse.logs || null,
+                            plan_snapshot: { meals: planToUse.meals || [] },
+                            label: `Hafta ${activeWeek.week_number || 1}`
+                        })
+                    }).catch(e => console.warn('plan-report save failed:', e))
+                } catch (e) {
+                    console.warn('plan-report save skipped:', e)
+                }
             }
 
         } catch (err: any) {
@@ -5291,25 +5328,9 @@ export default function PatientPlanPage() {
                                         <ChevronLeft className="h-5 w-5" />
                                     </Button>
                                     
-                                    <DropdownMenu>
-                                        <DropdownMenuTrigger asChild>
-                                            <Button variant="ghost" className="h-8 font-black text-xs sm:text-base text-emerald-700 uppercase hover:bg-emerald-50 px-2 flex gap-1">
-                                                {currentDay?.day_name}
-                                                <ChevronDown className="h-3 w-3 opacity-50" />
-                                            </Button>
-                                        </DropdownMenuTrigger>
-                                        <DropdownMenuContent align="start" className="w-40">
-                                            {weekDays.map((day, index) => (
-                                                <DropdownMenuItem 
-                                                    key={day.id} 
-                                                    onClick={() => setSelectedDayIndex(index)}
-                                                    className={cn("font-bold uppercase", selectedDayIndex === index ? "bg-emerald-50 text-emerald-700" : "text-gray-600")}
-                                                >
-                                                    {day.day_name}
-                                                </DropdownMenuItem>
-                                            ))}
-                                        </DropdownMenuContent>
-                                    </DropdownMenu>
+                                    <span className="h-8 font-black text-xs sm:text-base text-emerald-700 uppercase px-2 flex items-center select-none">
+                                        {currentDay?.day_name}
+                                    </span>
 
                                     <Button 
                                         variant="ghost" 
@@ -5381,8 +5402,13 @@ export default function PatientPlanPage() {
                                 </div>
                             </div>
 
-                            {/* Macro Dashboard */}
-                            <div className="px-1 z-40 relative">
+                            {/* Macro Dashboard — accordion slide */}
+                            <div
+                                className={cn(
+                                    "px-1 z-40 relative overflow-hidden transition-all duration-300 ease-in-out",
+                                    isDashboardVisible ? "max-h-[600px] opacity-100" : "max-h-0 opacity-0"
+                                )}
+                            >
                                 <MacroDashboard
                                     totals={currentTotals}
                                     targets={dailyTargets}
@@ -5397,11 +5423,31 @@ export default function PatientPlanPage() {
                                     activeDietType={activeDietType}
                                 />
                             </div>
+
+                            {/* ÖZET Kulakçığı — üst bantın altından sarkan tab, sağda */}
+                            <div className="flex justify-end px-2 -mt-0.5">
+                                <button
+                                    onClick={toggleDashboard}
+                                    className={cn(
+                                        "flex items-center gap-1 px-3 py-1 rounded-b-lg text-[10px] font-bold transition-all active:scale-95",
+                                        isDashboardVisible
+                                            ? "bg-purple-100 text-purple-600 border border-t-0 border-purple-200 shadow-sm"
+                                            : "bg-gradient-to-r from-purple-600 to-indigo-500 text-white shadow-md shadow-purple-300/30"
+                                    )}
+                                >
+                                    <BarChart3 className="h-3 w-3" />
+                                    <span>ÖZET</span>
+                                    {isDashboardVisible
+                                        ? <ChevronUp className="h-3 w-3" />
+                                        : <ChevronDown className="h-3 w-3" />
+                                    }
+                                </button>
+                            </div>
                         </div>
 
                         {/* Meals List - Contents */}
                         <div 
-                            className={cn("space-y-6 px-1.5 mt-4", inlineSearchOpen ? "pb-[100vh]" : "pb-24")} 
+                            className={cn("space-y-2 px-1.5 mt-0", inlineSearchOpen ? "pb-[100vh]" : "pb-24")}
                             style={{ zIndex: 1, position: 'relative' }}
                             onTouchStart={onTouchStart}
                             onTouchMove={onTouchMove}
@@ -5476,15 +5522,15 @@ export default function PatientPlanPage() {
                                                         <div key={food.id} className="contents">
                                                         {/* === MOBILE FOOD ROW === */}
                                                         <div className={cn(
-                                                            "md:hidden relative rounded-xl transition-all duration-200 mt-2 ml-3",
+                                                            "md:hidden relative rounded-lg transition-all duration-200 mt-0.5 ml-3",
                                                             food.swapped_by === 'patient' && "ring-1 ring-blue-100/50",
-                                                            idx !== meal.diet_foods.length - 1 && "mb-3"
+                                                            idx !== meal.diet_foods.length - 1 && "mb-0.5"
                                                         )}>
 
                                                             {/* Main Card Content */}
                                                             <div 
                                                                 className={cn(
-                                                                    "py-3 pl-2 pr-2 rounded-xl cursor-pointer active:scale-[0.99] transition-all min-h-[3rem]",
+                                                                    "py-1.5 pl-2 pr-1.5 rounded-lg cursor-pointer active:scale-[0.99] transition-all",
                                                                     expandedFoodId === food.id ? "bg-slate-50/80 shadow-md ring-1 ring-slate-200/80" : "bg-white shadow-sm ring-1 ring-gray-100 hover:bg-gray-50/50",
                                                                     !food.is_consumed && "opacity-60 grayscale-[0.2]",
                                                                     food.swapped_by === 'patient' && "bg-blue-50/30"
@@ -5499,7 +5545,7 @@ export default function PatientPlanPage() {
                                                                             toggleMealConsumed(food.id, food.is_consumed || false)
                                                                         }}
                                                                         className={cn(
-                                                                            "w-6 h-6 shrink-0 rounded-full flex items-center justify-center shadow-sm transition-colors border -ml-5",
+                                                                            "w-7 h-7 shrink-0 rounded-full flex items-center justify-center shadow-sm transition-colors border -ml-5",
                                                                             food.is_consumed 
                                                                                 ? "bg-emerald-500 text-white border-emerald-600" 
                                                                                 : "bg-white text-gray-300 border-gray-200 hover:bg-gray-50"
@@ -5509,10 +5555,10 @@ export default function PatientPlanPage() {
                                                                     </button>
 
                                                                     {/* Food Name */}
-                                                                    <span className="text-[13px] font-medium leading-snug text-gray-800 flex-1">
+                                                                    <span className="text-[12px] font-medium leading-tight text-gray-800 flex-1 line-clamp-2">
                                                                         {food.swapped_by === 'patient' && (
-                                                                            <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-blue-100 text-blue-600 mr-1.5 align-middle">
-                                                                                <User size={9} strokeWidth={3} />
+                                                                            <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-blue-100 text-blue-600 mr-1 align-middle">
+                                                                                <User size={8} strokeWidth={3} />
                                                                             </span>
                                                                         )}
                                                                         {capitalizeSentenceFirstTR(getScaledFoodName(food.food_name, food.amount || 1, scalableUnits))}
@@ -5700,7 +5746,7 @@ export default function PatientPlanPage() {
                                                                                         >
                                                                                             <BookOpenText className="h-3 w-3" />
                                                                                             {matchResults.length > 1 && (
-                                                                                                <span className="absolute bottom-0 right-0 text-[6px] font-bold bg-white/80 rounded-full px-0.5 leading-none border border-amber-200">
+                                                                                                <span className="absolute bottom-0 right-0 text-[8px] font-bold bg-white/80 rounded-full px-0.5 leading-none border border-amber-200">
                                                                                                     {mIdx + 1}
                                                                                                 </span>
                                                                                             )}
@@ -5833,7 +5879,7 @@ export default function PatientPlanPage() {
                                             }, 0) || 0
                                             const fGap = Math.max(0, targetFat - dayFat)
                                             return (
-                                                <div className="inline-search-container scroll-mt-[70px] sm:scroll-mt-[130px] mt-3 ml-3 md:mt-2 md:ml-0 flex items-center gap-1.5">
+                                                <div className="inline-search-container scroll-mt-[70px] sm:scroll-mt-[130px] mt-0.5 ml-3 md:mt-1 md:ml-0 flex items-center gap-1">
                                                     <FoodSearchSelector
                                                         open={inlineSearchOpen === `${currentDay!.id}-${meal.meal_time}`}
                                                         patientId={patientInfo?.id}
@@ -6536,19 +6582,6 @@ export default function PatientPlanPage() {
                 }}
             />
 
-            {/* Floating ÖZET Button */}
-            <Button
-                onClick={toggleDashboard}
-                className={cn(
-                    "fixed right-4 bottom-20 z-50 h-14 w-14 rounded-full shadow-[0_8px_30px_rgb(0,0,0,0.12)] flex flex-col items-center justify-center border-2 transition-all hover:scale-105 active:scale-95",
-                    isDashboardVisible
-                        ? "bg-white border-purple-100 text-gray-600 hover:bg-gray-50"
-                        : "bg-gradient-to-tr from-purple-600 to-indigo-500 border-purple-400/50 text-white shadow-[0_8px_30px_rgba(147,51,234,0.3)]"
-                )}
-            >
-                <BarChart3 className="h-6 w-6" />
-                <span className="text-[9px] font-bold mt-0.5">ÖZET</span>
-            </Button>
         </div>
     )
 }

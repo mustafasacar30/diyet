@@ -460,291 +460,241 @@ export default function PatientDashboardPage() {
     }
 
     return (
-        <div className="space-y-6 pb-24">
-            {/* Welcome Section - Premium Gradient & Glassmorphism */}
-            <div className="relative overflow-hidden rounded-[2.5rem] bg-gradient-to-br from-emerald-600 via-teal-500 to-emerald-900 p-8 text-white shadow-2xl shadow-emerald-900/20 mt-2">
-                {/* Decorative Elements */}
-                <div className="absolute -right-10 -top-10 h-64 w-64 rounded-full bg-white/10 blur-3xl" />
-                <div className="absolute -left-10 -bottom-10 h-48 w-48 rounded-full bg-teal-400/20 blur-2xl" />
-                
-                <div className="relative z-10">
-                    <p className="text-sm font-semibold tracking-wide text-emerald-100/90 uppercase">{today}</p>
-                    <h1 className="text-3xl font-extrabold mt-2 tracking-tight leading-tight">
-                        Merhaba, {profile?.full_name?.split(' ')[0] || 'Danışan'}! 👋
-                    </h1>
-                    <div className="mt-4 flex items-center gap-2 bg-black/10 w-fit px-4 py-2 rounded-full border border-white/10 backdrop-blur-md">
-                        <Flame className="h-4 w-4 text-emerald-300" />
-                        <p className="text-sm font-medium text-emerald-50">
-                            {dietType?.name || 'Sağlıklı Beslenme'} • <span className="text-white font-bold">{weekNumber}. Hafta</span>
-                        </p>
+        <div className="space-y-2 pb-24">
+            {/* Welcome Header + Program Info — merged */}
+            <div className="rounded-2xl bg-emerald-50 border border-emerald-200 px-4 py-3 shadow-sm mt-1">
+                <div className="flex items-center justify-between">
+                    <div>
+                        <p className="text-[10px] font-semibold tracking-wide text-emerald-500 uppercase">{today}</p>
+                        <h1 className="text-lg font-bold text-emerald-800 tracking-tight">
+                            Merhaba, {profile?.full_name?.split(' ')[0] || 'Danışan'}! 👋
+                        </h1>
                     </div>
+                </div>
+                {/* Program info inline */}
+                <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+                    <div className="flex items-center gap-1 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-200">
+                        <Flame className="h-3 w-3 text-emerald-600" />
+                        <span className="text-[10px] font-medium text-emerald-700">
+                            {dietType?.name || 'Sağlıklı Beslenme'}
+                        </span>
+                    </div>
+                    <div className="flex items-center gap-1 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-200">
+                        <Calendar className="h-3 w-3 text-emerald-600" />
+                        <span className="text-[10px] font-bold text-emerald-700">{weekNumber}/{totalWeeks}. Hafta</span>
+                    </div>
+                    {weekDateRange && (
+                        <span className="text-[10px] text-emerald-500">{weekDateRange}</span>
+                    )}
                 </div>
 
                 {showStartWarning && (
-                    <div className="relative z-10 bg-white/10 border border-white/20 text-white px-5 py-4 rounded-2xl flex items-start gap-3 mt-6 shadow-lg backdrop-blur-md">
-                        <Info className="h-6 w-6 shrink-0 text-emerald-200" />
-                        <p className="font-medium text-sm leading-relaxed">Programınız <strong>{planStartDate}</strong> tarihinde başlayacaktır.</p>
+                    <div className="bg-emerald-100 border border-emerald-200 text-emerald-800 px-3 py-2 rounded-lg flex items-start gap-2 mt-2">
+                        <Info className="h-3.5 w-3.5 shrink-0 text-emerald-600 mt-0.5" />
+                        <p className="font-medium text-[11px] leading-relaxed">Programınız <strong>{planStartDate}</strong> tarihinde başlayacaktır.</p>
                     </div>
                 )}
 
                 {showEndWarning && (
-                    <div className="relative z-10 bg-amber-500/20 border border-amber-400/30 text-white px-5 py-4 rounded-2xl flex items-start gap-3 mt-6 shadow-lg backdrop-blur-md">
-                        <Info className="h-6 w-6 shrink-0 text-amber-200" />
-                        <p className="font-medium text-sm leading-relaxed">Programınız tamamlanmıştır. Geçmiş haftaları görüntülüyorsunuz.</p>
+                    <div className="bg-amber-50 border border-amber-200 text-amber-700 px-3 py-2 rounded-lg flex items-start gap-2 mt-2">
+                        <Info className="h-3.5 w-3.5 shrink-0 text-amber-500 mt-0.5" />
+                        <p className="font-medium text-[11px] leading-relaxed">Programınız tamamlanmıştır.</p>
                     </div>
                 )}
             </div>
 
-            {/* Giant "Bugün Ne Yemeliyim?" CTA - Hero Interaction */}
-            <div className="pt-2">
-                <Link href="/patient/plan" className="block group">
-                    <div className="relative overflow-hidden bg-white rounded-[2.5rem] p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] transition-all duration-300 transform group-hover:-translate-y-1">
-                        {/* Dynamic Background Pattern */}
-                        <div className="absolute inset-0 bg-gradient-to-br from-indigo-50/50 to-purple-50/50 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-                        
-                        <div className="relative z-10 flex items-center justify-between">
-                            <div className="flex items-center gap-5">
-                                <div className="h-16 w-16 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-200 group-hover:scale-110 transition-transform duration-500">
-                                    <Utensils className="h-8 w-8 text-white" />
+            {/* Main CTA — Bugün Ne Yemeliyim */}
+            <Link href="/patient/plan" className="block group">
+                <div className="bg-white rounded-xl p-3 shadow-sm border border-gray-100 hover:shadow-md transition-all flex items-center gap-2.5">
+                    <div className="h-9 w-9 bg-emerald-500 rounded-lg flex items-center justify-center shadow-sm shrink-0">
+                        <Utensils className="h-4 w-4 text-white" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                        <h2 className="text-[13px] font-bold text-gray-900">Bugün Ne Yemeliyim?</h2>
+                        <p className="text-[10px] text-gray-400 font-medium">Öğünlerini ve planını gör</p>
+                    </div>
+                    <ArrowRight className="h-4 w-4 text-gray-300 shrink-0 group-hover:text-emerald-500 transition-colors" />
+                </div>
+            </Link>
+
+            {/* Günlük Hedefler — compact inline */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-3">
+                <div className="flex items-center gap-1.5 mb-2">
+                    <Target className="h-3 w-3 text-emerald-500" />
+                    <span className="text-[11px] font-bold text-gray-800">Günlük Hedeflerin</span>
+                </div>
+                <div className="flex items-center gap-3">
+                    {/* Calorie Ring */}
+                    <div className="relative w-16 h-16 shrink-0">
+                        <svg className="w-full h-full -rotate-90" viewBox="0 0 120 120">
+                            <defs>
+                                <linearGradient id="calorieGradientPremium" x1="0%" y1="0%" x2="100%" y2="100%">
+                                    <stop offset="0%" stopColor="#34d399" />
+                                    <stop offset="100%" stopColor="#059669" />
+                                </linearGradient>
+                            </defs>
+                            <circle cx="60" cy="60" r="52" fill="none" stroke="#f1f5f9" strokeWidth="10" />
+                            <circle cx="60" cy="60" r="52" fill="none" stroke="url(#calorieGradientPremium)"
+                                strokeWidth="10" strokeLinecap="round"
+                                strokeDasharray={`${2 * Math.PI * 52}`}
+                                strokeDashoffset="0"
+                            />
+                        </svg>
+                        <div className="absolute inset-0 flex flex-col items-center justify-center">
+                            <span className="text-sm font-extrabold text-gray-900">{stats.calories}</span>
+                            <span className="text-[8px] font-bold text-gray-400 uppercase">KCAL</span>
+                        </div>
+                    </div>
+
+                    {/* Macros */}
+                    <div className="flex-1 space-y-2">
+                        {[
+                            { label: 'Protein', value: stats.protein, color: 'bg-blue-500', bg: 'bg-blue-100' },
+                            { label: 'Karb.', value: stats.carbs, color: 'bg-amber-500', bg: 'bg-amber-100' },
+                            { label: 'Yağ', value: stats.fat, color: 'bg-rose-500', bg: 'bg-rose-100' },
+                        ].map(m => (
+                            <div key={m.label}>
+                                <div className="flex justify-between text-[11px] font-semibold mb-0.5">
+                                    <span className="text-gray-500">{m.label}</span>
+                                    <span className="text-gray-800">{m.value}g</span>
                                 </div>
-                                <div>
-                                    <h2 className="text-2xl font-extrabold text-gray-900 tracking-tight">Bugün Ne Yemeliyim?</h2>
-                                    <p className="text-gray-500 font-medium mt-1">Öğünlerini ve planını gör</p>
+                                <div className={`h-1.5 ${m.bg} rounded-full overflow-hidden`}>
+                                    <div className={`h-full ${m.color} rounded-full`} style={{width: '100%'}} />
                                 </div>
                             </div>
-                            <div className="bg-gray-50 p-4 rounded-full group-hover:bg-indigo-50 group-hover:text-indigo-600 transition-colors duration-300">
-                                <ArrowRight className="h-6 w-6 text-gray-400 group-hover:text-indigo-600 transition-colors" />
+                        ))}
+                    </div>
+
+                    {/* Water */}
+                    <div className="flex flex-col items-center gap-0.5 shrink-0">
+                        <Droplets className="h-4 w-4 text-blue-500" />
+                        <span className="text-xs font-extrabold text-blue-700">{stats.water}L</span>
+                        <span className="text-[8px] text-blue-400 font-semibold">SU</span>
+                    </div>
+                </div>
+            </div>
+
+            {/* Bilgilerini Güncelle — merged values + edit */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-3">
+                <div className="flex items-center justify-between mb-2">
+                    <span className="text-[11px] font-bold text-gray-800">Bilgilerin</span>
+                    {!isEditing ? (
+                        <button
+                            className="text-[11px] text-emerald-600 font-semibold flex items-center gap-1 hover:text-emerald-700"
+                            onClick={() => setIsEditing(true)}
+                        >
+                            <Pencil className="h-3 w-3" /> Düzenle
+                        </button>
+                    ) : (
+                        <div className="flex gap-2">
+                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 rounded text-gray-500" onClick={handleCancelEdit}>
+                                <X className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button size="sm" className="h-7 px-2.5 rounded bg-emerald-600 text-white text-[11px] font-semibold" onClick={handleSaveChanges} disabled={saving}>
+                                <Save className="h-3 w-3 mr-1" />{saving ? '...' : 'Kaydet'}
+                            </Button>
+                        </div>
+                    )}
+                </div>
+                {!isEditing ? (
+                    <div className="flex items-center gap-3">
+                        <div className="flex-1 flex items-center gap-2 p-2.5 bg-gray-50 rounded-lg border border-gray-100/50">
+                            <Scale className="h-3.5 w-3.5 text-gray-400" />
+                            <div>
+                                <span className="text-[10px] text-gray-400 block">Kilo</span>
+                                <span className="text-sm font-bold text-gray-900">{displayWeight} kg</span>
+                            </div>
+                        </div>
+                        <div className="flex-1 flex items-center gap-2 p-2.5 bg-gray-50 rounded-lg border border-gray-100/50">
+                            <Activity className="h-3.5 w-3.5 text-gray-400" />
+                            <div>
+                                <span className="text-[10px] text-gray-400 block">Aktivite</span>
+                                <span className="text-sm font-bold text-gray-900">{currentActivityLabel}</span>
                             </div>
                         </div>
                     </div>
-                </Link>
+                ) : (
+                    <div className="space-y-3">
+                        <div className="space-y-1">
+                            <Label htmlFor="weight" className="text-gray-700 font-semibold text-[11px]">Kilo (kg)</Label>
+                            <Input id="weight" type="number" step="0.1" value={editWeight} onChange={(e) => setEditWeight(e.target.value)}
+                                className="border-gray-200 focus:border-emerald-400 h-9 rounded-lg px-3 text-sm font-medium" />
+                        </div>
+                        <div className="space-y-1">
+                            <Label htmlFor="activity" className="text-gray-700 font-semibold text-[11px]">Aktivite Seviyesi</Label>
+                            <Select value={editActivity} onValueChange={setEditActivity}>
+                                <SelectTrigger className="border-gray-200 h-9 rounded-lg px-3 font-medium focus:ring-emerald-400">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent className="rounded-lg">
+                                    {ACTIVITY_LEVELS.map(level => (
+                                        <SelectItem key={level.value} value={String(level.value)} className="rounded-md py-2">
+                                            <div className="flex flex-col">
+                                                <span className="font-semibold text-sm">{level.label}</span>
+                                                <span className="text-xs text-gray-500">{level.description}</span>
+                                            </div>
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    </div>
+                )}
             </div>
 
-            {/* Sera — Listeni Kişiselleştir Daveti */}
-            {canUseAI && (
-                <div className="pt-0">
-                    <Link href="/patient/settings#sera" className="block group">
-                        <div className="relative overflow-hidden bg-white rounded-[2.5rem] p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-emerald-100/50 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] transition-all duration-300 transform group-hover:-translate-y-1">
-                            <div className="absolute inset-0 bg-gradient-to-br from-emerald-50/50 to-teal-50/50 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-                            <div className="relative z-10 flex items-center justify-between">
-                                <div className="flex items-center gap-5">
-                                    <div className="h-14 w-14 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl flex items-center justify-center shadow-lg shadow-emerald-200 group-hover:scale-110 transition-transform duration-500">
-                                        <span className="text-2xl">🌿</span>
-                                    </div>
-                                    <div>
-                                        <h2 className="text-lg font-extrabold text-gray-900 tracking-tight">Listeni Kişiselleştir</h2>
-                                        <p className="text-gray-500 font-medium mt-0.5 text-sm">Sera ile tercihlerini paylaş</p>
-                                    </div>
-                                </div>
-                                <div className="bg-emerald-50 p-3 rounded-full group-hover:bg-emerald-100 transition-colors duration-300">
-                                    <ArrowRight className="h-5 w-5 text-emerald-400 group-hover:text-emerald-600 transition-colors" />
-                                </div>
-                            </div>
+            {/* Sera Tanıtım Kartı — yeşil tema */}
+            <div className="rounded-xl bg-emerald-50 border border-emerald-200 shadow-sm">
+                <div className="p-3">
+                    <div className="flex items-center gap-2.5">
+                        <div className="h-8 w-8 bg-emerald-500 rounded-lg flex items-center justify-center shrink-0">
+                            <span className="text-sm">🌿</span>
                         </div>
-                    </Link>
+                        <div className="flex-1 min-w-0">
+                            <h3 className="text-[12px] font-bold text-gray-900">Sera — Beslenme Asistanın</h3>
+                            <p className="text-[10px] text-gray-500 leading-snug">
+                                İsteklerini belirt, listelerin sana özel hazırlansın.
+                            </p>
+                        </div>
+                    </div>
+
+                    {/* Sera'nın Önerileri — her açılışta değişir */}
+                    <div className="mt-2 flex flex-wrap gap-1">
+                        {(typeof window !== 'undefined' ? (() => {
+                            const tips = [
+                                'Yumurtalı tariflere daha çok yer ver',
+                                'Akşam öğünlerinde ekmek daha fazla olsun',
+                                'Enginar sevmem, listelere ekleme',
+                                'Süt ürünlerini azalt',
+                                'Kızartma olmasın',
+                                'Balık haftada 2 kez olsun',
+                                'Sebze ağırlıklı akşamlar istiyorum',
+                                'Kuruyemiş ara öğünlerde olsun',
+                                'Çeşitlilik çok olsun tekrar az olsun',
+                                'Hafif akşam yemeği tercih ederim',
+                                'Pratik hazırlanabilir yemekler olsun',
+                                'Baklagil protein kaynağı olarak ekle',
+                            ]
+                            return tips.sort(() => Math.random() - 0.5).slice(0, 3)
+                        })() : ['Yumurtalı tariflere yer ver', 'Kızartma olmasın', 'Balık haftada 2 kez']).map((tip, i) => (
+                            <span key={i} className="text-[9px] px-1.5 py-0.5 rounded-full bg-white text-emerald-700 border border-emerald-200">
+                                &ldquo;{tip}&rdquo;
+                            </span>
+                        ))}
+                    </div>
+
+                    <div className="flex items-center gap-2 mt-2">
+                        <Link href="/patient/assistant" className="flex-1">
+                            <div className="bg-emerald-600 text-white text-[10px] font-bold py-1.5 px-3 rounded-lg text-center shadow-sm hover:bg-emerald-700 transition-all">
+                                Sera ile Konuş
+                            </div>
+                        </Link>
+                        <Link href="/patient/settings#sera" className="shrink-0">
+                            <div className="bg-white text-emerald-600 text-[10px] font-semibold py-1.5 px-2.5 rounded-lg border border-emerald-200 hover:bg-emerald-50 transition-all">
+                                Tercihlerimi Ayarla
+                            </div>
+                        </Link>
+                    </div>
                 </div>
-            )}
-
-            {/* Stats & Info Grid */}
-            <div className="grid grid-cols-1 gap-6">
-                
-                {/* Today's Target Stats */}
-                <Card className="rounded-[2rem] border-gray-100 shadow-[0_8px_30px_rgb(0,0,0,0.04)] bg-white overflow-hidden">
-                    <CardHeader className="border-b border-gray-50 bg-gray-50/30 pb-4 pt-6 px-6">
-                        <CardTitle className="text-base font-bold text-gray-800 flex items-center gap-2">
-                            <Target className="h-5 w-5 text-indigo-500" />
-                            Günlük Hedeflerin
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent className="pt-8 px-6 pb-8">
-                        <div className="flex flex-col md:flex-row items-center gap-8">
-                            {/* Calorie Ring */}
-                            <div className="relative w-40 h-40 shrink-0">
-                                <svg className="w-full h-full -rotate-90 drop-shadow-md" viewBox="0 0 120 120">
-                                    <defs>
-                                        <linearGradient id="calorieGradientPremium" x1="0%" y1="0%" x2="100%" y2="100%">
-                                            <stop offset="0%" stopColor="#818cf8" />
-                                            <stop offset="100%" stopColor="#4f46e5" />
-                                        </linearGradient>
-                                    </defs>
-                                    <circle cx="60" cy="60" r="52" fill="none" stroke="#f1f5f9" strokeWidth="8" />
-                                    <circle cx="60" cy="60" r="52" fill="none" stroke="url(#calorieGradientPremium)"
-                                        strokeWidth="8" strokeLinecap="round"
-                                        strokeDasharray={`${2 * Math.PI * 52}`}
-                                        strokeDashoffset="0" 
-                                        className="animate-[dash_1.5s_ease-out_forwards]"
-                                    />
-                                </svg>
-                                <div className="absolute inset-0 flex flex-col items-center justify-center">
-                                    <span className="text-4xl font-extrabold text-gray-900 tracking-tight">{stats.calories}</span>
-                                    <span className="text-xs font-bold text-gray-400 uppercase tracking-widest mt-1">KCAL</span>
-                                </div>
-                            </div>
-
-                            {/* Macros */}
-                            <div className="flex-1 w-full space-y-5">
-                                {[
-                                    { label: 'Protein', value: stats.protein, gradient: 'from-blue-400 to-blue-600', bg: 'bg-blue-50' },
-                                    { label: 'Karb.', value: stats.carbs, gradient: 'from-amber-400 to-amber-600', bg: 'bg-amber-50' },
-                                    { label: 'Yağ', value: stats.fat, gradient: 'from-rose-400 to-rose-600', bg: 'bg-rose-50' },
-                                ].map(m => (
-                                    <div key={m.label} className="group">
-                                        <div className="flex justify-between text-sm font-semibold mb-2">
-                                            <span className="text-gray-600">{m.label}</span>
-                                            <span className="text-gray-900">{m.value}g</span>
-                                        </div>
-                                        <div className={`h-3 ${m.bg} rounded-full overflow-hidden shadow-inner`}>
-                                            <div className={`h-full bg-gradient-to-r ${m.gradient} rounded-full transition-all duration-1000 ease-out`} style={{width: '100%'}} />
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-
-                        {/* Water Goal */}
-                        <div className="mt-8 bg-gradient-to-br from-blue-50 to-cyan-50 border border-blue-100/50 rounded-[1.5rem] p-5 flex items-center justify-between shadow-sm">
-                            <div className="flex items-center gap-4">
-                                <div className="bg-white p-3 rounded-2xl shadow-sm">
-                                    <Droplets className="h-6 w-6 text-blue-500" />
-                                </div>
-                                <div>
-                                    <span className="text-sm font-bold text-blue-900 block">Günlük Su İhtiyacı</span>
-                                    <span className="text-xs font-medium text-blue-600/80">Hedeflenen miktar</span>
-                                </div>
-                            </div>
-                            <span className="text-2xl font-extrabold text-blue-700">{stats.water}L</span>
-                        </div>
-                    </CardContent>
-                </Card>
-
-                {/* Weight & Activity Settings */}
-                <Card className="rounded-[2rem] border-gray-100 shadow-[0_8px_30px_rgb(0,0,0,0.04)] bg-white overflow-hidden">
-                    <CardHeader className="bg-gray-50/30 pb-4 pt-6 px-6 flex flex-row items-center justify-between border-b border-gray-50">
-                        <CardTitle className="text-base font-bold text-gray-800">Değerlerin</CardTitle>
-                        {!isEditing ? (
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-9 px-4 rounded-xl text-indigo-600 hover:bg-indigo-50 font-semibold"
-                                onClick={() => setIsEditing(true)}
-                            >
-                                <Pencil className="h-4 w-4 mr-2" />
-                                Düzenle
-                            </Button>
-                        ) : (
-                            <div className="flex gap-2">
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-9 w-9 p-0 rounded-xl text-gray-500 hover:bg-gray-100"
-                                    onClick={handleCancelEdit}
-                                >
-                                    <X className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                    size="sm"
-                                    className="h-9 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold shadow-sm"
-                                    onClick={handleSaveChanges}
-                                    disabled={saving}
-                                >
-                                    <Save className="h-4 w-4 mr-2" />
-                                    {saving ? '...' : 'Kaydet'}
-                                </Button>
-                            </div>
-                        )}
-                    </CardHeader>
-                    <CardContent className="pt-6 px-6 pb-6">
-                        {!isEditing ? (
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="flex flex-col gap-1 p-4 bg-gray-50 rounded-[1.5rem] border border-gray-100/50">
-                                    <span className="text-xs font-semibold text-gray-500 flex items-center gap-1.5"><Scale className="h-3.5 w-3.5" /> Kilon</span>
-                                    <span className="text-2xl font-extrabold text-gray-900 mt-1">{displayWeight} <span className="text-sm font-semibold text-gray-400">kg</span></span>
-                                </div>
-                                <div className="flex flex-col gap-1 p-4 bg-gray-50 rounded-[1.5rem] border border-gray-100/50">
-                                    <span className="text-xs font-semibold text-gray-500 flex items-center gap-1.5"><Activity className="h-3.5 w-3.5" /> Aktivite</span>
-                                    <span className="text-lg font-extrabold text-gray-900 mt-1 leading-tight">{currentActivityLabel}</span>
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="space-y-5">
-                                <div className="space-y-2">
-                                    <Label htmlFor="weight" className="text-gray-700 font-semibold text-sm ml-1">Kilo (kg)</Label>
-                                    <Input
-                                        id="weight"
-                                        type="number"
-                                        step="0.1"
-                                        value={editWeight}
-                                        onChange={(e) => setEditWeight(e.target.value)}
-                                        className="border-gray-200 focus:border-indigo-400 h-12 rounded-xl px-4 text-base font-medium shadow-sm"
-                                    />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="activity" className="text-gray-700 font-semibold text-sm ml-1">Aktivite Seviyesi</Label>
-                                    <Select value={editActivity} onValueChange={setEditActivity}>
-                                        <SelectTrigger className="border-gray-200 h-12 rounded-xl px-4 font-medium shadow-sm focus:ring-indigo-400">
-                                            <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent className="rounded-xl">
-                                            {ACTIVITY_LEVELS.map(level => (
-                                                <SelectItem key={level.value} value={String(level.value)} className="rounded-lg py-3">
-                                                    <div className="flex flex-col">
-                                                        <span className="font-semibold">{level.label}</span>
-                                                        <span className="text-xs text-gray-500 mt-0.5">{level.description}</span>
-                                                    </div>
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                            </div>
-                        )}
-                    </CardContent>
-                </Card>
-
-                {/* Program Info */}
-                <Card className="rounded-[2rem] border-amber-100/50 shadow-[0_8px_30px_rgb(0,0,0,0.03)] bg-gradient-to-br from-amber-50/30 to-white overflow-hidden">
-                    <CardContent className="p-6">
-                        <div className="flex flex-col">
-                            <div className="flex items-center justify-between mb-4">
-                                <div className="flex items-center gap-2">
-                                    <div className="bg-amber-100 p-2.5 rounded-xl text-amber-600">
-                                        <FileText className="h-5 w-5" />
-                                    </div>
-                                    <div>
-                                        <span className="font-bold text-gray-900 text-sm block">{programName || 'Diyet Programı'}</span>
-                                        <span className="text-xs font-medium text-amber-700/80">{weekDateRange || today}</span>
-                                    </div>
-                                </div>
-                                <div className="bg-amber-100/80 text-amber-800 px-3 py-1.5 rounded-xl border border-amber-200/50 text-xs font-extrabold shadow-sm">
-                                    {weekNumber}/{totalWeeks}. Hf
-                                </div>
-                            </div>
-                            
-                            {(dietType || weekTitle) && (
-                                <div className="bg-white rounded-[1.5rem] p-4 shadow-sm border border-amber-50">
-                                    {dietType && (
-                                        <div className="flex items-start gap-3">
-                                            <div className="mt-0.5">
-                                                <Target className="h-4 w-4 text-amber-500" />
-                                            </div>
-                                            <div>
-                                                <span className="font-bold text-gray-900 text-sm block">{dietType.name}</span>
-                                                {dietType.description && (
-                                                    <span className="text-xs text-gray-500 font-medium leading-relaxed block mt-1">{dietType.description}</span>
-                                                )}
-                                            </div>
-                                        </div>
-                                    )}
-                                    {weekTitle && (
-                                        <div className={cn("text-xs text-gray-600 font-semibold", dietType && "mt-3 pt-3 border-t border-gray-100")}>
-                                            {weekTitle}
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-                        </div>
-                    </CardContent>
-                </Card>
             </div>
         </div>
     )

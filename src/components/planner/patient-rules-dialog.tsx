@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback, useRef } from "react"
+import React, { useState, useEffect, useCallback, useRef } from "react"
 import { supabase } from "@/lib/supabase"
 import {
     Dialog,
@@ -27,10 +27,10 @@ import {
     TooltipTrigger,
 } from "@/components/ui/tooltip"
 // import { ScrollArea } from "@/components/ui/scroll-area" 
-import { Loader2, Plus, Trash2, Eye, Pencil, RotateCcw, Upload, Download, AlertCircle, GripVertical, Copy, Undo2, ArchiveRestore } from "lucide-react"
+import { Loader2, Plus, Trash2, Eye, Pencil, RotateCcw, Upload, Download, AlertCircle, GripVertical, Copy, Undo2, ArchiveRestore, Zap, X, ShieldAlert } from "lucide-react"
 import { RuleDialog } from "./rule-dialog"
 import { AIRuleAssistant } from "./ai-rule-assistant"
-import { checkHealthConflictsForRule, HealthFlag, HealthContext } from "@/lib/ai/health-conflict-checker"
+import { checkHealthConflictsForRule, HealthFlag, HealthContext, targetsOverlap } from "@/lib/ai/health-conflict-checker"
 import { PlanningRule } from "@/types/planner"
 import {
     DndContext,
@@ -50,6 +50,114 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { resolveTeamScopeContextFromAuth } from "@/lib/team-scope"
+
+// ── Conflict Analysis Types ──
+interface ConflictResult {
+    aId: string
+    bId: string
+    aName: string
+    bName: string
+    severity: 'error' | 'warning' | 'info'
+    reason: string
+    detail: string
+    suggestion?: string
+    suggestPause?: string // rule id to suggest pausing
+}
+
+function severityOrder(s: 'error' | 'warning' | 'info') {
+    return s === 'error' ? 0 : s === 'warning' ? 1 : 2
+}
+
+function isDuplicate(rA: PlanningRule, rB: PlanningRule, defA: any, defB: any): boolean {
+    if (rA.rule_type !== rB.rule_type) return false
+    const tA = defA.target || defA.trigger, tB = defB.target || defB.trigger
+    if (!tA || !tB) return false
+    const sameTarget = (tA.type === tB.type && (tA.value || '').toLowerCase() === (tB.value || '').toLowerCase())
+    if (!sameTarget) return false
+    if (rA.rule_type === 'affinity') {
+        const oA = defA.outcome, oB = defB.outcome
+        return oA && oB && (oA.type === oB.type) && ((oA.value || '').toLowerCase() === (oB.value || '').toLowerCase())
+    }
+    return true
+}
+
+function pickPauseCandidate(rA: PlanningRule, rB: PlanningRule): string {
+    const scopeRank: Record<string, number> = { patient: 3, program: 2, team: 1, global: 0 }
+    const sA = scopeRank[rA.scope || 'global'] ?? 0
+    const sB = scopeRank[rB.scope || 'global'] ?? 0
+    if (sA !== sB) return sA < sB ? rA.id : rB.id
+    return (rA.sort_order ?? 999) > (rB.sort_order ?? 999) ? rA.id : rB.id
+}
+
+function analyzeConflictPair(rA: PlanningRule, rB: PlanningRule, defA: any, defB: any): ConflictResult | null {
+    const typeA = rA.rule_type, typeB = rB.rule_type
+    const combo = [typeA, typeB].sort().join('+')
+    const aName = rA.name, bName = rB.name
+    const aId = rA.id, bId = rB.id
+    const scopeA = rA.scope || 'global', scopeB = rB.scope || 'global'
+
+    // ── Exact duplicate detection ──
+    if (isDuplicate(rA, rB, defA, defB)) {
+        const pauseId = pickPauseCandidate(rA, rB)
+        const pauseName = pauseId === aId ? aName : bName
+        const keepName = pauseId === aId ? bName : aName
+        return { aId, bId, aName, bName, severity: 'error', reason: 'Duplikat kural',
+            detail: `"${aName}" ve "${bName}" aynı hedefe aynı tipte kural. Motor ikisini de çalıştırır — yemek fazla eklenir veya çakışma olur.`,
+            suggestion: `"${pauseName}" duraklatılabilir, "${keepName}" yeterli.`,
+            suggestPause: pauseId }
+    }
+
+    // ── Same type analysis ──
+    if (typeA === typeB) {
+        if (typeA === 'frequency') {
+            const minA = defA.min_count ?? 0, maxA = defA.max_count ?? 99
+            const minB = defB.min_count ?? 0, maxB = defB.max_count ?? 99
+            const periodA = defA.period || 'weekly', periodB = defB.period || 'weekly'
+
+            if (minA > maxB || minB > maxA) {
+                return { aId, bId, aName, bName, severity: 'error', reason: 'Çelişen min/max',
+                    detail: `"${aName}" en az ${minA} en fazla ${maxA} diyor, "${bName}" en az ${minB} en fazla ${maxB} diyor — motor ikisini de uygulamaya çalışır ama matematiksel olarak aynı anda sağlanamaz.`,
+                    suggestion: `Hasta tercihi öncelikli ise ${scopeA === 'patient' ? `"${bName}"` : `"${aName}"`} duraklatılmalı.`,
+                    suggestPause: scopeA === 'patient' ? bId : aId }
+            }
+            if (periodA === periodB) {
+                const pauseId = pickPauseCandidate(rA, rB)
+                const pauseName = pauseId === aId ? aName : bName
+                return { aId, bId, aName, bName, severity: 'warning', reason: 'Aynı periyotta çift sıklık',
+                    detail: `İkisi de ${periodA === 'daily' ? 'günlük' : periodA === 'weekly' ? 'haftalık' : 'öğün başı'} aynı hedefe sıklık koyuyor. Motor her ikisini de uygulamaya çalışır — yemek gereğinden fazla eklenebilir.`,
+                    suggestion: `"${pauseName}" duraklatılabilir veya iki kural birleştirilmeli.`,
+                    suggestPause: pauseId }
+            }
+            return null
+        }
+        if (typeA === 'consistency') {
+            const pauseId = pickPauseCandidate(rA, rB)
+            return { aId, bId, aName, bName, severity: 'warning', reason: 'Çift kilit kuralı',
+                detail: `Aynı yemek grubuna iki tutarlılık kilidi. İkisi de "aynı yemek seçilsin" diyecek — pratik fark yok ama biri gereksiz.`,
+                suggestion: `Düşük öncelikli olan duraklatılabilir.`,
+                suggestPause: pauseId }
+        }
+        if (typeA === 'rotation') {
+            const pauseId = pickPauseCandidate(rA, rB)
+            return { aId, bId, aName, bName, severity: 'warning', reason: 'Çift rotasyon',
+                detail: `Aynı hedefe iki rotasyon kuralı — motor sort_order sırasına göre birini uygular, diğeri gölgede kalır.`,
+                suggestion: `Gölgede kalan duraklatılabilir.`,
+                suggestPause: pauseId }
+        }
+        if (typeA === 'fixed_meal') {
+            return { aId, bId, aName, bName, severity: 'error', reason: 'Çift sabit öğün',
+                detail: `İki fixed_meal aynı hedefe bakıyor. Aynı gün ve slota denk gelirse biri diğerini ezebilir.`,
+                suggestion: `Gün/slot çakışmasını kontrol edin.` }
+        }
+        if (typeA === 'affinity') {
+            return { aId, bId, aName, bName, severity: 'info', reason: 'Çift uyum kuralı',
+                detail: `Aynı tetikleyiciye iki uyum kuralı var. Farklı sonuçlara yönlendiriyorlarsa sorun yok (ör. salata→zeytin + salata→kuruyemiş). Aynı sonuca yönlendiriyorlarsa biri gereksiz.` }
+        }
+    }
+
+    // ── Different types → cooperating ──
+    return null
+}
 
 // Sentinel rule name used to signal "use global rules, skip program/team inheritance"
 const USE_GLOBAL_SENTINEL = '__use_global__'
@@ -183,6 +291,10 @@ export function PatientRulesDialog({ open, onOpenChange, patientId, programTempl
     const [patientDisplayName, setPatientDisplayName] = useState<string>('hasta')
     const [healthContext, setHealthContext] = useState<HealthContext | null>(null)
     const [healthFlags, setHealthFlags] = useState<Map<string, HealthFlag[]>>(new Map())
+    const [conflictPairs, setConflictPairs] = useState<ConflictResult[]>([])
+    const [showConflicts, setShowConflicts] = useState(false)
+    const [autoAlert, setAutoAlert] = useState<ConflictResult[]>([])
+    const prevRuleCountRef = useRef(0)
     const importInputRef = useRef<HTMLInputElement | null>(null)
     const [importModeDialogOpen, setImportModeDialogOpen] = useState(false)
     const [pendingImportedRules, setPendingImportedRules] = useState<any[] | null>(null)
@@ -761,6 +873,31 @@ const mergedRulesMap = new Map<string, PlanningRule>()
         setHealthFlags(flagMap)
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [globalRules, teamRules, programRules, patientRules, showDeleted, healthContext])
+
+    useEffect(() => {
+        const activeCount = displayRules.filter(r => r.is_active && !(r.definition as any)?._is_deleted).length
+        if (activeCount > prevRuleCountRef.current && prevRuleCountRef.current > 0) {
+            const activeRules = displayRules.filter(r => r.is_active && !(r.definition as any)?._is_deleted)
+            const issues: ConflictResult[] = []
+            for (let i = 0; i < activeRules.length; i++) {
+                for (let j = i + 1; j < activeRules.length; j++) {
+                    const rA = activeRules[i], rB = activeRules[j]
+                    const defA = (rA.definition as any)?.data || rA.definition || {}
+                    const defB = (rB.definition as any)?.data || rB.definition || {}
+                    if (!targetsOverlap(defA, defB)) continue
+                    const analysis = analyzeConflictPair(rA, rB, defA, defB)
+                    if (analysis && (analysis.severity === 'error' || analysis.severity === 'warning')) {
+                        issues.push(analysis)
+                    }
+                }
+            }
+            if (issues.length > 0) {
+                setAutoAlert(issues.sort((a, b) => severityOrder(a.severity) - severityOrder(b.severity)))
+            }
+        }
+        prevRuleCountRef.current = activeCount
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [globalRules, teamRules, programRules, patientRules])
         
     const hasExplicitProgramRules = programRules.length > 0
     const hasExplicitTeamRules = teamRules.length > 0
@@ -828,6 +965,31 @@ const mergedRulesMap = new Map<string, PlanningRule>()
     }, [allRules])
 
 
+
+    function scanForConflicts() {
+        const activeRules = displayRules.filter(r => r.is_active && !(r.definition as any)?._is_deleted)
+        const results: ConflictResult[] = []
+        for (let i = 0; i < activeRules.length; i++) {
+            for (let j = i + 1; j < activeRules.length; j++) {
+                const rA = activeRules[i], rB = activeRules[j]
+                const defA = (rA.definition as any)?.data || rA.definition || {}
+                const defB = (rB.definition as any)?.data || rB.definition || {}
+                if (!targetsOverlap(defA, defB)) continue
+                const analysis = analyzeConflictPair(rA, rB, defA, defB)
+                if (analysis) results.push(analysis)
+            }
+        }
+        results.sort((a, b) => severityOrder(a.severity) - severityOrder(b.severity))
+        setConflictPairs(results)
+        setShowConflicts(true)
+    }
+
+    async function handleQuickPause(ruleId: string) {
+        const rule = displayRules.find(r => r.id === ruleId)
+        if (!rule) return
+        await handleToggleActive(rule)
+        setTimeout(() => scanForConflicts(), 300)
+    }
 
     // Restore a deleted or overridden rule (removes the patient-scoped row)
     async function handleRestoreOriginal(rule: PlanningRule) {
@@ -921,7 +1083,7 @@ const mergedRulesMap = new Map<string, PlanningRule>()
                                     scope: 'patient',
                                     patient_id: patientId,
                                     team_owner_id: isTeamScopedContext ? teamOwnerId : null,
-                                    source_rule_id: repRule.id,
+                                    source_rule_id: repRule.source_rule_id || repRule.id,
                                     sort_order: repRule.sort_order
                                 }).select('*').single()
                                 if (newTombstone) {
@@ -1169,9 +1331,16 @@ const mergedRulesMap = new Map<string, PlanningRule>()
 
     // Always show rules: patient-specific if available, otherwise program/global
     // If sentinel is active, show global rules (the sentinel overrides program/team)
-    const displayRules = hasGlobalSentinel 
-        ? globalRules 
+    const _unsorted = hasGlobalSentinel
+        ? globalRules
         : mergedRules
+    const displayRules = [..._unsorted].sort((a, b) => {
+        const aActive = a.is_active && !(a.definition as any)?._is_deleted ? 0 : 1
+        const bActive = b.is_active && !(b.definition as any)?._is_deleted ? 0 : 1
+        if (aActive !== bActive) return aActive - bActive
+        return (a.sort_order ?? 9999) - (b.sort_order ?? 9999)
+    })
+    const firstInactiveIdx = displayRules.findIndex(r => !r.is_active || (r.definition as any)?._is_deleted)
 
     function buildSafeFileNamePart(value: string) {
         return (value || 'hasta')
@@ -1589,7 +1758,52 @@ const mergedRulesMap = new Map<string, PlanningRule>()
                             />
                         </div>
 
-                                                {/* Rules List */}
+                        {autoAlert.length > 0 && (
+                            <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3">
+                                <div className="flex items-start justify-between gap-2">
+                                    <div className="flex items-center gap-2 text-amber-800 font-semibold text-sm">
+                                        <ShieldAlert size={16} className="shrink-0" />
+                                        Yeni kural çakışması tespit edildi
+                                    </div>
+                                    <button
+                                        onClick={() => setAutoAlert([])}
+                                        className="text-amber-600 hover:text-amber-800 p-0.5 rounded"
+                                    >
+                                        <X size={14} />
+                                    </button>
+                                </div>
+                                <div className="mt-2 space-y-2">
+                                    {autoAlert.map((c, i) => (
+                                        <div key={i} className={`text-xs rounded px-2 py-1.5 border ${
+                                            c.severity === 'error'
+                                                ? 'bg-red-50 border-red-200 text-red-800'
+                                                : 'bg-yellow-50 border-yellow-200 text-yellow-800'
+                                        }`}>
+                                            <div className="font-medium">{c.reason}</div>
+                                            <div className="mt-0.5 opacity-80">{c.aName} ↔ {c.bName}</div>
+                                            {c.suggestion && (
+                                                <div className="mt-1 flex items-center justify-between">
+                                                    <span className="italic">Öneri: {c.suggestion}</span>
+                                                    {c.suggestPause && (
+                                                        <button
+                                                            onClick={() => {
+                                                                handleQuickPause(c.suggestPause!)
+                                                                setAutoAlert(prev => prev.filter((_, idx) => idx !== i))
+                                                            }}
+                                                            className="ml-2 text-[10px] font-medium px-1.5 py-0.5 rounded bg-white border border-current hover:bg-red-50"
+                                                        >
+                                                            Duraklat
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Rules List */}
                         {loading ? (
                             <div className="flex items-center justify-center py-8">
                                 <Loader2 className="animate-spin" />
@@ -1610,28 +1824,36 @@ const mergedRulesMap = new Map<string, PlanningRule>()
                                         strategy={verticalListSortingStrategy}
                                     >
                                         {displayRules.map((rule, index) => (
-                                            <SortableRuleItem
-                                                key={rule.id}
-                                                rule={rule}
-                                                index={index}
-                                                healthFlags={healthFlags.get(rule.id) || []}
-                                                loading={loading}
-                                                canMutate={rule.name !== USE_GLOBAL_SENTINEL && canMutateRules}
-                                                activeScope={getActiveScopeForRule(rule)}
-                                                inheritanceChain={getInheritanceChain(rule)}
-                                                onToggleActive={handleToggleActive}
-                                                onEdit={(r) => {
-                                                    if (r.scope !== 'patient') {
-                                                        openRuleDialogForNew(r)
-                                                    } else {
-                                                        openRuleDialogForEdit(r)
-                                                    }
-                                                }}
-                                                onDelete={handleDeleteRule}
-                                                onRestoreDeleted={handleRestoreDeleted}
-                                                onRestoreDefault={handleRestoreDefault}
-                                                onSuggest={handleSuggestToGlobal}
-                                            />
+                                            <React.Fragment key={rule.id}>
+                                                {index === firstInactiveIdx && firstInactiveIdx > 0 && (
+                                                    <div className="flex items-center gap-2 py-2 px-1">
+                                                        <div className="flex-1 border-t border-dashed border-slate-300" />
+                                                        <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wider shrink-0">Pasif Kurallar</span>
+                                                        <div className="flex-1 border-t border-dashed border-slate-300" />
+                                                    </div>
+                                                )}
+                                                <SortableRuleItem
+                                                    rule={rule}
+                                                    index={index}
+                                                    healthFlags={healthFlags.get(rule.id) || []}
+                                                    loading={loading}
+                                                    canMutate={rule.name !== USE_GLOBAL_SENTINEL && canMutateRules}
+                                                    activeScope={getActiveScopeForRule(rule)}
+                                                    inheritanceChain={getInheritanceChain(rule)}
+                                                    onToggleActive={handleToggleActive}
+                                                    onEdit={(r) => {
+                                                        if (r.scope !== 'patient') {
+                                                            openRuleDialogForNew(r)
+                                                        } else {
+                                                            openRuleDialogForEdit(r)
+                                                        }
+                                                    }}
+                                                    onDelete={handleDeleteRule}
+                                                    onRestoreDeleted={handleRestoreDeleted}
+                                                    onRestoreDefault={handleRestoreDefault}
+                                                    onSuggest={handleSuggestToGlobal}
+                                                />
+                                            </React.Fragment>
                                         ))}
                                     </SortableContext>
                                 </DndContext>
@@ -1641,9 +1863,98 @@ const mergedRulesMap = new Map<string, PlanningRule>()
 
                     </div>
 
+                    {showConflicts && (
+                        <div className="px-4 sm:px-6 py-3 border-t bg-slate-50/80">
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="text-xs font-semibold text-slate-800">
+                                    {conflictPairs.length === 0
+                                        ? '✓ Çakışma bulunamadı — kurallar temiz.'
+                                        : <>
+                                            {conflictPairs.filter(c => c.severity === 'error').length > 0 && <span className="text-red-700">{conflictPairs.filter(c => c.severity === 'error').length} çakışma</span>}
+                                            {conflictPairs.filter(c => c.severity === 'error').length > 0 && conflictPairs.filter(c => c.severity === 'warning').length > 0 && <span className="text-slate-400"> · </span>}
+                                            {conflictPairs.filter(c => c.severity === 'warning').length > 0 && <span className="text-amber-700">{conflictPairs.filter(c => c.severity === 'warning').length} uyarı</span>}
+                                            {conflictPairs.filter(c => c.severity === 'info').length > 0 && <span className="text-slate-400"> · </span>}
+                                            {conflictPairs.filter(c => c.severity === 'info').length > 0 && <span className="text-blue-700">{conflictPairs.filter(c => c.severity === 'info').length} bilgi</span>}
+                                          </>}
+                                </span>
+                                <button onClick={() => setShowConflicts(false)} className="text-[10px] text-slate-500 hover:text-slate-700 underline">kapat</button>
+                            </div>
+                            {conflictPairs.length > 0 && (
+                                <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                                    {conflictPairs.map((p, i) => (
+                                        <div key={i} className={`text-[11px] rounded-lg border overflow-hidden ${
+                                            p.severity === 'error' ? 'bg-red-50 border-red-200' :
+                                            p.severity === 'warning' ? 'bg-amber-50 border-amber-200' :
+                                            'bg-blue-50/60 border-blue-200'
+                                        }`}>
+                                            <details className="group">
+                                                <summary className={`cursor-pointer flex items-center gap-1.5 px-3 py-2 select-none hover:brightness-95 transition-all ${
+                                                    p.severity === 'error' ? 'text-red-900' :
+                                                    p.severity === 'warning' ? 'text-amber-900' : 'text-blue-900'
+                                                }`}>
+                                                    <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded shrink-0 ${
+                                                        p.severity === 'error' ? 'bg-red-200 text-red-800' :
+                                                        p.severity === 'warning' ? 'bg-amber-200 text-amber-800' :
+                                                        'bg-blue-200 text-blue-800'
+                                                    }`}>{p.severity === 'error' ? 'ÇAKIŞMA' : p.severity === 'warning' ? 'UYARI' : 'BİLGİ'}</span>
+                                                    <span className="font-semibold truncate">{p.aName}</span>
+                                                    <span className="opacity-40">↔</span>
+                                                    <span className="font-semibold truncate">{p.bName}</span>
+                                                    <span className="ml-auto text-[10px] opacity-60 shrink-0 hidden sm:inline">▸ {p.reason}</span>
+                                                </summary>
+                                                <div className={`px-3 py-2.5 border-t text-[11px] leading-relaxed space-y-2 ${
+                                                    p.severity === 'error' ? 'border-red-200 text-red-800 bg-red-50/50' :
+                                                    p.severity === 'warning' ? 'border-amber-200 text-amber-800 bg-amber-50/50' :
+                                                    'border-blue-200 text-blue-800 bg-blue-50/30'
+                                                }`}>
+                                                    <p><strong>Neden?</strong> {p.detail}</p>
+                                                    {p.suggestion && (
+                                                        <div className="flex items-start gap-2 bg-white/60 rounded-md px-2.5 py-2 border border-current/10">
+                                                            <span className="text-[10px] font-bold uppercase mt-0.5 opacity-60 shrink-0">Öneri:</span>
+                                                            <span className="flex-1">{p.suggestion}</span>
+                                                        </div>
+                                                    )}
+                                                    <div className="flex flex-wrap gap-1.5 pt-1">
+                                                        {[p.aId, p.bId].filter(Boolean).map((rId: string) => {
+                                                            const r = displayRules.find(x => x.id === rId)
+                                                            if (!r) return null
+                                                            return (
+                                                                <div key={rId} className="flex items-center gap-1 bg-white rounded-md border px-2 py-1">
+                                                                    <span className="text-[10px] font-medium truncate max-w-[120px]">{r.name}</span>
+                                                                    <button
+                                                                        className="text-[9px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 hover:bg-amber-200 font-medium"
+                                                                        title="Duraklat"
+                                                                        onClick={() => { handleQuickPause(rId); }}
+                                                                    >⏸ Duraklat</button>
+                                                                    <button
+                                                                        className="text-[9px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 font-medium"
+                                                                        title="Düzenle"
+                                                                        onClick={() => { setEditingRule(r); setRuleDialogOpen(true) }}
+                                                                    >✏ Düzenle</button>
+                                                                    <button
+                                                                        className="text-[9px] px-1.5 py-0.5 rounded bg-red-100 text-red-700 hover:bg-red-200 font-medium"
+                                                                        title="Sil"
+                                                                        onClick={() => handleDeleteRule(r)}
+                                                                    >🗑 Sil</button>
+                                                                </div>
+                                                            )
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            </details>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
                     <DialogFooter className="px-6 py-4 border-t bg-white shrink-0 flex items-center justify-between">
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 flex-wrap">
                         <Button variant={showDeleted ? "secondary" : "outline"} size="sm" className="h-9 gap-1.5" onClick={() => setShowDeleted(!showDeleted)}><Eye className="w-4 h-4" />{showDeleted ? "Gizle" : "Silinenleri Göster"}</Button>
+                            <Button variant="outline" size="sm" className="h-9 gap-1.5" onClick={scanForConflicts}>
+                                <Zap className="w-4 h-4" />
+                                Çakışma Tara
+                            </Button>
                             <Button
                                 variant="outline"
                                 onClick={() => openRuleDialogForNew()}
@@ -1888,7 +2199,7 @@ function SortableRuleItem({
         <div
             ref={setNodeRef}
             style={style}
-            className={`border rounded-lg p-3 shadow-sm transition-all flex items-center gap-3 bg-white ${isDragging ? 'ring-2 ring-blue-500 shadow-md' : ''} ${!rule.is_active ? 'opacity-60 bg-slate-50' : ''}`}
+            className={`border rounded-lg p-3 shadow-sm transition-all flex items-center gap-3 ${isDragging ? 'ring-2 ring-blue-500 shadow-md' : ''} ${!rule.is_active || (rule.definition as any)?._is_deleted ? 'opacity-50 bg-slate-100/80 border-slate-200 border-dashed' : 'bg-white'}`}
         >
             {/* Drag/Move Controls */}
             <div

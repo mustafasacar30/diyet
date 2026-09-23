@@ -26,7 +26,7 @@ import {
     DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu"
 import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from "@/components/ui/sheet"
-import { Plus, Calendar, Save, Calculator, ChefHat, FileText, ChevronRight, ChevronLeft, MoreHorizontal, Copy, Pencil, Trash2, Sliders, X, AlertTriangle, Settings, RefreshCw, Wand2, Search, Filter, BookOpenText, Printer, ArrowLeft, Heart, Info, Archive, LayoutGrid, List, StickyNote, Activity, Menu, RotateCcw, Eraser, Grid3X3, Sparkles, Lock, Unlock, ChevronUp, ChevronDown, Camera, Image, ClipboardList, Check, Loader2 } from "lucide-react"
+import { Plus, Calendar, Save, Calculator, ChefHat, FileText, ChevronRight, ChevronLeft, MoreHorizontal, Copy, Pencil, Trash2, Sliders, X, AlertTriangle, Settings, RefreshCw, Wand2, Search, Filter, BookOpenText, Printer, ArrowLeft, Heart, Info, Archive, LayoutGrid, List, StickyNote, Activity, Menu, RotateCcw, Eraser, Grid3X3, Sparkles, Lock, Unlock, ChevronUp, ChevronDown, Camera, Image, ClipboardList, Check, Loader2, Leaf } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
     Select,
@@ -84,12 +84,15 @@ import {
     DialogHeader,
     DialogTitle,
     DialogFooter,
+    DialogDescription,
 } from "@/components/ui/dialog"
 import { SmartSwapDialog } from "@/components/diet/smart-swap-dialog"
 import { SettingsDialog } from "@/components/planner/settings-dialog"
 import { useScalableUnits, getScaledFoodName } from "@/lib/planner/portion-scaler"
 import { sortFoodsByRole } from "@/utils/food-sorter"
 import { PatientRulesDialog } from "@/components/planner/patient-rules-dialog"
+import { PlanHistoryDialog } from "@/components/planner/plan-history-dialog"
+import { SeraAssistant } from "@/components/sera/sera-assistant"
 import { useSidebar } from "@/contexts/sidebar-context"
 
 
@@ -343,6 +346,8 @@ export default function PatientDetailPage({ params }: { params: Promise<{ id: st
     const [templateDialogOpen, setTemplateDialogOpen] = useState(false)
     const [dietTypesDialogOpen, setDietTypesDialogOpen] = useState(false)
     const [patientRulesDialogOpen, setPatientRulesDialogOpen] = useState(false)
+    const [planHistoryDialogOpen, setPlanHistoryDialogOpen] = useState(false)
+    const [seraDialogOpen, setSeraDialogOpen] = useState(false)
     const [lockDialogData, setLockDialogData] = useState<{ open: boolean, mode: 'lock' | 'unlock', meal: any, dayDate?: string } | null>(null)
     const [noteLockDialogData, setNoteLockDialogData] = useState<{ open: boolean, mode: 'lock' | 'unlock', note: any } | null>(null)
     const [dietPlanId, setDietPlanId] = useState<string | null>(null)
@@ -701,6 +706,34 @@ export default function PatientDetailPage({ params }: { params: Promise<{ id: st
 
                 setRefreshTrigger(prev => prev + 1)
                 setAutoPlanOpen(false)
+
+                // Save Karar Raporu to plan_generation_reports table (non-blocking)
+                try {
+                    const { data: userRes } = await supabase.auth.getUser()
+                    const currentWeek = weeks.find(w => w.id === activeWeekId)
+                    fetch('/api/plan-reports', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            patient_id: patient?.id || id,
+                            diet_plan_id: (currentWeek as any)?.diet_plan_id || null,
+                            week_id: activeWeekId,
+                            week_number: currentWeek?.week_number,
+                            source: isPatient ? 'patient' : 'dietitian',
+                            generated_by_user_id: userRes?.user?.id,
+                            target_macros: planToUse.targetMacros || (planToUse as any).target || null,
+                            weekly_totals: planToUse.weeklyTotals || null,
+                            active_rules_summary: (planToUse as any).activeRules?.map((r: any) => ({
+                                id: r.id, name: r.name, rule_type: r.rule_type, scope: r.scope, priority: r.priority
+                            })) || null,
+                            logs: planToUse.logs || null,
+                            plan_snapshot: { meals: planToUse.meals || [] },
+                            label: `Hafta ${currentWeek?.week_number || 1}`
+                        })
+                    }).catch(e => console.warn('plan-report save failed:', e))
+                } catch (e) {
+                    console.warn('plan-report save skipped:', e)
+                }
             }
 
         } catch (err: any) {
@@ -3244,8 +3277,10 @@ export default function PatientDetailPage({ params }: { params: Promise<{ id: st
             { icon: Settings, label: 'Öğün Ayarları', onClick: () => setMealTypesDialogOpen(true), color: 'slate' },
             { icon: Activity, label: 'Diyet Türleri', onClick: () => setDietTypesDialogOpen(true), color: 'slate' },
             { icon: Sliders, label: 'Program Kuralları', onClick: () => setPatientRulesDialogOpen(true), color: 'purple' },
+            { icon: Leaf, label: 'Sera Asistan', onClick: () => setSeraDialogOpen(true), color: 'emerald' },
             { icon: Save, label: 'Şablon İşlemleri', onClick: () => setTemplateDialogOpen(true), color: 'slate' },
             { icon: RefreshCw, label: 'Geçmiş Planlar', onClick: () => setArchivedPlansDialogOpen(true), color: 'slate' },
+            { icon: FileText, label: 'Planlama Geçmişi (Karar Raporları)', onClick: () => setPlanHistoryDialogOpen(true), color: 'blue' },
             { icon: BookOpenText, label: 'Rehber', onClick: () => setIsLegendOpen(true), color: 'slate' },
         ]
 
@@ -3830,6 +3865,46 @@ export default function PatientDetailPage({ params }: { params: Promise<{ id: st
                         setRefreshTrigger(prev => prev + 1)
                     }}
                 />
+            )}
+
+            {/* Plan History Dialog — geçmiş karar raporları */}
+            {patient && (
+                <PlanHistoryDialog
+                    open={planHistoryDialogOpen}
+                    onOpenChange={setPlanHistoryDialogOpen}
+                    patientId={patient.id}
+                />
+            )}
+
+            {/* Sera Asistan Dialog — diyetisyen için hasta scope kural üretimi */}
+            {patient && (
+                <Dialog open={seraDialogOpen} onOpenChange={setSeraDialogOpen}>
+                    <DialogContent className="w-[95vw] sm:max-w-4xl h-[90vh] sm:h-[85vh] flex flex-col p-0 overflow-hidden">
+                        <DialogHeader className="p-3 sm:p-4 border-b shrink-0 bg-emerald-50/50">
+                            <DialogTitle className="flex items-center gap-2 text-sm sm:text-base text-emerald-800">
+                                <Leaf className="h-4 w-4 text-emerald-600" />
+                                Sera Asistan — {patient.full_name}
+                            </DialogTitle>
+                            <DialogDescription className="text-[11px] sm:text-xs text-emerald-700/80">
+                                Hasta katmanında beslenme tercihi üretin. Kurallar bu hastaya özel kaydedilir.
+                            </DialogDescription>
+                        </DialogHeader>
+                        <div className="flex-1 overflow-y-auto p-2 sm:p-4">
+                            <SeraAssistant
+                                patientId={patient.id}
+                                patientName={patient.full_name}
+                                programTemplateId={patient.program_template_id || undefined}
+                                scope="patient"
+                                requireApproval={false}
+                                compact={true}
+                                onRuleCreated={() => {
+                                    fetchPatientData(undefined, true)
+                                    setRefreshTrigger(prev => prev + 1)
+                                }}
+                            />
+                        </div>
+                    </DialogContent>
+                </Dialog>
             )}
 
             {/* Import Dialog */}

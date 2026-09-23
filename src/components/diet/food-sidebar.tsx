@@ -1070,6 +1070,61 @@ export function FoodEditDialog({
         loadOptions()
     }, [])
 
+    // Load team food overrides + patient-scoped priority score when dialog opens
+    useEffect(() => {
+        if (!food.id) return
+        let cancelled = false
+        async function loadOverrides() {
+            // 1. Load team food override (tags, priority_score, etc.)
+            const resolvedTeamId = effectiveTeamOwnerId
+            if (resolvedTeamId) {
+                const { data: overrideRow } = await supabase
+                    .from('team_food_overrides')
+                    .select('*')
+                    .eq('team_owner_id', resolvedTeamId)
+                    .eq('base_food_id', food.base_food_id || food.id)
+                    .maybeSingle()
+                if (!cancelled && overrideRow) {
+                    if (overrideRow.tags != null) setTags(Array.isArray(overrideRow.tags) ? overrideRow.tags.join(', ') : '')
+                    if (overrideRow.compatibility_tags != null) setCompatibilityTags(Array.isArray(overrideRow.compatibility_tags) ? overrideRow.compatibility_tags.join(', ') : '')
+                    if (overrideRow.priority_score != null) setPriorityScore(overrideRow.priority_score)
+                    if (overrideRow.max_weekly_freq != null) setMaxWeeklyFreq(overrideRow.max_weekly_freq.toString())
+                    if (overrideRow.min_weekly_freq != null) setMinWeeklyFreq(overrideRow.min_weekly_freq.toString())
+                    if (overrideRow.notes != null) setNotes(overrideRow.notes)
+                    if (overrideRow.name != null) setName(overrideRow.name)
+                    if (overrideRow.category != null) setCategory(overrideRow.category)
+                    if (overrideRow.role != null) setRole(overrideRow.role)
+                    if (overrideRow.calories != null) setCalories(overrideRow.calories.toString())
+                    if (overrideRow.protein != null) setProtein(overrideRow.protein.toString())
+                    if (overrideRow.carbs != null) setCarbs(overrideRow.carbs.toString())
+                    if (overrideRow.fat != null) setFat(overrideRow.fat.toString())
+                    if (overrideRow.meal_types != null) {
+                        const mt = overrideRow.meal_types
+                        setMealBreakfast(mt.includes('breakfast'))
+                        setMealLunch(mt.includes('lunch'))
+                        setMealDinner(mt.includes('dinner'))
+                    }
+                    if (overrideRow.ingredients != null) setIngredients(overrideRow.ingredients)
+                    if (overrideRow.recipe_text != null) setRecipeText(overrideRow.recipe_text)
+                }
+            }
+            // 2. Load patient-scoped priority score override (takes precedence over team)
+            if (patientId) {
+                const { data: patientSettings } = await supabase
+                    .from('planner_settings')
+                    .select('food_score_overrides')
+                    .eq('scope', 'patient')
+                    .eq('patient_id', patientId)
+                    .maybeSingle()
+                if (!cancelled && patientSettings?.food_score_overrides?.[food.id] !== undefined) {
+                    setPriorityScore(patientSettings.food_score_overrides[food.id])
+                }
+            }
+        }
+        loadOverrides()
+        return () => { cancelled = true }
+    }, [food.id, effectiveTeamOwnerId, patientId])
+
     useEffect(() => {
         let mounted = true
 
