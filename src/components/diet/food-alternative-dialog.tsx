@@ -969,10 +969,15 @@ export function FoodAlternativeDialog({ isOpen, onClose, originalFood, onSelect,
                                     {calculatedAlternatives.slice(0, prefs.limit).map((food) => {
                                         const isExpanded = expandedFoodId === food.id
                                         return (
-                                            <div key={food.id} className={cn("border-b border-gray-50 transition-colors", isExpanded && "bg-emerald-50/30")}>
+                                            <div key={food.id} className={cn(
+                                                "border-b transition-all mx-2 my-0.5 rounded-lg",
+                                                isExpanded
+                                                    ? "bg-emerald-50/60 border-emerald-200 ring-1 ring-emerald-200 shadow-sm"
+                                                    : "border-transparent hover:bg-gray-50/80"
+                                            )}>
                                                 {/* Main row */}
                                                 <div
-                                                    className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-emerald-50/40 active:bg-emerald-50/60 transition-colors"
+                                                    className="flex items-center gap-2 px-2.5 py-2 cursor-pointer active:bg-emerald-50/60 transition-colors rounded-lg"
                                                     onClick={() => setExpandedFoodId(isExpanded ? null : food.id)}
                                                 >
                                                     {/* Compatibility icon */}
@@ -985,7 +990,7 @@ export function FoodAlternativeDialog({ isOpen, onClose, originalFood, onSelect,
                                                     </div>
 
                                                     {/* Food name — takes full width */}
-                                                    <span className="flex-1 text-[13px] font-medium text-gray-800 leading-tight line-clamp-1 min-w-0">{food.name}</span>
+                                                    <span className={cn("flex-1 text-[13px] font-medium leading-tight line-clamp-1 min-w-0", isExpanded ? "text-emerald-800" : "text-gray-800")}>{food.name}</span>
 
                                                     {/* Similarity badge */}
                                                     <span className={cn(
@@ -997,10 +1002,10 @@ export function FoodAlternativeDialog({ isOpen, onClose, originalFood, onSelect,
                                                     </span>
                                                 </div>
 
-                                                {/* Expanded — macros + swap button */}
+                                                {/* Expanded — macros + swap button, indented under food name */}
                                                 {isExpanded && (
-                                                    <div className="px-3 pb-2.5 pt-0.5 flex items-center justify-between gap-2">
-                                                        <div className="flex items-center gap-2.5 text-[11px]">
+                                                    <div className="pl-9 pr-2.5 pb-2 flex items-center justify-between gap-2">
+                                                        <div className="flex items-center gap-2 text-[11px]">
                                                             <span className="font-semibold text-gray-600">{Math.round(food.calories)} kcal</span>
                                                             <span className="text-orange-500">K:{Math.round(food.carbs)}g</span>
                                                             <span className="text-blue-500">P:{Math.round(food.protein)}g</span>
