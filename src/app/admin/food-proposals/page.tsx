@@ -136,9 +136,11 @@ export default function FoodProposalsPage() {
             setIsFoodDialogOpen(false)
             setProposals(prev => prev.filter(p => p.id !== selectedProposal.id))
             const foodId = result.food?.id || selectedProposal.id
-            if (confirm("Yemek başarıyla eklendi! Kart Maker'a gidip tarif kartı oluşturmak ister misiniz?")) {
-                router.push(`/admin/card-maker?foodId=${foodId}`)
-            }
+            setTimeout(() => {
+                if (confirm("Yemek başarıyla eklendi! Kart Maker'a gidip tarif kartı oluşturmak ister misiniz?")) {
+                    router.push(`/admin/card-maker?foodId=${foodId}`)
+                }
+            }, 300)
             return result
         } catch (err: any) {
             console.error(err)
