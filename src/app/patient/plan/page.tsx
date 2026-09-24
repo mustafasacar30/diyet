@@ -6239,12 +6239,18 @@ export default function PatientPlanPage() {
                                 {/* Content */}
                                 <div className="flex-1 overflow-y-auto">
                                     <div ref={aiRecipeContentRef} style={{ background: '#f3f1ee', fontFamily: 'Georgia, serif' }}>
-                                        {/* Hero image placeholder */}
-                                        <div style={{ background: 'linear-gradient(135deg, #c9bfb5 0%, #ece7e1 50%, #d4cdc4 100%)', height: '140px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                            <div style={{ textAlign: 'center', color: '#8a7f73' }}>
-                                                <ChefHat size={32} style={{ margin: '0 auto 4px', opacity: 0.5 }} />
-                                                <div style={{ fontSize: '10px', fontFamily: 'system-ui', opacity: 0.6 }}>AI Tarif Kartı</div>
-                                            </div>
+                                        {/* Hero image */}
+                                        <div style={{ background: 'linear-gradient(135deg, #c9bfb5 0%, #ece7e1 50%, #d4cdc4 100%)', height: '160px', position: 'relative', overflow: 'hidden' }}>
+                                            {aiRecipeModal.image_url ? (
+                                                <img src={aiRecipeModal.image_url} alt={aiRecipeModal.food_name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                            ) : (
+                                                <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                    <div style={{ textAlign: 'center', color: '#8a7f73' }}>
+                                                        <ChefHat size={32} style={{ margin: '0 auto 4px', opacity: 0.5 }} />
+                                                        <div style={{ fontSize: '10px', fontFamily: 'system-ui', opacity: 0.6 }}>AI Tarif Kartı</div>
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
 
                                         {/* Title pill */}
@@ -6314,20 +6320,13 @@ export default function PatientPlanPage() {
                                                 </div>
                                             </div>
 
-                                            {/* Preparation */}
-                                            {aiRecipeModal.steps?.length > 0 && (
+                                            {/* Preparation - single paragraph */}
+                                            {(aiRecipeModal.preparation || aiRecipeModal.steps?.length > 0) && (
                                                 <div style={{ marginTop: '14px' }}>
                                                     <h4 style={{ fontSize: '16px', fontWeight: 500, color: '#171717', margin: '0 0 8px', fontFamily: 'Georgia, serif' }}>Hazırlama</h4>
-                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                                        {aiRecipeModal.steps.map((step: string, i: number) => (
-                                                            <div key={i} style={{ display: 'flex', gap: '8px', fontSize: '12px', fontFamily: 'system-ui', color: '#171717', lineHeight: 1.4 }}>
-                                                                <span style={{ width: '18px', height: '18px', borderRadius: '50%', background: '#6a844a', color: '#fff', fontSize: '10px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '1px' }}>
-                                                                    {i + 1}
-                                                                </span>
-                                                                <span style={{ textAlign: 'justify' }}>{step}</span>
-                                                            </div>
-                                                        ))}
-                                                    </div>
+                                                    <p style={{ margin: 0, fontSize: '12px', fontFamily: 'system-ui', color: '#171717', lineHeight: 1.5, textAlign: 'justify' }}>
+                                                        {aiRecipeModal.preparation || aiRecipeModal.steps?.join(' ')}
+                                                    </p>
                                                 </div>
                                             )}
 

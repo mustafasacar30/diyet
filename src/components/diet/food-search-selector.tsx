@@ -934,17 +934,23 @@ export function FoodSearchSelector({
                                         </div>
                                     ) : recipeData ? (
                                         <div ref={recipeContentRef} style={{ background: '#f3f1ee', fontFamily: 'Georgia, serif' }}>
-                                            {/* Hero image placeholder */}
-                                            <div style={{ background: 'linear-gradient(135deg, #c9bfb5 0%, #ece7e1 50%, #d4cdc4 100%)', height: '140px', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
-                                                <div style={{ textAlign: 'center', color: '#8a7f73' }}>
-                                                    <ChefHat size={32} style={{ margin: '0 auto 4px', opacity: 0.5 }} />
-                                                    <div style={{ fontSize: '10px', fontFamily: 'system-ui', opacity: 0.6 }}>Görsel kart maker&apos;dan eklenecek</div>
-                                                </div>
+                                            {/* Hero image */}
+                                            <div style={{ background: 'linear-gradient(135deg, #c9bfb5 0%, #ece7e1 50%, #d4cdc4 100%)', height: '160px', position: 'relative', overflow: 'hidden' }}>
+                                                {recipeData.image_url ? (
+                                                    <img src={recipeData.image_url} alt={recipeFood.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                                ) : (
+                                                    <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                        <div style={{ textAlign: 'center', color: '#8a7f73' }}>
+                                                            <ChefHat size={32} style={{ margin: '0 auto 4px', opacity: 0.5 }} />
+                                                            <div style={{ fontSize: '10px', fontFamily: 'system-ui', opacity: 0.6 }}>Görsel yükleniyor...</div>
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
 
                                             {/* Title pill */}
                                             <div style={{ margin: '-20px 16px 0', position: 'relative', zIndex: 2 }}>
-                                                <div style={{ background: '#ece7e1', borderRadius: '16px', padding: '12px 16px', textAlign: 'center' }}>
+                                                <div style={{ background: '#ece7e1', borderRadius: '16px', padding: '12px 16px', textAlign: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
                                                     <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: '#171717', fontFamily: 'Georgia, serif' }}>{recipeFood.name}</h3>
                                                 </div>
                                             </div>
@@ -998,7 +1004,6 @@ export function FoodSearchSelector({
                                                                 </div>
                                                             </div>
                                                         </div>
-                                                        {/* Time info */}
                                                         {(recipeData.prep_time || recipeData.cook_time) && (
                                                             <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '2px', fontSize: '10px', color: '#666', fontFamily: 'system-ui', textAlign: 'center' }}>
                                                                 {recipeData.prep_time && <div>⏱ Hazırlık: {recipeData.prep_time}</div>}
@@ -1008,20 +1013,13 @@ export function FoodSearchSelector({
                                                     </div>
                                                 </div>
 
-                                                {/* Preparation */}
-                                                {recipeData.steps && recipeData.steps.length > 0 && (
+                                                {/* Preparation - single paragraph */}
+                                                {(recipeData.preparation || (recipeData.steps && recipeData.steps.length > 0)) && (
                                                     <div style={{ marginTop: '14px' }}>
                                                         <h4 style={{ fontSize: '16px', fontWeight: 500, color: '#171717', margin: '0 0 8px', fontFamily: 'Georgia, serif' }}>Hazırlama</h4>
-                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                                            {recipeData.steps.map((step: string, i: number) => (
-                                                                <div key={i} style={{ display: 'flex', gap: '8px', fontSize: '12px', fontFamily: 'system-ui', color: '#171717', lineHeight: 1.4 }}>
-                                                                    <span style={{ width: '18px', height: '18px', borderRadius: '50%', background: '#6a844a', color: '#fff', fontSize: '10px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '1px' }}>
-                                                                        {i + 1}
-                                                                    </span>
-                                                                    <span style={{ textAlign: 'justify' }}>{step}</span>
-                                                                </div>
-                                                            ))}
-                                                        </div>
+                                                        <p style={{ margin: 0, fontSize: '12px', fontFamily: 'system-ui', color: '#171717', lineHeight: 1.5, textAlign: 'justify' }}>
+                                                            {recipeData.preparation || recipeData.steps.join(' ')}
+                                                        </p>
                                                     </div>
                                                 )}
 
