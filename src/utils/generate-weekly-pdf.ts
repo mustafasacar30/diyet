@@ -13,6 +13,14 @@ type PdfFood = {
     image_url?: string | null
     is_custom?: boolean
     food_meta?: any
+    ai_recipe?: {
+        ingredients?: string | null
+        recipe_text?: string | null
+        calories?: number | null
+        protein?: number | null
+        carbs?: number | null
+        fat?: number | null
+    } | null
 }
 
 type PdfMeal = {
@@ -337,7 +345,11 @@ export async function generateWeeklyPlanPdf(options: PdfOptions): Promise<void> 
                                 id: `ai_${food.id || food.food_name}`,
                                 filename: virtualFilename,
                                 url: aiImageUrl,
-                                metadata: { ai_generated: true, food_name: food.food_name },
+                                metadata: {
+                                    ai_generated: true,
+                                    food_name: food.food_name,
+                                    recipe: food.ai_recipe || null,
+                                },
                                 created_at: new Date().toISOString()
                             });
                             cIdx = matchedCards.length - 1;
@@ -359,6 +371,7 @@ export async function generateWeeklyPlanPdf(options: PdfOptions): Promise<void> 
     const pendingLinks: any[] = []
     const cardFirstOccurrence = new Map<number, { p: number, x: number, y: number }>()
     const thumbnailUsageCount = new Map<string, number>()
+    const aiThumbShownGlobal = new Set<string>()
 
     // ══════════ DAYS ══════════
     for (const day of days) {
@@ -450,6 +463,8 @@ export async function generateWeeklyPlanPdf(options: PdfOptions): Promise<void> 
                     )
                     for (const thumbCard of thumbCandidates) {
                         const isAiThumb = aiImageCards.has(thumbCard.filename)
+                        // AI thumbnails: show only once globally
+                        if (isAiThumb && aiThumbShownGlobal.has(thumbCard.filename)) continue
                         // AI images are plain photos — no crop needed; recipe cards show top 40%
                         const thumbData = isAiThumb
                             ? thumbCard.url
@@ -481,6 +496,7 @@ export async function generateWeeklyPlanPdf(options: PdfOptions): Promise<void> 
                             const thumbKey = getRecipeCardKey(thumbCard)
                             usedThumbnailKeysToday.add(thumbKey)
                             thumbnailUsageCount.set(thumbKey, (thumbnailUsageCount.get(thumbKey) || 0) + 1)
+                            if (isAiThumb) aiThumbShownGlobal.add(thumbCard.filename)
 
                             if (drawY + finalThumbH > y) y = drawY + finalThumbH
                             break
@@ -528,48 +544,164 @@ export async function generateWeeklyPlanPdf(options: PdfOptions): Promise<void> 
 
         for (let i = 0; i < matchedCards.length; i++) {
             const card = matchedCards[i]
-            const dataUrl = card.url.startsWith('data:') ? card.url : await loadImageAsDataUrl(card.url, 900)
-            if (!dataUrl) continue
-
-            ensureSpace(80) 
-
-            const p = (doc as any).internal.getCurrentPageInfo().pageNumber
-            cardPageMap.set(i, p)
-
-            // Card name
-            doc.setFont('Roboto', 'bold')
-            doc.setFontSize(10)
-            doc.setTextColor(...COLORS.TEXT_DARK)
             const isAiCard = aiImageCards.has(card.filename)
-            const cardLabel = isAiCard
-                ? (card.metadata?.food_name || card.filename.replace(/^ai_/, '').replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ')).toLocaleUpperCase('tr-TR')
-                : card.filename.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ').toLocaleUpperCase('tr-TR')
-            doc.text(cardLabel, margin, y)
-            y += 5
 
-            try {
-                const img = new Image()
-                await new Promise<void>((resolve) => {
-                    img.onload = () => resolve()
-                    img.onerror = () => resolve()
-                    img.src = dataUrl
+            if (isAiCard) {
+                // ── AI Recipe Card: render as styled recipe card ──
+                const recipe = card.metadata?.recipe
+                const foodName = card.metadata?.food_name || 'Tarif'
+                const heroUrl = card.url
+
+                ensureSpace(120)
+                const p = (doc as any).internal.getCurrentPageInfo().pageNumber
+                cardPageMap.set(i, p)
+                const cardStartY = y
+
+                // Hero image (half width)
+                const heroW = contentW
+                const heroH = 55
+                try {
+                    const img = new Image()
+                    await new Promise<void>((resolve) => { img.onload = () => resolve(); img.onerror = () => resolve(); img.src = heroUrl })
+                    if (img.width > 0) {
+                        const imgFormat = heroUrl.startsWith('data:image/png') ? 'PNG' : 'JPEG'
+                        doc.addImage(heroUrl, imgFormat, margin, y, heroW, heroH, undefined, 'FAST')
+                    }
+                } catch (e) { /* skip */ }
+                y += heroH + 2
+
+                // Title
+                doc.setFont('Roboto', 'bold')
+                doc.setFontSize(13)
+                doc.setTextColor(...COLORS.PRIMARY)
+                doc.text(foodName, margin + contentW / 2, y, { align: 'center' })
+                y += 7
+
+                // Border line
+                doc.setDrawColor(...COLORS.BORDER)
+                doc.setLineWidth(0.3)
+                doc.line(margin, y, pageW - margin, y)
+                y += 4
+
+                // Two columns: ingredients left, macros right
+                const colW = contentW * 0.6
+                const macroX = margin + colW + 5
+                const contentStartY = y
+
+                // Ingredients
+                if (recipe?.ingredients) {
+                    doc.setFont('Roboto', 'bold')
+                    doc.setFontSize(9)
+                    doc.setTextColor(...COLORS.TEXT_DARK)
+                    doc.text('Malzemeler', margin, y)
+                    y += 5
+                    doc.setFont('Roboto', 'normal')
+                    doc.setFontSize(7.5)
+                    const ingredientLines = recipe.ingredients.split('\n').filter((l: string) => l.trim())
+                    for (const line of ingredientLines) {
+                        const wrapped = doc.splitTextToSize(`• ${line.trim()}`, colW - 5)
+                        for (const wl of wrapped) {
+                            if (y > pageH - 20) { doc.addPage(); y = 20 }
+                            doc.text(wl, margin + 2, y)
+                            y += 3.5
+                        }
+                    }
+                }
+
+                // Macros box (right column)
+                const macroBoxY = contentStartY
+                doc.setFillColor(245, 247, 249)
+                doc.roundedRect(macroX, macroBoxY, contentW * 0.35, 30, 2, 2, 'F')
+                doc.setFont('Roboto', 'bold')
+                doc.setFontSize(7.5)
+                doc.setTextColor(...COLORS.PRIMARY)
+                doc.text('1 porsiyon için', macroX + (contentW * 0.35) / 2, macroBoxY + 4, { align: 'center' })
+                doc.text('makro değerleri', macroX + (contentW * 0.35) / 2, macroBoxY + 8, { align: 'center' })
+
+                doc.setFont('Roboto', 'normal')
+                doc.setFontSize(7.5)
+                doc.setTextColor(...COLORS.TEXT_DARK)
+                const macros = [
+                    ['Kalori', `${Math.round(recipe?.calories || 0)} kcal`],
+                    ['Protein', `${Math.round(recipe?.protein || 0)}g`],
+                    ['Karb.', `${Math.round(recipe?.carbs || 0)}g`],
+                    ['Yağ', `${Math.round(recipe?.fat || 0)}g`],
+                ]
+                macros.forEach(([label, val], idx) => {
+                    const mY = macroBoxY + 12 + idx * 4.5
+                    doc.text(label, macroX + 3, mY)
+                    doc.setFont('Roboto', 'bold')
+                    doc.text(val, macroX + contentW * 0.35 - 3, mY, { align: 'right' })
+                    doc.setFont('Roboto', 'normal')
                 })
 
-                if (img.width > 0) {
-                    const imgW = contentW
-                    const imgH = (img.height / img.width) * imgW
-                    const maxH = pageH - y - 15
+                y = Math.max(y, macroBoxY + 34)
 
-                    const finalW = imgH > maxH ? (maxH / imgH) * imgW : imgW
-                    const finalH = imgH > maxH ? maxH : imgH
-
-                    const imgFormat = dataUrl.startsWith('data:image/png') ? 'PNG' : 'JPEG'
-                    doc.addImage(dataUrl, imgFormat, margin, y, finalW, finalH, undefined, 'FAST')
-                    recipeDrawInfo.push({ cardIdx: i, p, x: margin, y, w: finalW, h: finalH })
-                    y += finalH + 10
+                // Preparation
+                if (recipe?.recipe_text) {
+                    y += 3
+                    doc.setFont('Roboto', 'bold')
+                    doc.setFontSize(9)
+                    doc.setTextColor(...COLORS.TEXT_DARK)
+                    doc.text('Hazırlama', margin, y)
+                    y += 5
+                    doc.setFont('Roboto', 'normal')
+                    doc.setFontSize(7.5)
+                    const prepLines = doc.splitTextToSize(recipe.recipe_text, contentW - 4)
+                    for (const pl of prepLines) {
+                        if (y > pageH - 20) { doc.addPage(); y = 20 }
+                        doc.text(pl, margin + 2, y)
+                        y += 3.5
+                    }
                 }
-            } catch (err) {
-                console.warn('Recipe image failed', err)
+
+                // Border around the whole card
+                const cardH = y - cardStartY + 5
+                doc.setDrawColor(...COLORS.BORDER)
+                doc.setLineWidth(0.5)
+                doc.rect(margin - 1, cardStartY - 1, contentW + 2, cardH + 2)
+
+                recipeDrawInfo.push({ cardIdx: i, p, x: margin, y: cardStartY, w: contentW, h: cardH })
+                y += 12
+            } else {
+                // ── Standard recipe card image ──
+                const dataUrl = await loadImageAsDataUrl(card.url, 900)
+                if (!dataUrl) continue
+
+                ensureSpace(80)
+
+                const p = (doc as any).internal.getCurrentPageInfo().pageNumber
+                cardPageMap.set(i, p)
+
+                doc.setFont('Roboto', 'bold')
+                doc.setFontSize(10)
+                doc.setTextColor(...COLORS.TEXT_DARK)
+                const cardLabel = card.filename.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ').toLocaleUpperCase('tr-TR')
+                doc.text(cardLabel, margin, y)
+                y += 5
+
+                try {
+                    const img = new Image()
+                    await new Promise<void>((resolve) => {
+                        img.onload = () => resolve()
+                        img.onerror = () => resolve()
+                        img.src = dataUrl
+                    })
+
+                    if (img.width > 0) {
+                        const imgW = contentW
+                        const imgH = (img.height / img.width) * imgW
+                        const maxH = pageH - y - 15
+                        const finalW = imgH > maxH ? (maxH / imgH) * imgW : imgW
+                        const finalH = imgH > maxH ? maxH : imgH
+                        const imgFormat = dataUrl.startsWith('data:image/png') ? 'PNG' : 'JPEG'
+                        doc.addImage(dataUrl, imgFormat, margin, y, finalW, finalH, undefined, 'FAST')
+                        recipeDrawInfo.push({ cardIdx: i, p, x: margin, y, w: finalW, h: finalH })
+                        y += finalH + 10
+                    }
+                } catch (err) {
+                    console.warn('Recipe image failed', err)
+                }
             }
         }
     }

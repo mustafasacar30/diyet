@@ -5420,7 +5420,7 @@ export default function PatientPlanPage() {
                                                 if (foodIdsNeedingImage.size > 0) {
                                                     const { data } = await supabase
                                                         .from('food_proposals')
-                                                        .select('id, suggested_name, image_url')
+                                                        .select('id, suggested_name, image_url, ingredients, recipe_text, calories, protein, carbs, fat')
                                                         .in('id', Array.from(foodIdsNeedingImage))
                                                         .not('image_url', 'is', null)
                                                     if (data) allProposals.push(...data)
@@ -5428,22 +5428,31 @@ export default function PatientPlanPage() {
                                                 if (foodNamesNeedingImage.size > 0) {
                                                     const { data } = await supabase
                                                         .from('food_proposals')
-                                                        .select('id, suggested_name, image_url')
+                                                        .select('id, suggested_name, image_url, ingredients, recipe_text, calories, protein, carbs, fat')
                                                         .in('suggested_name', Array.from(foodNamesNeedingImage))
                                                         .not('image_url', 'is', null)
                                                     if (data) allProposals.push(...data)
                                                 }
                                                 if (allProposals.length > 0) {
-                                                    const imgById = new Map(allProposals.map(p => [p.id, p.image_url]))
-                                                    const imgByName = new Map(allProposals.map(p => [p.suggested_name, p.image_url]))
+                                                    const proposalById = new Map(allProposals.map(p => [p.id, p]))
+                                                    const proposalByName = new Map(allProposals.map(p => [p.suggested_name, p]))
                                                     for (const day of weekDays) {
                                                         for (const meal of day.diet_meals) {
                                                             for (const food of meal.diet_foods) {
                                                                 if (!(food as any).image_url) {
-                                                                    const byId = (food as any).real_food_id && imgById.get((food as any).real_food_id)
-                                                                    const byName = imgByName.get((food as any).food_name)
-                                                                    if (byId) (food as any).image_url = byId
-                                                                    else if (byName) (food as any).image_url = byName
+                                                                    const proposal = ((food as any).real_food_id && proposalById.get((food as any).real_food_id))
+                                                                        || proposalByName.get((food as any).food_name)
+                                                                    if (proposal) {
+                                                                        (food as any).image_url = proposal.image_url;
+                                                                        (food as any).ai_recipe = {
+                                                                            ingredients: proposal.ingredients,
+                                                                            recipe_text: proposal.recipe_text,
+                                                                            calories: proposal.calories,
+                                                                            protein: proposal.protein,
+                                                                            carbs: proposal.carbs,
+                                                                            fat: proposal.fat,
+                                                                        };
+                                                                    }
                                                                 }
                                                             }
                                                         }
