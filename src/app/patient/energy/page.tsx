@@ -57,6 +57,8 @@ export default function PatientEnergyPage() {
     const [goalMode, setGoalMode] = useState<GoalMode>('lose')
     const [deficitPercent, setDeficitPercent] = useState(-30)
     const [useIdealWeight, setUseIdealWeight] = useState(true)
+    const [programPhases, setProgramPhases] = useState<any[]>([])
+    const [selectedPhaseId, setSelectedPhaseId] = useState<string | null>(null)
 
     // Custom macro overrides
     const [customMacros, setCustomMacros] = useState<{ carb: number; protein: number; fat: number } | null>(null)
@@ -97,17 +99,26 @@ export default function PatientEnergyPage() {
                 : 35
 
             let resolvedDietType: any = null
+            const allPhases: any[] = []
             const pt = Array.isArray(patient.program_templates) ? patient.program_templates[0] : patient.program_templates
             if (pt?.program_template_weeks) {
                 const todayStr = new Date().toISOString().slice(0, 10)
                 const weeks = Array.isArray(pt.program_template_weeks) ? pt.program_template_weeks : [pt.program_template_weeks]
                 const currentWeek = weeks.find((w: any) => todayStr >= w.week_start && (!w.week_end || todayStr <= w.week_end))
                 const activeWeek = currentWeek || weeks[0]
-                if (activeWeek?.diet_type_id) {
-                    const { data: dt } = await supabase.from('diet_types').select('*').eq('id', activeWeek.diet_type_id).maybeSingle()
-                    resolvedDietType = dt
+
+                // Collect all distinct diet_type_ids from program weeks
+                const dtIds = [...new Set(weeks.map((w: any) => w.diet_type_id).filter(Boolean))] as string[]
+                if (dtIds.length > 0) {
+                    const { data: dtList } = await supabase.from('diet_types').select('*').in('id', dtIds)
+                    if (dtList) {
+                        for (const dt of dtList) allPhases.push(dt)
+                        resolvedDietType = dtList.find(d => d.id === activeWeek?.diet_type_id) || dtList[0]
+                    }
                 }
             }
+            setProgramPhases(allPhases)
+            if (resolvedDietType) setSelectedPhaseId(resolvedDietType.id)
 
             const goals = patient.patient_goals || []
             if (goals.includes('Kilo Almak') || goals.includes('Kas Gelişimi (Hipertrofi)')) {
@@ -134,10 +145,17 @@ export default function PatientEnergyPage() {
         return { kg: patientData.kg, heightCm: patientData.heightCm, age: patientData.age, gender: patientData.gender, activityLevel: patientData.activityLevel }
     }, [patientData])
 
+    const activeDietType = useMemo(() => {
+        if (selectedPhaseId && programPhases.length > 0) {
+            return programPhases.find(p => p.id === selectedPhaseId) || patientData?.dietType
+        }
+        return patientData?.dietType
+    }, [selectedPhaseId, programPhases, patientData?.dietType])
+
     const results = useMemo(() => {
         if (!patientData || !patientInput) return null
 
-        const dt = patientData.dietType
+        const dt = activeDietType
         const coeff = calculateCoefficientTargets({
             kg: patientData.kg, activityLevel: patientData.activityLevel,
             carbFactor: dt?.carb_factor ?? 3.0, proteinFactor: dt?.protein_factor ?? 1.0, fatFactor: dt?.fat_factor ?? 0.8,
@@ -149,7 +167,7 @@ export default function PatientEnergyPage() {
         const keto = calculateKetoKlinik(patientInput)
 
         return { coefficient: coeff, mifflin, harris, keto_klinik: keto }
-    }, [patientData, patientInput, deficitPercent, useIdealWeight])
+    }, [patientData, patientInput, deficitPercent, useIdealWeight, activeDietType])
 
     const activeResult = useMemo<MacroResult | null>(() => {
         if (!results) return null
@@ -365,9 +383,9 @@ export default function PatientEnergyPage() {
                     <span className="font-bold">{patientData.kg} kg · {patientData.heightCm} cm · {patientData.age} yaş · {patientData.gender === 'female' ? 'K' : 'E'}</span>
                     <span className="font-medium">BMI {bmi.toFixed(1)} · {ACTIVITY_LABELS[patientData.activityLevel].tr}</span>
                 </div>
-                {patientData.dietType && (
+                {activeDietType && (
                     <div className="text-[10px] text-emerald-600 mt-0.5">
-                        {patientData.dietType.name} (K:{patientData.dietType.carb_factor} P:{patientData.dietType.protein_factor} Y:{patientData.dietType.fat_factor})
+                        {activeDietType.name} (K:{activeDietType.carb_factor} P:{activeDietType.protein_factor} Y:{activeDietType.fat_factor})
                     </div>
                 )}
             </div>
@@ -389,6 +407,26 @@ export default function PatientEnergyPage() {
                     </button>
                 ))}
             </div>
+
+            {/* Phase selector — coefficient mode, multiple phases */}
+            {activeMode === 'coefficient' && programPhases.length > 1 && (
+                <div className="flex items-center gap-1.5 flex-wrap">
+                    {programPhases.map(phase => (
+                        <button
+                            key={phase.id}
+                            onClick={() => setSelectedPhaseId(phase.id)}
+                            className={cn(
+                                "px-2.5 py-1 rounded-lg text-[9px] font-bold border transition-all",
+                                selectedPhaseId === phase.id
+                                    ? "bg-emerald-50 border-emerald-300 text-emerald-700"
+                                    : "bg-white border-gray-200 text-gray-400"
+                            )}
+                        >
+                            {phase.name}
+                        </button>
+                    ))}
+                </div>
+            )}
 
             {/* BMR/TDEE info — formula modes */}
             {formulaInfo && (
@@ -537,9 +575,9 @@ export default function PatientEnergyPage() {
                     </p>
                 )}
 
-                {activeMode === 'coefficient' && patientData.dietType && !hasCustom && (
+                {activeMode === 'coefficient' && activeDietType && !hasCustom && (
                     <p className="text-center text-[10px] text-emerald-600 mb-1">
-                        {patientData.dietType.name} · K:{patientData.dietType.carb_factor} P:{patientData.dietType.protein_factor} Y:{patientData.dietType.fat_factor}
+                        {activeDietType.name} · K:{activeDietType.carb_factor} P:{activeDietType.protein_factor} Y:{activeDietType.fat_factor}
                     </p>
                 )}
 
