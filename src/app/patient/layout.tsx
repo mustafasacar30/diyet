@@ -161,6 +161,9 @@ export default function PatientLayout({
 
     return (
         <div className="flex flex-col h-[100dvh] overflow-y-auto overflow-x-hidden w-full max-w-[100vw] bg-gray-50">
+            {/* Safe area top bar - fixed above all content */}
+            <div className="fixed top-0 left-0 right-0 bg-gray-50 z-[55]" style={{ height: 'max(env(safe-area-inset-top, 0px), 2.5rem)' }} />
+            <div className="shrink-0" style={{ height: 'max(env(safe-area-inset-top, 0px), 2.5rem)' }} />
             {/* Listener Component - Isolated */}
             {targetUserId && (
                 <UnreadListener userId={targetUserId} onUpdate={setUnreadCount} />

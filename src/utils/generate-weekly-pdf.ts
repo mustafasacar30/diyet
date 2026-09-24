@@ -48,6 +48,7 @@ type PdfOptions = {
     manualMatches?: ManualMatch[]
     bans?: MatchBan[]
     cards?: RecipeCard[]
+    aiCardImages?: Map<string, string>
 }
 
 // ─── Helpers ───
@@ -175,7 +176,7 @@ function getThumbnailCandidatesByVariety(
 
 // ─── Main PDF Generator ───
 export async function generateWeeklyPlanPdf(options: PdfOptions): Promise<void> {
-    const { patientName, weekNumber, startDate, endDate, days, logoUrl, footerText, manualMatches, bans, cards } = options
+    const { patientName, weekNumber, startDate, endDate, days, logoUrl, footerText, manualMatches, bans, cards, aiCardImages } = options
 
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
 
@@ -547,9 +548,53 @@ export async function generateWeeklyPlanPdf(options: PdfOptions): Promise<void> 
             const isAiCard = aiImageCards.has(card.filename)
 
             if (isAiCard) {
-                // ── AI Recipe Card: render as styled recipe card ──
-                const recipe = card.metadata?.recipe
+                // ── AI Recipe Card: use pre-rendered card image if available ──
                 const foodName = card.metadata?.food_name || 'Tarif'
+                const preRendered = aiCardImages?.get(foodName)
+
+                if (preRendered) {
+                    // Render as single image like standard cards
+                    ensureSpace(80)
+
+                    try {
+                        const img = new Image()
+                        await new Promise<void>((resolve) => {
+                            img.onload = () => resolve()
+                            img.onerror = () => resolve()
+                            img.src = preRendered
+                        })
+
+                        if (img.width > 0) {
+                            const ratio = img.height / img.width
+                            let finalW = contentW
+                            let finalH = ratio * finalW
+                            const fullPageH = pageH - 30
+
+                            if (finalH > pageH - y - 15) {
+                                doc.addPage()
+                                y = 20
+                            }
+
+                            if (finalH > fullPageH) {
+                                finalH = fullPageH
+                                finalW = finalH / ratio
+                            }
+
+                            const imgX = margin + (contentW - finalW) / 2
+                            doc.addImage(preRendered, 'JPEG', imgX, y, finalW, finalH, undefined, 'FAST')
+                            const currentPage = (doc as any).internal.getCurrentPageInfo().pageNumber
+                            cardPageMap.set(i, currentPage)
+                            recipeDrawInfo.push({ cardIdx: i, p: currentPage, x: imgX, y, w: finalW, h: finalH })
+                            y += finalH + 10
+                        }
+                    } catch (err) {
+                        console.warn('Pre-rendered AI card failed', err)
+                    }
+                    continue
+                }
+
+                // Fallback: render with jsPDF
+                const recipe = card.metadata?.recipe
                 const heroUrl = card.url
 
                 ensureSpace(120)
@@ -557,13 +602,29 @@ export async function generateWeeklyPlanPdf(options: PdfOptions): Promise<void> 
                 cardPageMap.set(i, p)
                 const cardStartY = y
 
-                // Hero image — compress to JPEG for smaller PDF
-                const heroW = contentW
-                const heroH = 55
+                // Hero image — compress to JPEG, preserve aspect ratio
+                let heroH = 55
                 try {
                     const compressedHero = await loadImageAsDataUrl(heroUrl, 600, 0, 'image/jpeg', 100)
                     if (compressedHero) {
-                        doc.addImage(compressedHero, 'JPEG', margin, y, heroW, heroH, undefined, 'FAST')
+                        const heroImg = new Image()
+                        await new Promise<void>((resolve) => {
+                            heroImg.onload = () => resolve()
+                            heroImg.onerror = () => resolve()
+                            heroImg.src = compressedHero
+                        })
+                        if (heroImg.width > 0) {
+                            const heroRatio = heroImg.height / heroImg.width
+                            let heroW = contentW
+                            heroH = heroRatio * heroW
+                            const maxHeroH = 80
+                            if (heroH > maxHeroH) {
+                                heroH = maxHeroH
+                                heroW = heroH / heroRatio
+                            }
+                            const heroX = margin + (contentW - heroW) / 2
+                            doc.addImage(compressedHero, 'JPEG', heroX, y, heroW, heroH, undefined, 'FAST')
+                        }
                     }
                 } catch (e) { /* skip */ }
                 y += heroH + 2
@@ -668,9 +729,6 @@ export async function generateWeeklyPlanPdf(options: PdfOptions): Promise<void> 
 
                 ensureSpace(80)
 
-                const p = (doc as any).internal.getCurrentPageInfo().pageNumber
-                cardPageMap.set(i, p)
-
                 doc.setFont('Roboto', 'bold')
                 doc.setFontSize(10)
                 doc.setTextColor(...COLORS.TEXT_DARK)
@@ -687,14 +745,31 @@ export async function generateWeeklyPlanPdf(options: PdfOptions): Promise<void> 
                     })
 
                     if (img.width > 0) {
-                        const imgW = contentW
-                        const imgH = (img.height / img.width) * imgW
-                        const maxH = pageH - y - 15
-                        const finalW = imgH > maxH ? (maxH / imgH) * imgW : imgW
-                        const finalH = imgH > maxH ? maxH : imgH
+                        const ratio = img.height / img.width
+                        // Fit to content width, preserve aspect ratio
+                        let finalW = contentW
+                        let finalH = ratio * finalW
+                        const fullPageH = pageH - 30 // max usable height on a page
+
+                        // If too tall for remaining space, start a new page
+                        if (finalH > pageH - y - 15) {
+                            doc.addPage()
+                            y = 20
+                        }
+
+                        // If still too tall for a full page, scale down to fit
+                        if (finalH > fullPageH) {
+                            finalH = fullPageH
+                            finalW = finalH / ratio
+                        }
+
+                        // Center horizontally
+                        const imgX = margin + (contentW - finalW) / 2
                         const imgFormat = dataUrl.startsWith('data:image/png') ? 'PNG' : 'JPEG'
-                        doc.addImage(dataUrl, imgFormat, margin, y, finalW, finalH, undefined, 'FAST')
-                        recipeDrawInfo.push({ cardIdx: i, p, x: margin, y, w: finalW, h: finalH })
+                        doc.addImage(dataUrl, imgFormat, imgX, y, finalW, finalH, undefined, 'FAST')
+                        const currentPage = (doc as any).internal.getCurrentPageInfo().pageNumber
+                        cardPageMap.set(i, currentPage)
+                        recipeDrawInfo.push({ cardIdx: i, p: currentPage, x: imgX, y, w: finalW, h: finalH })
                         y += finalH + 10
                     }
                 } catch (err) {

@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation"
 import { supabase } from "@/lib/supabase"
 import { useAuth } from "@/contexts/auth-context"
 import { resolveTeamScopeContextFromAuth } from "@/lib/team-scope"
-import { Search, ChefHat, ExternalLink, RefreshCw, CheckCircle2, CircleDot, Pencil, Database, Trash2, Image as ImageIcon, HelpCircle, EyeOff, Eye, Undo2 } from 'lucide-react'
+import { Search, ChefHat, ExternalLink, RefreshCw, CheckCircle2, CircleDot, Pencil, Database, Trash2, Image as ImageIcon, HelpCircle, EyeOff, Eye, Undo2, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { FoodEditDialog } from "@/components/diet/food-sidebar"
@@ -69,6 +69,7 @@ function CardMakerInner() {
     const [deleteTarget, setDeleteTarget] = useState<FoodItem | null>(null)
     const [editFood, setEditFood] = useState<FoodItem | null>(null)
     const [showGuide, setShowGuide] = useState(false)
+    const [foodListOpen, setFoodListOpen] = useState(true)
     const [imagePreview, setImagePreview] = useState<string | null>(null)
     const [statusFilter, setStatusFilter] = useState<FoodStatus | 'all'>('all')
     const [showHidden, setShowHidden] = useState(false)
@@ -492,8 +493,17 @@ function CardMakerInner() {
 
     return (
         <div className="flex h-[calc(100vh-theme(spacing.16))] bg-white">
-            {/* Left Sidebar - Food List */}
-            <div className="w-80 border-r flex flex-col bg-gray-50 shrink-0">
+            {/* Left Sidebar - Food List (collapsible) */}
+            {!foodListOpen && (
+                <div className="w-10 border-r flex flex-col items-center bg-gray-50 shrink-0 py-3 gap-2">
+                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => setFoodListOpen(true)} title="Yemek Listesini Aç">
+                        <PanelLeftOpen size={16} className="text-gray-500" />
+                    </Button>
+                    <span className="text-[9px] text-gray-400 font-medium [writing-mode:vertical-lr] rotate-180 mt-2">Yemekler</span>
+                </div>
+            )}
+            {foodListOpen && (
+            <div className="w-56 border-r flex flex-col bg-gray-50 shrink-0">
                 <div className="p-4 border-b bg-white">
                     <div className="flex items-center justify-between mb-1">
                         <h2 className="font-semibold text-lg flex items-center gap-2">
@@ -501,6 +511,9 @@ function CardMakerInner() {
                             Kart Yöneticisi
                         </h2>
                         <div className="flex items-center gap-1">
+                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => setFoodListOpen(false)} title="Paneli Kapat">
+                                <PanelLeftClose size={16} className="text-gray-400" />
+                            </Button>
                             <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => setShowGuide(true)} title="Nasıl Kullanılır?">
                                 <HelpCircle size={16} className="text-gray-400" />
                             </Button>
@@ -650,6 +663,7 @@ function CardMakerInner() {
                     )}
                 </div>
             </div>
+            )}
 
             {/* Right Area - Iframe */}
             <div className="flex-1 flex flex-col relative overflow-hidden">
@@ -671,7 +685,7 @@ function CardMakerInner() {
                 
                 <iframe 
                     ref={iframeRef}
-                    src="/kart-maker/index.html" 
+                    src="/kart-maker/index.html?embedded=1" 
                     className="flex-1 w-full border-none bg-gray-50"
                     title="Card Maker"
                 />

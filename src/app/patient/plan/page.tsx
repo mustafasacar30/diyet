@@ -5459,6 +5459,74 @@ export default function PatientPlanPage() {
                                                     }
                                                 }
                                             }
+                                            // Pre-render AI recipe cards as images
+                                            const aiCardImages = new Map<string, string>()
+                                            for (const day of weekDays) {
+                                                for (const meal of day.diet_meals) {
+                                                    for (const food of meal.diet_foods) {
+                                                        if (aiCardImages.has(food.food_name)) continue
+                                                        try {
+                                                            const cn = (food as any).custom_notes
+                                                            const notes = typeof cn === 'string' ? JSON.parse(cn) : cn
+                                                            const recipe = notes?.recipe
+                                                            if (!recipe) continue
+                                                            const imgUrl = (food as any).image_url || recipe.image_url || null
+                                                            const html2canvas = (await import('html2canvas-pro')).default
+                                                            const container = document.createElement('div')
+                                                            container.style.cssText = 'position:fixed;left:-9999px;top:0;width:340px;font-family:Georgia,serif;background:#f3f1ee;'
+                                                            const ingHtml = recipe.ingredients ? (Array.isArray(recipe.ingredients)
+                                                                ? recipe.ingredients.map((ing: any) => `<div style="display:flex;align-items:baseline;gap:6px;font-size:12px;color:#171717;font-family:system-ui;margin-bottom:4px;"><span style="color:#6a844a;font-size:8px;">●</span><span>${ing.amount ? `<span style="font-weight:600;color:#6a844a;">${ing.amount} ${ing.unit || ''} </span>` : ''}${ing.name}</span></div>`).join('')
+                                                                : recipe.ingredients.split('\n').filter((l: string) => l.trim()).map((l: string) => `<div style="display:flex;align-items:baseline;gap:6px;font-size:12px;color:#171717;font-family:system-ui;margin-bottom:4px;"><span style="color:#6a844a;font-size:8px;">●</span><span>${l.trim()}</span></div>`).join('')
+                                                            ) : ''
+                                                            const prepText = recipe.preparation || recipe.recipe_text || (recipe.steps?.length ? recipe.steps.join(' ') : '')
+                                                            container.innerHTML = `
+                                                                <div style="background:linear-gradient(135deg,#c9bfb5 0%,#ece7e1 50%,#d4cdc4 100%);height:160px;overflow:hidden;">
+                                                                    ${imgUrl ? `<img src="${imgUrl}" style="width:100%;height:100%;object-fit:cover;" />` : ''}
+                                                                </div>
+                                                                <div style="margin:-20px 16px 0;position:relative;z-index:2;">
+                                                                    <div style="background:#ece7e1;border-radius:16px;padding:12px 16px;text-align:center;">
+                                                                        <h3 style="margin:0;font-size:18px;font-weight:700;color:#171717;font-family:Georgia,serif;">${recipe.food_name || food.food_name || 'Tarif'}</h3>
+                                                                    </div>
+                                                                </div>
+                                                                <div style="padding:12px 16px 16px;">
+                                                                    <div style="display:flex;gap:12px;margin-top:8px;">
+                                                                        <div style="flex:1;">
+                                                                            <h4 style="font-size:16px;font-weight:500;color:#171717;margin:0 0 8px;font-family:Georgia,serif;">Malzemeler</h4>
+                                                                            ${ingHtml}
+                                                                        </div>
+                                                                        <div style="width:120px;flex-shrink:0;">
+                                                                            ${recipe.serving ? `<div style="font-size:11px;font-weight:800;color:#171717;text-align:center;margin-bottom:6px;font-family:system-ui;">Servis: ${recipe.serving}</div>` : ''}
+                                                                            <div style="background:#ece7e1;border-radius:14px;padding:10px 8px;text-align:center;">
+                                                                                <div style="font-size:9px;font-weight:800;color:#171717;margin-bottom:6px;font-family:system-ui;line-height:1.2;">1 porsiyon için<br>makro değerleri</div>
+                                                                                <div style="display:flex;flex-direction:column;gap:3px;font-size:11px;font-family:system-ui;">
+                                                                                    <div style="display:flex;justify-content:space-between;color:#171717;"><span>Kalori</span><span style="font-weight:700;">${Math.round(food.calories || 0)}</span></div>
+                                                                                    <div style="display:flex;justify-content:space-between;color:#171717;"><span>Protein</span><span style="font-weight:700;">${Math.round(food.protein || 0)}g</span></div>
+                                                                                    <div style="display:flex;justify-content:space-between;color:#171717;"><span>Karb.</span><span style="font-weight:700;">${Math.round(food.carbs || 0)}g</span></div>
+                                                                                    <div style="display:flex;justify-content:space-between;color:#171717;"><span>Yağ</span><span style="font-weight:700;">${Math.round(food.fat || 0)}g</span></div>
+                                                                                </div>
+                                                                            </div>
+                                                                            ${(recipe.prep_time || recipe.cook_time) ? `<div style="margin-top:8px;display:flex;flex-direction:column;gap:2px;font-size:10px;color:#666;font-family:system-ui;text-align:center;">${recipe.prep_time ? `<div>⏱ Hazırlık: ${recipe.prep_time}</div>` : ''}${recipe.cook_time ? `<div>🔥 Pişirme: ${recipe.cook_time}</div>` : ''}</div>` : ''}
+                                                                        </div>
+                                                                    </div>
+                                                                    ${prepText ? `<div style="margin-top:14px;"><h4 style="font-size:16px;font-weight:500;color:#171717;margin:0 0 8px;font-family:Georgia,serif;">Hazırlama</h4><p style="margin:0;font-size:12px;font-family:system-ui;color:#171717;line-height:1.5;text-align:justify;">${prepText}</p></div>` : ''}
+                                                                    ${recipe.tip ? `<div style="margin-top:12px;display:flex;gap:6px;padding:10px 12px;border-radius:12px;background:#e8e3db;border:1px solid #ddd6cf;"><span style="color:#6a844a;flex-shrink:0;font-size:14px;">💡</span><span style="font-size:11px;color:#4a4540;line-height:1.4;font-family:system-ui;">${recipe.tip}</span></div>` : ''}
+                                                                </div>
+                                                            `
+                                                            document.body.appendChild(container)
+                                                            const imgs = container.querySelectorAll('img')
+                                                            await Promise.all(Array.from(imgs).map(img => new Promise<void>((resolve) => {
+                                                                if (img.complete) resolve()
+                                                                else { img.onload = () => resolve(); img.onerror = () => resolve() }
+                                                            })))
+                                                            const canvas = await html2canvas(container, { backgroundColor: '#f3f1ee', scale: 2, useCORS: true })
+                                                            document.body.removeChild(container)
+                                                            const cardDataUrl = canvas.toDataURL('image/jpeg', 0.85)
+                                                            if (cardDataUrl) aiCardImages.set(food.food_name, cardDataUrl)
+                                                        } catch { /* skip */ }
+                                                    }
+                                                }
+                                            }
+
                                             await generateWeeklyPlanPdf({
                                                 patientName: profile?.full_name || patientInfo?.full_name || 'Hasta',
                                                 weekNumber: activeWeek?.week_number || 1,
@@ -5470,6 +5538,7 @@ export default function PatientPlanPage() {
                                                 manualMatches: manualMatches || [],
                                                 bans: bans || [],
                                                 cards: cards || [],
+                                                aiCardImages,
                                             })
                                         } catch (err: any) {
                                             console.error('PDF oluşturma hatası:', err)

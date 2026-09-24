@@ -46,38 +46,35 @@ export function findRecipeMatch(
     const normalizedInput = normalizeFoodName(foodName)
     const effectiveMatches: RecipeCard[] = []
 
-    // 1. Check Auto Match first (SKIP if hasCustomImage is true)
+    // 1. Check Auto Match — saved recipe cards always take priority
     let autoCard: RecipeCard | null = null
 
-    if (!hasCustomImage) {
-        // Find potential auto match
-        const potentialCard = cards.find(c => {
-            const rawFilename = c.filename.replace(/\..+$/, '')
-            const normCard = normalizeFoodName(rawFilename)
-            if (!normCard) return false
+    const potentialCard = cards.find(c => {
+        const rawFilename = c.filename.replace(/\..+$/, '')
+        const normCard = normalizeFoodName(rawFilename)
+        if (!normCard) return false
 
-            // Exact/Substring
-            if (normCard === normalizedInput) return true
-            if (normCard.length > 3 && normalizedInput.includes(normCard)) return true
+        // Exact/Substring
+        if (normCard === normalizedInput) return true
+        if (normCard.length > 3 && normalizedInput.includes(normCard)) return true
 
-            // Token match
-            const tokens = rawFilename.toLowerCase().split(/[^a-z0-9çğıöşü]+/).filter(t => t.length > 2).map(t => normalizeFoodName(t))
-            if (tokens.length === 0) return false
+        // Token match
+        const tokens = rawFilename.toLowerCase().split(/[^a-z0-9çğıöşü]+/).filter(t => t.length > 2).map(t => normalizeFoodName(t))
+        if (tokens.length === 0) return false
 
-            // All tokens must be in input
-            return tokens.every(t => normalizedInput.includes(t))
-        })
+        // All tokens must be in input
+        return tokens.every(t => normalizedInput.includes(t))
+    })
 
-        if (potentialCard) {
-            // Check if ANY ban blocks this card for this food
-            const isBanned = bans.some(b =>
-                (b.food_pattern === normalizedInput || b.food_pattern.toLowerCase() === foodName.toLowerCase()) &&
-                b.card_filename === potentialCard.filename
-            )
-            if (!isBanned) {
-                autoCard = potentialCard
-                effectiveMatches.push(autoCard)
-            }
+    if (potentialCard) {
+        // Check if ANY ban blocks this card for this food
+        const isBanned = bans.some(b =>
+            (b.food_pattern === normalizedInput || b.food_pattern.toLowerCase() === foodName.toLowerCase()) &&
+            b.card_filename === potentialCard.filename
+        )
+        if (!isBanned) {
+            autoCard = potentialCard
+            effectiveMatches.push(autoCard)
         }
     }
 
