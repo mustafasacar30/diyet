@@ -6218,10 +6218,30 @@ export default function PatientPlanPage() {
                                                 try {
                                                     const html2canvas = (await import('html2canvas-pro')).default
                                                     const canvas = await html2canvas(aiRecipeContentRef.current, { backgroundColor: '#f3f1ee', scale: 2, useCORS: true })
+                                                    const fileName = `tarif-${(aiRecipeModal.food_name || 'tarif').replace(/\s+/g, '-').toLowerCase()}.png`
+                                                    // Try Web Share API first (iOS PWA/TWA)
+                                                    if (navigator.share && navigator.canShare) {
+                                                        try {
+                                                            const blob = await new Promise<Blob>((resolve) => canvas.toBlob((b) => resolve(b!), 'image/png'))
+                                                            const file = new File([blob], fileName, { type: 'image/png' })
+                                                            if (navigator.canShare({ files: [file] })) {
+                                                                await navigator.share({ files: [file], title: aiRecipeModal.food_name || 'Tarif' })
+                                                                setAiRecipeDownloading(false)
+                                                                return
+                                                            }
+                                                        } catch (shareErr) {
+                                                            if ((shareErr as any)?.name === 'AbortError') { setAiRecipeDownloading(false); return }
+                                                        }
+                                                    }
+                                                    const blob = await new Promise<Blob>((resolve) => canvas.toBlob((b) => resolve(b!), 'image/png'))
+                                                    const blobUrl = URL.createObjectURL(blob)
                                                     const link = document.createElement('a')
-                                                    link.download = `tarif-${(aiRecipeModal.food_name || 'tarif').replace(/\s+/g, '-').toLowerCase()}.png`
-                                                    link.href = canvas.toDataURL('image/png')
+                                                    link.download = fileName
+                                                    link.href = blobUrl
+                                                    document.body.appendChild(link)
                                                     link.click()
+                                                    document.body.removeChild(link)
+                                                    setTimeout(() => URL.revokeObjectURL(blobUrl), 5000)
                                                 } catch (err) { console.error('Download error:', err) }
                                                 finally { setAiRecipeDownloading(false) }
                                             }}

@@ -456,10 +456,37 @@ export function FoodSearchSelector({
                 scale: 2,
                 useCORS: true
             })
+            const fileName = `tarif-${recipeFood.name.replace(/\s+/g, '-').toLowerCase()}.png`
+
+            // Try Web Share API first (best for iOS PWA/TWA)
+            if (navigator.share && navigator.canShare) {
+                try {
+                    const blob = await new Promise<Blob>((resolve) =>
+                        canvas.toBlob((b) => resolve(b!), 'image/png')
+                    )
+                    const file = new File([blob], fileName, { type: 'image/png' })
+                    if (navigator.canShare({ files: [file] })) {
+                        await navigator.share({ files: [file], title: recipeFood.name })
+                        return
+                    }
+                } catch (shareErr) {
+                    // Share cancelled or failed — fall through to other methods
+                    if ((shareErr as any)?.name === 'AbortError') return
+                }
+            }
+
+            // Fallback: blob URL + anchor click (works on most desktop & Android)
+            const blob = await new Promise<Blob>((resolve) =>
+                canvas.toBlob((b) => resolve(b!), 'image/png')
+            )
+            const blobUrl = URL.createObjectURL(blob)
             const link = document.createElement('a')
-            link.download = `tarif-${recipeFood.name.replace(/\s+/g, '-').toLowerCase()}.png`
-            link.href = canvas.toDataURL('image/png')
+            link.download = fileName
+            link.href = blobUrl
+            document.body.appendChild(link)
             link.click()
+            document.body.removeChild(link)
+            setTimeout(() => URL.revokeObjectURL(blobUrl), 5000)
         } catch (err) {
             console.error('Download error:', err)
         } finally {
