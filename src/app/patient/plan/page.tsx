@@ -5401,6 +5401,36 @@ export default function PatientPlanPage() {
                                     onClick={async () => {
                                         try {
                                             setIsPdfGenerating(true)
+                                            // Enrich custom foods with AI images from food_proposals
+                                            const foodIdsNeedingImage = new Set<string>()
+                                            for (const day of weekDays) {
+                                                for (const meal of day.diet_meals) {
+                                                    for (const food of meal.diet_foods) {
+                                                        if ((food as any).real_food_id && !(food as any).image_url) {
+                                                            foodIdsNeedingImage.add((food as any).real_food_id)
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            if (foodIdsNeedingImage.size > 0) {
+                                                const { data: proposals } = await supabase
+                                                    .from('food_proposals')
+                                                    .select('id, image_url')
+                                                    .in('id', Array.from(foodIdsNeedingImage))
+                                                    .not('image_url', 'is', null)
+                                                if (proposals && proposals.length > 0) {
+                                                    const imgMap = new Map(proposals.map(p => [p.id, p.image_url]))
+                                                    for (const day of weekDays) {
+                                                        for (const meal of day.diet_meals) {
+                                                            for (const food of meal.diet_foods) {
+                                                                if ((food as any).real_food_id && imgMap.has((food as any).real_food_id)) {
+                                                                    (food as any).image_url = imgMap.get((food as any).real_food_id)
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
                                             await generateWeeklyPlanPdf({
                                                 patientName: profile?.full_name || patientInfo?.full_name || 'Hasta',
                                                 weekNumber: activeWeek?.week_number || 1,
