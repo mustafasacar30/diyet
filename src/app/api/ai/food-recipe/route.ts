@@ -70,35 +70,33 @@ KURALLAR:
         }
         delete data.steps;
 
-        // Generate food image with Imagen API
+        // Generate food image with Gemini native image generation
         let imageUrl = null;
         try {
-            const imagePrompt = `High-quality food photography of ${foodName}, beautifully plated, professional presentation, appetizing, warm natural light, high detail, no text, no logos, no watermarks`;
-            const finalPrompt = `CRITICAL INSTRUCTION: ABSOLUTELY DO NOT WRITE ANY TEXT, RECIPE INGREDIENTS, LETTERS, LABELS, OR WORDS IN THE IMAGE! MUST BE A PURE PHOTOGRAPH WITH NO TYPOGRAPHY.\n\n${imagePrompt}\n\nNEGATIVE CONSTRAINTS: text, watermark, logo, typography, writing, letters, words, labels, signs.`;
+            const imagePrompt = `Generate a high-quality food photography image of "${foodName}". Beautifully plated on a clean plate, professional presentation, appetizing, warm natural light, high detail. ABSOLUTELY NO TEXT, NO WORDS, NO LABELS, NO WATERMARKS, NO LOGOS in the image. Pure photograph only.`;
 
-            const imagenUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key=${encodeURIComponent(apiKey)}`;
-            const imagenRes = await fetch(imagenUrl, {
+            const imageGenUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${encodeURIComponent(apiKey)}`;
+            const imageGenRes = await fetch(imageGenUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    instances: [{ prompt: finalPrompt }],
-                    parameters: { sampleCount: 1, aspectRatio: '16:9' }
+                    contents: [{ parts: [{ text: imagePrompt }] }],
+                    generationConfig: { responseModalities: ["IMAGE", "TEXT"] }
                 })
             });
 
-            if (imagenRes.ok) {
-                const imagenData = await imagenRes.json();
-                let b64 = null;
-                if (Array.isArray(imagenData?.predictions) && imagenData.predictions[0]) {
-                    const p = imagenData.predictions[0];
-                    b64 = p.bytesBase64Encoded || p.image?.imageBytes || p.imageBytes || null;
+            if (imageGenRes.ok) {
+                const imageGenData = await imageGenRes.json();
+                const parts = imageGenData?.candidates?.[0]?.content?.parts || [];
+                for (const part of parts) {
+                    if (part.inlineData?.mimeType?.startsWith('image/')) {
+                        imageUrl = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+                        break;
+                    }
                 }
-                if (!b64 && Array.isArray(imagenData?.generatedImages) && imagenData.generatedImages[0]) {
-                    b64 = imagenData.generatedImages[0]?.image?.imageBytes || null;
-                }
-                if (b64) {
-                    imageUrl = `data:image/png;base64,${b64}`;
-                }
+            } else {
+                const errText = await imageGenRes.text();
+                console.warn('Image generation API error:', imageGenRes.status, errText);
             }
         } catch (imgErr) {
             console.warn('Image generation failed (non-critical):', imgErr);
