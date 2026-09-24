@@ -452,7 +452,7 @@ export function FoodSearchSelector({
         try {
             const html2canvas = (await import('html2canvas-pro')).default
             const canvas = await html2canvas(recipeContentRef.current, {
-                backgroundColor: '#ffffff',
+                backgroundColor: '#f3f1ee',
                 scale: 2,
                 useCORS: true
             })
@@ -886,18 +886,19 @@ export function FoodSearchSelector({
 
                         {/* Recipe Detail Bottom Sheet */}
                         {recipeFood && (
-                            <div className="absolute inset-0 bg-white flex flex-col animate-in slide-in-from-bottom duration-200" style={{ zIndex: 100000 }}>
+                            <div className="absolute inset-0 flex flex-col animate-in slide-in-from-bottom duration-200" style={{ zIndex: 100000, background: '#f3f1ee' }}>
                                 {/* Header */}
-                                <div className="flex items-center gap-2 px-3 py-2 border-b bg-orange-50 shrink-0">
+                                <div className="flex items-center gap-2 px-3 py-2 shrink-0" style={{ borderBottom: '1px solid #ddd6cf', background: '#ece7e1' }}>
                                     <button
                                         onClick={() => { setRecipeFood(null); setRecipeData(null) }}
-                                        className="h-8 w-8 rounded-full flex items-center justify-center hover:bg-orange-100 text-orange-600"
+                                        className="h-8 w-8 rounded-full flex items-center justify-center"
+                                        style={{ color: '#6a844a' }}
                                     >
                                         <ChevronLeft size={20} />
                                     </button>
                                     <div className="flex-1 min-w-0">
-                                        <h2 className="text-sm font-bold text-orange-800 truncate">{recipeFood.name}</h2>
-                                        <div className="text-[10px] text-orange-600 flex gap-2">
+                                        <h2 className="text-sm font-bold truncate" style={{ color: '#171717', fontFamily: 'Georgia, serif' }}>{recipeFood.name}</h2>
+                                        <div className="text-[10px] flex gap-2" style={{ color: '#666' }}>
                                             <span>{Math.round(recipeFood.calories)} kcal</span>
                                             <span>P:{Math.round(recipeFood.protein)}</span>
                                             <span>K:{Math.round(recipeFood.carbs)}</span>
@@ -908,7 +909,8 @@ export function FoodSearchSelector({
                                         <button
                                             onClick={downloadRecipeAsImage}
                                             disabled={downloading}
-                                            className="h-8 w-8 rounded-full flex items-center justify-center hover:bg-orange-100 text-orange-600"
+                                            className="h-8 w-8 rounded-full flex items-center justify-center"
+                                            style={{ color: '#6a844a' }}
                                             title="Tarifi İndir"
                                         >
                                             {downloading ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
@@ -916,7 +918,8 @@ export function FoodSearchSelector({
                                     )}
                                     <button
                                         onClick={() => { setRecipeFood(null); setRecipeData(null) }}
-                                        className="h-8 w-8 rounded-full flex items-center justify-center hover:bg-orange-100 text-orange-600"
+                                        className="h-8 w-8 rounded-full flex items-center justify-center"
+                                        style={{ color: '#666' }}
                                     >
                                         <X size={18} />
                                     </button>
@@ -930,91 +933,106 @@ export function FoodSearchSelector({
                                             <span className="text-sm text-gray-500">Tarif hazırlanıyor...</span>
                                         </div>
                                     ) : recipeData ? (
-                                        <div ref={recipeContentRef} className="px-4 py-3 space-y-4 bg-white">
-                                            {/* Recipe card header for download */}
-                                            <div className="flex items-center gap-2 pb-2 border-b border-orange-100">
-                                                <ChefHat size={18} className="text-orange-500" />
-                                                <div>
-                                                    <h3 className="text-base font-bold text-gray-800">{recipeFood.name}</h3>
-                                                    <div className="text-[10px] text-gray-500 flex gap-2">
-                                                        <span>{Math.round(recipeFood.calories)} kcal</span>
-                                                        <span className="text-blue-600">P:{Math.round(recipeFood.protein)}g</span>
-                                                        <span className="text-orange-600">K:{Math.round(recipeFood.carbs)}g</span>
-                                                        <span className="text-yellow-600">Y:{Math.round(recipeFood.fat)}g</span>
-                                                    </div>
+                                        <div ref={recipeContentRef} style={{ background: '#f3f1ee', fontFamily: 'Georgia, serif' }}>
+                                            {/* Hero image placeholder */}
+                                            <div style={{ background: 'linear-gradient(135deg, #c9bfb5 0%, #ece7e1 50%, #d4cdc4 100%)', height: '140px', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+                                                <div style={{ textAlign: 'center', color: '#8a7f73' }}>
+                                                    <ChefHat size={32} style={{ margin: '0 auto 4px', opacity: 0.5 }} />
+                                                    <div style={{ fontSize: '10px', fontFamily: 'system-ui', opacity: 0.6 }}>Görsel kart maker&apos;dan eklenecek</div>
                                                 </div>
                                             </div>
 
-                                            {/* Serving & Time */}
-                                            <div className="flex items-center gap-3 text-xs text-gray-500 flex-wrap">
-                                                {recipeData.serving && (
-                                                    <span className="flex items-center gap-1">
-                                                        <UtensilsCrossed size={12} className="text-orange-400" />
-                                                        {recipeData.serving}
-                                                    </span>
-                                                )}
-                                                {recipeData.prep_time && (
-                                                    <span className="flex items-center gap-1">
-                                                        <Clock size={12} className="text-blue-400" />
-                                                        Hazırlık: {recipeData.prep_time}
-                                                    </span>
-                                                )}
-                                                {recipeData.cook_time && (
-                                                    <span className="flex items-center gap-1">
-                                                        <Clock size={12} className="text-red-400" />
-                                                        Pişirme: {recipeData.cook_time}
-                                                    </span>
-                                                )}
+                                            {/* Title pill */}
+                                            <div style={{ margin: '-20px 16px 0', position: 'relative', zIndex: 2 }}>
+                                                <div style={{ background: '#ece7e1', borderRadius: '16px', padding: '12px 16px', textAlign: 'center' }}>
+                                                    <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: '#171717', fontFamily: 'Georgia, serif' }}>{recipeFood.name}</h3>
+                                                </div>
                                             </div>
 
-                                            {/* Ingredients */}
-                                            {recipeData.ingredients && recipeData.ingredients.length > 0 && (
-                                                <div>
-                                                    <h3 className="text-xs font-bold text-gray-700 mb-2 flex items-center gap-1.5">
-                                                        <ChefHat size={14} className="text-orange-500" />
-                                                        Malzemeler
-                                                    </h3>
-                                                    <div className="space-y-1.5">
-                                                        {recipeData.ingredients.map((ing: any, i: number) => (
-                                                            <div key={i} className="flex items-center gap-2 text-sm">
-                                                                <div className="w-1.5 h-1.5 rounded-full bg-orange-300 shrink-0" />
-                                                                <span className="text-gray-700">
-                                                                    {ing.amount && <span className="font-medium text-orange-700">{ing.amount} {ing.unit} </span>}
-                                                                    {ing.name}
-                                                                </span>
+                                            <div style={{ padding: '12px 16px 16px' }}>
+                                                {/* Two column: ingredients + macros */}
+                                                <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
+                                                    {/* Ingredients */}
+                                                    <div style={{ flex: 1 }}>
+                                                        <h4 style={{ fontSize: '16px', fontWeight: 500, color: '#171717', margin: '0 0 8px', fontFamily: 'Georgia, serif' }}>Malzemeler</h4>
+                                                        {recipeData.ingredients && recipeData.ingredients.length > 0 && (
+                                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                                {recipeData.ingredients.map((ing: any, i: number) => (
+                                                                    <div key={i} style={{ display: 'flex', alignItems: 'baseline', gap: '6px', fontSize: '12px', color: '#171717', fontFamily: 'system-ui' }}>
+                                                                        <span style={{ color: '#6a844a', fontSize: '8px' }}>●</span>
+                                                                        <span>
+                                                                            {ing.amount && <span style={{ fontWeight: 600, color: '#6a844a' }}>{ing.amount} {ing.unit} </span>}
+                                                                            {ing.name}
+                                                                        </span>
+                                                                    </div>
+                                                                ))}
                                                             </div>
-                                                        ))}
+                                                        )}
+                                                    </div>
+
+                                                    {/* Macro box + serving */}
+                                                    <div style={{ width: '120px', flexShrink: 0 }}>
+                                                        {recipeData.serving && (
+                                                            <div style={{ fontSize: '11px', fontWeight: 800, color: '#171717', textAlign: 'center', marginBottom: '6px', fontFamily: 'system-ui' }}>
+                                                                Servis: {recipeData.serving}
+                                                            </div>
+                                                        )}
+                                                        <div style={{ background: '#ece7e1', borderRadius: '14px', padding: '10px 8px', textAlign: 'center' }}>
+                                                            <div style={{ fontSize: '9px', fontWeight: 800, color: '#171717', marginBottom: '6px', fontFamily: 'system-ui', lineHeight: 1.2 }}>1 porsiyon için<br />makro değerleri</div>
+                                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', fontSize: '11px', fontFamily: 'system-ui' }}>
+                                                                <div style={{ display: 'flex', justifyContent: 'space-between', color: '#171717' }}>
+                                                                    <span>Kalori</span>
+                                                                    <span style={{ fontWeight: 700 }}>{Math.round(recipeFood.calories)}</span>
+                                                                </div>
+                                                                <div style={{ display: 'flex', justifyContent: 'space-between', color: '#171717' }}>
+                                                                    <span>Protein</span>
+                                                                    <span style={{ fontWeight: 700 }}>{Math.round(recipeFood.protein)}g</span>
+                                                                </div>
+                                                                <div style={{ display: 'flex', justifyContent: 'space-between', color: '#171717' }}>
+                                                                    <span>Karb.</span>
+                                                                    <span style={{ fontWeight: 700 }}>{Math.round(recipeFood.carbs)}g</span>
+                                                                </div>
+                                                                <div style={{ display: 'flex', justifyContent: 'space-between', color: '#171717' }}>
+                                                                    <span>Yağ</span>
+                                                                    <span style={{ fontWeight: 700 }}>{Math.round(recipeFood.fat)}g</span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        {/* Time info */}
+                                                        {(recipeData.prep_time || recipeData.cook_time) && (
+                                                            <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '2px', fontSize: '10px', color: '#666', fontFamily: 'system-ui', textAlign: 'center' }}>
+                                                                {recipeData.prep_time && <div>⏱ Hazırlık: {recipeData.prep_time}</div>}
+                                                                {recipeData.cook_time && <div>🔥 Pişirme: {recipeData.cook_time}</div>}
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 </div>
-                                            )}
 
-                                            {/* Steps */}
-                                            {recipeData.steps && recipeData.steps.length > 0 && (
-                                                <div>
-                                                    <h3 className="text-xs font-bold text-gray-700 mb-2 flex items-center gap-1.5">
-                                                        <UtensilsCrossed size={14} className="text-emerald-500" />
-                                                        Yapılışı
-                                                    </h3>
-                                                    <div className="space-y-2">
-                                                        {recipeData.steps.map((step: string, i: number) => (
-                                                            <div key={i} className="flex gap-2.5 text-sm">
-                                                                <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">
-                                                                    {i + 1}
-                                                                </span>
-                                                                <span className="text-gray-600 leading-relaxed">{step}</span>
-                                                            </div>
-                                                        ))}
+                                                {/* Preparation */}
+                                                {recipeData.steps && recipeData.steps.length > 0 && (
+                                                    <div style={{ marginTop: '14px' }}>
+                                                        <h4 style={{ fontSize: '16px', fontWeight: 500, color: '#171717', margin: '0 0 8px', fontFamily: 'Georgia, serif' }}>Hazırlama</h4>
+                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                                            {recipeData.steps.map((step: string, i: number) => (
+                                                                <div key={i} style={{ display: 'flex', gap: '8px', fontSize: '12px', fontFamily: 'system-ui', color: '#171717', lineHeight: 1.4 }}>
+                                                                    <span style={{ width: '18px', height: '18px', borderRadius: '50%', background: '#6a844a', color: '#fff', fontSize: '10px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '1px' }}>
+                                                                        {i + 1}
+                                                                    </span>
+                                                                    <span style={{ textAlign: 'justify' }}>{step}</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
                                                     </div>
-                                                </div>
-                                            )}
+                                                )}
 
-                                            {/* Tip */}
-                                            {recipeData.tip && (
-                                                <div className="flex gap-2 p-2.5 rounded-lg bg-amber-50 border border-amber-100">
-                                                    <Lightbulb size={14} className="text-amber-500 shrink-0 mt-0.5" />
-                                                    <span className="text-xs text-amber-800 leading-relaxed">{recipeData.tip}</span>
-                                                </div>
-                                            )}
+                                                {/* Tip */}
+                                                {recipeData.tip && (
+                                                    <div style={{ marginTop: '12px', display: 'flex', gap: '6px', padding: '10px 12px', borderRadius: '12px', background: '#e8e3db', border: '1px solid #ddd6cf' }}>
+                                                        <Lightbulb size={14} style={{ color: '#6a844a', flexShrink: 0, marginTop: '1px' }} />
+                                                        <span style={{ fontSize: '11px', color: '#4a4540', lineHeight: 1.4, fontFamily: 'system-ui' }}>{recipeData.tip}</span>
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
                                     ) : (
                                         <div className="flex flex-col items-center justify-center py-12 gap-2 text-gray-400">
@@ -1025,10 +1043,11 @@ export function FoodSearchSelector({
                                 </div>
 
                                 {/* Bottom Add Button */}
-                                <div className="absolute bottom-0 left-0 right-0 p-3 bg-white border-t shadow-[0_-4px_12px_rgba(0,0,0,0.05)]">
+                                <div className="absolute bottom-0 left-0 right-0 p-3" style={{ background: '#ece7e1', borderTop: '1px solid #ddd6cf' }}>
                                     <button
                                         onClick={handleRecipeAdd}
-                                        className="w-full py-3 rounded-xl text-sm font-bold text-white bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700 transition-colors flex items-center justify-center gap-2"
+                                        className="w-full py-3 rounded-xl text-sm font-bold text-white transition-colors flex items-center justify-center gap-2"
+                                        style={{ background: '#2c6e49' }}
                                     >
                                         <Plus size={16} />
                                         Öğüne Ekle

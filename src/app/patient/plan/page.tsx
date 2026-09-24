@@ -5789,7 +5789,7 @@ export default function PatientPlanPage() {
                                                                                             className="bg-orange-50 rounded-xl p-3 border border-orange-100 cursor-pointer hover:bg-orange-100 transition-colors shadow-sm"
                                                                                             onClick={(e) => {
                                                                                                 e.stopPropagation()
-                                                                                                setAiRecipeModal(aiRecipe)
+                                                                                                setAiRecipeModal({ ...aiRecipe, _calories: food.calories, _protein: food.protein, _carbs: food.carbs, _fat: food.fat })
                                                                                             }}
                                                                                         >
                                                                                             <div className="flex items-center justify-between">
@@ -6201,12 +6201,12 @@ export default function PatientPlanPage() {
 
                         {/* AI Recipe Modal - Fullscreen */}
                         {aiRecipeModal && typeof document !== 'undefined' && createPortal(
-                            <div className="fixed inset-0 bg-white flex flex-col animate-in slide-in-from-bottom duration-200" style={{ zIndex: 99999, top: '2.5rem', height: 'calc(100dvh - 2.5rem)', borderTopLeftRadius: '1rem', borderTopRightRadius: '1rem', boxShadow: '0 -4px 20px rgba(0,0,0,0.15)' }}>
+                            <div className="fixed inset-0 flex flex-col animate-in slide-in-from-bottom duration-200" style={{ zIndex: 99999, top: '2.5rem', height: 'calc(100dvh - 2.5rem)', borderTopLeftRadius: '1rem', borderTopRightRadius: '1rem', boxShadow: '0 -4px 20px rgba(0,0,0,0.15)', background: '#f3f1ee' }}>
                                 {/* Header */}
-                                <div className="flex items-center justify-between px-4 py-3 border-b bg-orange-50 shrink-0" style={{ borderTopLeftRadius: '1rem', borderTopRightRadius: '1rem' }}>
+                                <div className="flex items-center justify-between px-4 py-3 shrink-0" style={{ borderBottom: '1px solid #ddd6cf', background: '#ece7e1', borderTopLeftRadius: '1rem', borderTopRightRadius: '1rem' }}>
                                     <div className="flex items-center gap-2 flex-1 min-w-0">
-                                        <ChefHat size={18} className="text-orange-500 shrink-0" />
-                                        <h2 className="text-sm font-bold text-orange-800 truncate">{aiRecipeModal.food_name || 'Tarif'}</h2>
+                                        <ChefHat size={18} style={{ color: '#6a844a' }} className="shrink-0" />
+                                        <h2 className="text-sm font-bold truncate" style={{ color: '#171717', fontFamily: 'Georgia, serif' }}>{aiRecipeModal.food_name || 'Tarif'}</h2>
                                     </div>
                                     <div className="flex items-center gap-1 shrink-0">
                                         <button
@@ -6215,7 +6215,7 @@ export default function PatientPlanPage() {
                                                 setAiRecipeDownloading(true)
                                                 try {
                                                     const html2canvas = (await import('html2canvas-pro')).default
-                                                    const canvas = await html2canvas(aiRecipeContentRef.current, { backgroundColor: '#ffffff', scale: 2, useCORS: true })
+                                                    const canvas = await html2canvas(aiRecipeContentRef.current, { backgroundColor: '#f3f1ee', scale: 2, useCORS: true })
                                                     const link = document.createElement('a')
                                                     link.download = `tarif-${(aiRecipeModal.food_name || 'tarif').replace(/\s+/g, '-').toLowerCase()}.png`
                                                     link.href = canvas.toDataURL('image/png')
@@ -6224,12 +6224,13 @@ export default function PatientPlanPage() {
                                                 finally { setAiRecipeDownloading(false) }
                                             }}
                                             disabled={aiRecipeDownloading}
-                                            className="h-8 w-8 rounded-full flex items-center justify-center hover:bg-orange-100 text-orange-600"
+                                            className="h-8 w-8 rounded-full flex items-center justify-center"
+                                            style={{ color: '#6a844a' }}
                                             title="Tarifi İndir"
                                         >
                                             {aiRecipeDownloading ? <Loader2 size={16} className="animate-spin" /> : <FileDown size={16} />}
                                         </button>
-                                        <button onClick={() => setAiRecipeModal(null)} className="h-8 w-8 rounded-full flex items-center justify-center hover:bg-orange-100 text-orange-600">
+                                        <button onClick={() => setAiRecipeModal(null)} className="h-8 w-8 rounded-full flex items-center justify-center" style={{ color: '#666' }}>
                                             <X size={18} />
                                         </button>
                                     </div>
@@ -6237,60 +6238,107 @@ export default function PatientPlanPage() {
 
                                 {/* Content */}
                                 <div className="flex-1 overflow-y-auto">
-                                    <div ref={aiRecipeContentRef} className="px-4 py-3 space-y-4 bg-white">
-                                        {/* Recipe card header for download */}
-                                        <div className="flex items-center gap-2 pb-2 border-b border-orange-100">
-                                            <ChefHat size={18} className="text-orange-500" />
-                                            <h3 className="text-base font-bold text-gray-800">{aiRecipeModal.food_name || 'Tarif'}</h3>
+                                    <div ref={aiRecipeContentRef} style={{ background: '#f3f1ee', fontFamily: 'Georgia, serif' }}>
+                                        {/* Hero image placeholder */}
+                                        <div style={{ background: 'linear-gradient(135deg, #c9bfb5 0%, #ece7e1 50%, #d4cdc4 100%)', height: '140px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                            <div style={{ textAlign: 'center', color: '#8a7f73' }}>
+                                                <ChefHat size={32} style={{ margin: '0 auto 4px', opacity: 0.5 }} />
+                                                <div style={{ fontSize: '10px', fontFamily: 'system-ui', opacity: 0.6 }}>AI Tarif Kartı</div>
+                                            </div>
                                         </div>
 
-                                        {/* Time */}
-                                        <div className="flex items-center gap-3 text-xs text-gray-500 flex-wrap">
-                                            {aiRecipeModal.serving && <span className="flex items-center gap-1"><UtensilsCrossed size={12} className="text-orange-400" />{aiRecipeModal.serving}</span>}
-                                            {aiRecipeModal.prep_time && <span className="flex items-center gap-1"><Clock size={12} className="text-blue-400" />Hazırlık: {aiRecipeModal.prep_time}</span>}
-                                            {aiRecipeModal.cook_time && <span className="flex items-center gap-1"><Clock size={12} className="text-red-400" />Pişirme: {aiRecipeModal.cook_time}</span>}
+                                        {/* Title pill */}
+                                        <div style={{ margin: '-20px 16px 0', position: 'relative', zIndex: 2 }}>
+                                            <div style={{ background: '#ece7e1', borderRadius: '16px', padding: '12px 16px', textAlign: 'center' }}>
+                                                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: '#171717', fontFamily: 'Georgia, serif' }}>{aiRecipeModal.food_name || 'Tarif'}</h3>
+                                            </div>
                                         </div>
 
-                                        {/* Ingredients */}
-                                        {aiRecipeModal.ingredients?.length > 0 && (
-                                            <div>
-                                                <h3 className="text-xs font-bold text-gray-700 mb-2 flex items-center gap-1.5"><ChefHat size={14} className="text-orange-500" />Malzemeler</h3>
-                                                <div className="space-y-1.5">
-                                                    {aiRecipeModal.ingredients.map((ing: any, i: number) => (
-                                                        <div key={i} className="flex items-center gap-2 text-sm">
-                                                            <div className="w-1.5 h-1.5 rounded-full bg-orange-300 shrink-0" />
-                                                            <span className="text-gray-700">
-                                                                {ing.amount && <span className="font-medium text-orange-700">{ing.amount} {ing.unit} </span>}
-                                                                {ing.name}
-                                                            </span>
+                                        <div style={{ padding: '12px 16px 16px' }}>
+                                            {/* Two column: ingredients + macros */}
+                                            <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
+                                                {/* Ingredients */}
+                                                <div style={{ flex: 1 }}>
+                                                    <h4 style={{ fontSize: '16px', fontWeight: 500, color: '#171717', margin: '0 0 8px', fontFamily: 'Georgia, serif' }}>Malzemeler</h4>
+                                                    {aiRecipeModal.ingredients?.length > 0 && (
+                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                            {aiRecipeModal.ingredients.map((ing: any, i: number) => (
+                                                                <div key={i} style={{ display: 'flex', alignItems: 'baseline', gap: '6px', fontSize: '12px', color: '#171717', fontFamily: 'system-ui' }}>
+                                                                    <span style={{ color: '#6a844a', fontSize: '8px' }}>●</span>
+                                                                    <span>
+                                                                        {ing.amount && <span style={{ fontWeight: 600, color: '#6a844a' }}>{ing.amount} {ing.unit} </span>}
+                                                                        {ing.name}
+                                                                    </span>
+                                                                </div>
+                                                            ))}
                                                         </div>
-                                                    ))}
+                                                    )}
+                                                </div>
+
+                                                {/* Macro box + serving */}
+                                                <div style={{ width: '120px', flexShrink: 0 }}>
+                                                    {aiRecipeModal.serving && (
+                                                        <div style={{ fontSize: '11px', fontWeight: 800, color: '#171717', textAlign: 'center', marginBottom: '6px', fontFamily: 'system-ui' }}>
+                                                            Servis: {aiRecipeModal.serving}
+                                                        </div>
+                                                    )}
+                                                    {(aiRecipeModal._calories || aiRecipeModal._protein) && (
+                                                        <div style={{ background: '#ece7e1', borderRadius: '14px', padding: '10px 8px', textAlign: 'center' }}>
+                                                            <div style={{ fontSize: '9px', fontWeight: 800, color: '#171717', marginBottom: '6px', fontFamily: 'system-ui', lineHeight: 1.2 }}>1 porsiyon için<br />makro değerleri</div>
+                                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', fontSize: '11px', fontFamily: 'system-ui' }}>
+                                                                <div style={{ display: 'flex', justifyContent: 'space-between', color: '#171717' }}>
+                                                                    <span>Kalori</span>
+                                                                    <span style={{ fontWeight: 700 }}>{Math.round(aiRecipeModal._calories || 0)}</span>
+                                                                </div>
+                                                                <div style={{ display: 'flex', justifyContent: 'space-between', color: '#171717' }}>
+                                                                    <span>Protein</span>
+                                                                    <span style={{ fontWeight: 700 }}>{Math.round(aiRecipeModal._protein || 0)}g</span>
+                                                                </div>
+                                                                <div style={{ display: 'flex', justifyContent: 'space-between', color: '#171717' }}>
+                                                                    <span>Karb.</span>
+                                                                    <span style={{ fontWeight: 700 }}>{Math.round(aiRecipeModal._carbs || 0)}g</span>
+                                                                </div>
+                                                                <div style={{ display: 'flex', justifyContent: 'space-between', color: '#171717' }}>
+                                                                    <span>Yağ</span>
+                                                                    <span style={{ fontWeight: 700 }}>{Math.round(aiRecipeModal._fat || 0)}g</span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                    {(aiRecipeModal.prep_time || aiRecipeModal.cook_time) && (
+                                                        <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '2px', fontSize: '10px', color: '#666', fontFamily: 'system-ui', textAlign: 'center' }}>
+                                                            {aiRecipeModal.prep_time && <div>⏱ Hazırlık: {aiRecipeModal.prep_time}</div>}
+                                                            {aiRecipeModal.cook_time && <div>🔥 Pişirme: {aiRecipeModal.cook_time}</div>}
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </div>
-                                        )}
 
-                                        {/* Steps */}
-                                        {aiRecipeModal.steps?.length > 0 && (
-                                            <div>
-                                                <h3 className="text-xs font-bold text-gray-700 mb-2 flex items-center gap-1.5"><UtensilsCrossed size={14} className="text-emerald-500" />Yapılışı</h3>
-                                                <div className="space-y-2">
-                                                    {aiRecipeModal.steps.map((step: string, i: number) => (
-                                                        <div key={i} className="flex gap-2.5 text-sm">
-                                                            <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">{i + 1}</span>
-                                                            <span className="text-gray-600 leading-relaxed">{step}</span>
-                                                        </div>
-                                                    ))}
+                                            {/* Preparation */}
+                                            {aiRecipeModal.steps?.length > 0 && (
+                                                <div style={{ marginTop: '14px' }}>
+                                                    <h4 style={{ fontSize: '16px', fontWeight: 500, color: '#171717', margin: '0 0 8px', fontFamily: 'Georgia, serif' }}>Hazırlama</h4>
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                                        {aiRecipeModal.steps.map((step: string, i: number) => (
+                                                            <div key={i} style={{ display: 'flex', gap: '8px', fontSize: '12px', fontFamily: 'system-ui', color: '#171717', lineHeight: 1.4 }}>
+                                                                <span style={{ width: '18px', height: '18px', borderRadius: '50%', background: '#6a844a', color: '#fff', fontSize: '10px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '1px' }}>
+                                                                    {i + 1}
+                                                                </span>
+                                                                <span style={{ textAlign: 'justify' }}>{step}</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
                                                 </div>
-                                            </div>
-                                        )}
+                                            )}
 
-                                        {/* Tip */}
-                                        {aiRecipeModal.tip && (
-                                            <div className="flex gap-2 p-2.5 rounded-lg bg-amber-50 border border-amber-100">
-                                                <Lightbulb size={14} className="text-amber-500 shrink-0 mt-0.5" />
-                                                <span className="text-xs text-amber-800 leading-relaxed">{aiRecipeModal.tip}</span>
-                                            </div>
-                                        )}
+                                            {/* Tip */}
+                                            {aiRecipeModal.tip && (
+                                                <div style={{ marginTop: '12px', display: 'flex', gap: '6px', padding: '10px 12px', borderRadius: '12px', background: '#e8e3db', border: '1px solid #ddd6cf' }}>
+                                                    <Lightbulb size={14} style={{ color: '#6a844a', flexShrink: 0, marginTop: '1px' }} />
+                                                    <span style={{ fontSize: '11px', color: '#4a4540', lineHeight: 1.4, fontFamily: 'system-ui' }}>{aiRecipeModal.tip}</span>
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
                             </div>,
