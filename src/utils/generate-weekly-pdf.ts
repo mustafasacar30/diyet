@@ -327,26 +327,27 @@ export async function generateWeeklyPlanPdf(options: PdfOptions): Promise<void> 
                             mealRecipes.push(c)
                         }
                     }
-                } else if ((food.image_url || food.food_meta?.image_url) && (food.image_url || food.food_meta?.image_url).startsWith('data:')) {
-                    const aiImageUrl = food.image_url || food.food_meta.image_url
-                    // AI-generated image with no formal recipe card — create a virtual card
-                    const virtualFilename = `ai_${food.food_name.replace(/[^a-zA-Z0-9çğıöşüÇĞİÖŞÜ]/g, '_')}.jpg`
-                    let cIdx = matchedCards.findIndex(c => c.filename === virtualFilename)
-                    if (cIdx === -1) {
-                        matchedCards.push({
-                            id: `ai_${food.id || food.food_name}`,
-                            filename: virtualFilename,
-                            url: aiImageUrl,
-                            metadata: { ai_generated: true, food_name: food.food_name },
-                            created_at: new Date().toISOString()
-                        })
-                        cIdx = matchedCards.length - 1
-                        aiImageCards.add(virtualFilename)
-                    }
-                    (food as any)._hasRecipe = true
-                    (food as any)._recipeIdx = cIdx
-                    if (!mealRecipes.find(r => r.filename === virtualFilename)) {
-                        mealRecipes.push(matchedCards[cIdx])
+                } else {
+                    const aiImageUrl = food.image_url || food.food_meta?.image_url || null;
+                    if (aiImageUrl && typeof aiImageUrl === 'string' && aiImageUrl.startsWith('data:')) {
+                        const virtualFilename = `ai_${food.food_name.replace(/[^a-zA-Z0-9çğıöşüÇĞİÖŞÜ]/g, '_')}.jpg`;
+                        let cIdx = matchedCards.findIndex(c => c.filename === virtualFilename);
+                        if (cIdx === -1) {
+                            matchedCards.push({
+                                id: `ai_${food.id || food.food_name}`,
+                                filename: virtualFilename,
+                                url: aiImageUrl,
+                                metadata: { ai_generated: true, food_name: food.food_name },
+                                created_at: new Date().toISOString()
+                            });
+                            cIdx = matchedCards.length - 1;
+                            aiImageCards.add(virtualFilename);
+                        }
+                        (food as any)._hasRecipe = true;
+                        (food as any)._recipeIdx = cIdx;
+                        if (!mealRecipes.find(r => r.filename === virtualFilename)) {
+                            mealRecipes.push(matchedCards[cIdx]);
+                        }
                     }
                 }
             }
