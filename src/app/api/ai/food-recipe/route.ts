@@ -75,7 +75,7 @@ KURALLAR:
         try {
             const imagePrompt = `Generate a high-quality food photography image of "${foodName}". Beautifully plated on a clean plate, professional presentation, appetizing, warm natural light, high detail. ABSOLUTELY NO TEXT, NO WORDS, NO LABELS, NO WATERMARKS, NO LOGOS in the image. Pure photograph only.`;
 
-            const imageGenUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-preview-image-generation:generateContent?key=${encodeURIComponent(apiKey)}`;
+            const imageGenUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${encodeURIComponent(apiKey)}`;
             const imageGenRes = await fetch(imageGenUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
