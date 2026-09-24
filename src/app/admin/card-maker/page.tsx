@@ -358,13 +358,12 @@ function CardMakerInner() {
             const { data, error } = await supabase
                 .from('foods')
                 .select('*')
-                .not('ingredients', 'is', null)
-                .neq('ingredients', '')
                 .order('name')
 
             if (error) throw error
 
-            let allFoods = (data || []) as (FoodItem & { hidden_from_cardmaker?: boolean })[]
+            let allFoods = ((data || []) as (FoodItem & { hidden_from_cardmaker?: boolean })[])
+                .filter(f => (f.ingredients && f.ingredients.trim() !== '') || (f.meta?.ingredients && f.meta.ingredients.trim() !== ''))
 
             // Client-side team filtering
             if (isTeamMode && teamOwnerId) {
@@ -397,15 +396,17 @@ function CardMakerInner() {
             const carbStr = (food.carbs && food.carbs > 0) ? `${food.carbs} gram` : "-"
             const fatStr = (food.fat && food.fat > 0) ? `${food.fat} gram` : "-"
 
-            const totalServings = food.ai_analysis?.total_servings || 1
+            const totalServings = food.ai_analysis?.total_servings || food.meta?.ai_analysis?.total_servings || 1
             const portionUnit = food.unit || food.portion_unit || 'porsiyon'
+            const ingredients = food.ingredients || food.meta?.ingredients || ""
+            const recipeText = food.recipe_text || food.meta?.recipe_text || ""
 
             iframeRef.current.contentWindow.postMessage({
                 type: 'LOAD_RECIPE',
                 data: {
                     title: food.name,
-                    ingredients: food.ingredients,
-                    preparation: food.recipe_text || "",
+                    ingredients: ingredients,
+                    preparation: recipeText,
                     servings: `${totalServings} ${portionUnit}`,
                     macros: {
                         kalori: calStr,
