@@ -371,7 +371,7 @@ export async function generateWeeklyPlanPdf(options: PdfOptions): Promise<void> 
     const pendingLinks: any[] = []
     const cardFirstOccurrence = new Map<number, { p: number, x: number, y: number }>()
     const thumbnailUsageCount = new Map<string, number>()
-    const aiThumbShownGlobal = new Set<string>()
+    const thumbShownGlobal = new Set<string>()
 
     // ══════════ DAYS ══════════
     for (const day of days) {
@@ -462,12 +462,13 @@ export async function generateWeeklyPlanPdf(options: PdfOptions): Promise<void> 
                         thumbnailUsageCount
                     )
                     for (const thumbCard of thumbCandidates) {
+                        const thumbKey = getRecipeCardKey(thumbCard)
+                        // Each thumbnail shown at most once in the whole PDF
+                        if (thumbShownGlobal.has(thumbKey)) continue
                         const isAiThumb = aiImageCards.has(thumbCard.filename)
-                        // AI thumbnails: show only once globally
-                        if (isAiThumb && aiThumbShownGlobal.has(thumbCard.filename)) continue
-                        // AI images are plain photos — no crop needed; recipe cards show top 40%
+                        // AI: resize to small JPEG; recipe cards: crop top 40%
                         const thumbData = isAiThumb
-                            ? thumbCard.url
+                            ? await loadImageAsDataUrl(thumbCard.url, 200, 0, 'image/jpeg', 100)
                             : await loadImageAsDataUrl(thumbCard.url, 260, 2, 'image/jpeg', 40)
                         if (!thumbData) continue
 
@@ -493,10 +494,9 @@ export async function generateWeeklyPlanPdf(options: PdfOptions): Promise<void> 
                                 })
                             }
 
-                            const thumbKey = getRecipeCardKey(thumbCard)
                             usedThumbnailKeysToday.add(thumbKey)
                             thumbnailUsageCount.set(thumbKey, (thumbnailUsageCount.get(thumbKey) || 0) + 1)
-                            if (isAiThumb) aiThumbShownGlobal.add(thumbCard.filename)
+                            thumbShownGlobal.add(thumbKey)
 
                             if (drawY + finalThumbH > y) y = drawY + finalThumbH
                             break
@@ -557,15 +557,13 @@ export async function generateWeeklyPlanPdf(options: PdfOptions): Promise<void> 
                 cardPageMap.set(i, p)
                 const cardStartY = y
 
-                // Hero image (half width)
+                // Hero image — compress to JPEG for smaller PDF
                 const heroW = contentW
                 const heroH = 55
                 try {
-                    const img = new Image()
-                    await new Promise<void>((resolve) => { img.onload = () => resolve(); img.onerror = () => resolve(); img.src = heroUrl })
-                    if (img.width > 0) {
-                        const imgFormat = heroUrl.startsWith('data:image/png') ? 'PNG' : 'JPEG'
-                        doc.addImage(heroUrl, imgFormat, margin, y, heroW, heroH, undefined, 'FAST')
+                    const compressedHero = await loadImageAsDataUrl(heroUrl, 600, 0, 'image/jpeg', 100)
+                    if (compressedHero) {
+                        doc.addImage(compressedHero, 'JPEG', margin, y, heroW, heroH, undefined, 'FAST')
                     }
                 } catch (e) { /* skip */ }
                 y += heroH + 2
