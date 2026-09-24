@@ -400,6 +400,7 @@ function CardMakerInner() {
             const portionUnit = food.unit || food.portion_unit || 'porsiyon'
             const ingredients = food.ingredients || food.meta?.ingredients || ""
             const recipeText = food.recipe_text || food.meta?.recipe_text || ""
+            const heroImage = food.image_url || food.meta?.image_url || food.meta?.ai_analysis?.recipe?.image_url || null
 
             iframeRef.current.contentWindow.postMessage({
                 type: 'LOAD_RECIPE',
@@ -408,6 +409,7 @@ function CardMakerInner() {
                     ingredients: ingredients,
                     preparation: recipeText,
                     servings: `${totalServings} ${portionUnit}`,
+                    imageUrl: heroImage,
                     macros: {
                         kalori: calStr,
                         protein: protStr,

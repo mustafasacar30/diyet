@@ -5552,7 +5552,7 @@ export default function PatientPlanPage() {
                                                                         const calories = foodData.calories || Math.round((p * 4) + (c * 4) + (f * 9))
                                                                         const recipeInfo = foodData.recipe || null
                                                                         const ingredientsText = recipeInfo?.ingredients?.map((ing: any) => `${ing.amount || ''} ${ing.unit || ''} ${ing.name}`.trim()).join('\n') || null
-                                                                        const recipeText = recipeInfo?.steps?.map((s: string, i: number) => `${i + 1}. ${s}`).join('\n') || null
+                                                                        const recipeText = recipeInfo?.preparation || recipeInfo?.steps?.map((s: string, i: number) => `${i + 1}. ${s}`).join('\n') || null
                                                                         const { error: proposalError } = await supabase.from('food_proposals').insert({
                                                                             user_id: user?.id || profile?.id || null,
                                                                             suggested_name: foodData.food_name || name,
@@ -5564,6 +5564,7 @@ export default function PatientPlanPage() {
                                                                             status: 'pending',
                                                                             ingredients: ingredientsText,
                                                                             recipe_text: recipeText,
+                                                                            image_url: recipeInfo?.image_url || null,
                                                                             ai_analysis: { source: source || 'patient_ai_search', query: name, recipe: recipeInfo }
                                                                         })
                                                                         if (proposalError) console.error("Proposal error:", proposalError)

@@ -7208,6 +7208,13 @@ Yanıtını KESİNLİKLE VE SADECE aşağıdaki gibi JSON olarak ver. Asla açı
           if (d.macros.yag) state.recipe.macros.yag = d.macros.yag;
         }
 
+        // Load AI-generated image if provided
+        if (d.imageUrl) {
+          state.generatedImageDataUrl = d.imageUrl;
+          addToImageHistory(d.imageUrl);
+          state.imageProvider = "AI Recipe";
+        }
+
         // Clear any old image prompt so it uses the new title for generation
         state.recipe.imagePrompt = "";
 
