@@ -5401,30 +5401,49 @@ export default function PatientPlanPage() {
                                     onClick={async () => {
                                         try {
                                             setIsPdfGenerating(true)
-                                            // Enrich custom foods with AI images from food_proposals
+                                            // Enrich foods with AI images from food_proposals
+                                            const foodNamesNeedingImage = new Set<string>()
                                             const foodIdsNeedingImage = new Set<string>()
                                             for (const day of weekDays) {
                                                 for (const meal of day.diet_meals) {
                                                     for (const food of meal.diet_foods) {
-                                                        if ((food as any).real_food_id && !(food as any).image_url) {
-                                                            foodIdsNeedingImage.add((food as any).real_food_id)
+                                                        if (!(food as any).image_url) {
+                                                            if ((food as any).real_food_id) foodIdsNeedingImage.add((food as any).real_food_id)
+                                                            if ((food as any).food_name) foodNamesNeedingImage.add((food as any).food_name)
                                                         }
                                                     }
                                                 }
                                             }
-                                            if (foodIdsNeedingImage.size > 0) {
-                                                const { data: proposals } = await supabase
-                                                    .from('food_proposals')
-                                                    .select('id, image_url')
-                                                    .in('id', Array.from(foodIdsNeedingImage))
-                                                    .not('image_url', 'is', null)
-                                                if (proposals && proposals.length > 0) {
-                                                    const imgMap = new Map(proposals.map(p => [p.id, p.image_url]))
+                                            if (foodNamesNeedingImage.size > 0 || foodIdsNeedingImage.size > 0) {
+                                                // Fetch by ID (for approved foods) and by name (for custom foods)
+                                                let allProposals: any[] = []
+                                                if (foodIdsNeedingImage.size > 0) {
+                                                    const { data } = await supabase
+                                                        .from('food_proposals')
+                                                        .select('id, suggested_name, image_url')
+                                                        .in('id', Array.from(foodIdsNeedingImage))
+                                                        .not('image_url', 'is', null)
+                                                    if (data) allProposals.push(...data)
+                                                }
+                                                if (foodNamesNeedingImage.size > 0) {
+                                                    const { data } = await supabase
+                                                        .from('food_proposals')
+                                                        .select('id, suggested_name, image_url')
+                                                        .in('suggested_name', Array.from(foodNamesNeedingImage))
+                                                        .not('image_url', 'is', null)
+                                                    if (data) allProposals.push(...data)
+                                                }
+                                                if (allProposals.length > 0) {
+                                                    const imgById = new Map(allProposals.map(p => [p.id, p.image_url]))
+                                                    const imgByName = new Map(allProposals.map(p => [p.suggested_name, p.image_url]))
                                                     for (const day of weekDays) {
                                                         for (const meal of day.diet_meals) {
                                                             for (const food of meal.diet_foods) {
-                                                                if ((food as any).real_food_id && imgMap.has((food as any).real_food_id)) {
-                                                                    (food as any).image_url = imgMap.get((food as any).real_food_id)
+                                                                if (!(food as any).image_url) {
+                                                                    const byId = (food as any).real_food_id && imgById.get((food as any).real_food_id)
+                                                                    const byName = imgByName.get((food as any).food_name)
+                                                                    if (byId) (food as any).image_url = byId
+                                                                    else if (byName) (food as any).image_url = byName
                                                                 }
                                                             }
                                                         }
