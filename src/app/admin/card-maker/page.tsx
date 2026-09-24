@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useEffect, useRef, useCallback } from "react"
+import { useState, useEffect, useRef, useCallback, Suspense } from "react"
+import { useSearchParams } from "next/navigation"
 import { supabase } from "@/lib/supabase"
 import { useAuth } from "@/contexts/auth-context"
 import { resolveTeamScopeContextFromAuth } from "@/lib/team-scope"
@@ -52,7 +53,8 @@ function makeSafeFileName(str: string): string {
     return safeStr
 }
 
-export default function CardMakerPage() {
+function CardMakerInner() {
+    const searchParams = useSearchParams()
     const { scopeMode } = useAuth()
     const [foods, setFoods] = useState<FoodItem[]>([])
     const [filteredFoods, setFilteredFoods] = useState<FoodItem[]>([])
@@ -293,6 +295,19 @@ export default function CardMakerPage() {
         const s = search.toLowerCase()
         setFilteredFoods(visible.filter(f => f.name?.toLowerCase().includes(s) || f.category?.toLowerCase().includes(s)))
     }, [search, sortedFoods, hiddenFoodIds, showHidden])
+
+    // Auto-select food from URL param (e.g. ?foodId=xxx)
+    const autoSelectedRef = useRef(false)
+    useEffect(() => {
+        if (autoSelectedRef.current || isLoading || foods.length === 0) return
+        const foodId = searchParams.get('foodId')
+        if (!foodId) return
+        const found = foods.find(f => f.id === foodId)
+        if (found) {
+            autoSelectedRef.current = true
+            setTimeout(() => handleFoodSelect(found), 500)
+        }
+    }, [foods, isLoading, searchParams])
 
     async function fetchGithubSync() {
         try {
@@ -752,5 +767,13 @@ export default function CardMakerPage() {
                 </div>
             )}
         </div>
+    )
+}
+
+export default function CardMakerPage() {
+    return (
+        <Suspense>
+            <CardMakerInner />
+        </Suspense>
     )
 }

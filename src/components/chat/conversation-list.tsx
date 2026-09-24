@@ -28,7 +28,7 @@ export function ConversationList({
     return (
         <div className="flex flex-col h-full bg-white border-r w-full md:w-[320px]">
             <div className="p-3 bg-gray-50 border-b flex justify-between items-center sticky top-0 z-10">
-                <h2 className="font-bold text-gray-700">Mesajlar</h2>
+                <h2 className="font-bold text-gray-700">Sohbet</h2>
                 <div className="flex gap-2">
                     {onStartGroup && (
                         <div

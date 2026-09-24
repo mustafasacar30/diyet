@@ -256,25 +256,15 @@ export default function PatientLayout({
 
             {/* Mobile Header */}
             {pathname !== '/patient/plan' && (
-                <header className="md:hidden flex items-center justify-between px-4 py-2 bg-white border-b shadow-sm sticky top-0 z-10">
-                    <div className="flex flex-col">
-                        <span className="text-base font-bold text-green-700 leading-tight">
-                            {patientDisplayInfo?.fullName || 'Diyet Portal'}
-                        </span>
-                        {patientDisplayInfo?.programName && (
-                            <span className="text-xs text-gray-500">
-                                ({patientDisplayInfo.programName})
-                            </span>
-                        )}
-                    </div>
+                <header className="md:hidden flex items-center justify-end px-4 py-1.5 bg-white border-b shadow-sm sticky top-0 z-10">
                     <div className="flex items-center">
                         <Link href="/patient/settings">
-                            <Button variant="ghost" size="icon">
-                                <Settings className="h-5 w-5 text-gray-500" />
+                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                                <Settings className="h-4.5 w-4.5 text-gray-500" />
                             </Button>
                         </Link>
-                        <Button variant="ghost" size="icon" onClick={() => signOut()}>
-                            <LogOut className="h-5 w-5 text-gray-500" />
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => signOut()}>
+                            <LogOut className="h-4.5 w-4.5 text-gray-500" />
                         </Button>
                     </div>
                 </header>

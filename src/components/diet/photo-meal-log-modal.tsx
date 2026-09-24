@@ -60,10 +60,17 @@ interface PhotoMealLogModalProps {
     patientId?: string
     onSave: () => void
     trigger?: React.ReactNode
+    externalOpen?: boolean
+    onExternalOpenChange?: (open: boolean) => void
 }
 
-export function PhotoMealLogModal({ dayId, mealTime, patientDietType, patientId, onSave, trigger }: PhotoMealLogModalProps) {
-    const [open, setOpen] = useState(false)
+export function PhotoMealLogModal({ dayId, mealTime, patientDietType, patientId, onSave, trigger, externalOpen, onExternalOpenChange }: PhotoMealLogModalProps) {
+    const [internalOpen, setInternalOpen] = useState(false)
+    const open = externalOpen || internalOpen
+    const setOpen = (val: boolean) => {
+        setInternalOpen(val)
+        if (onExternalOpenChange && !val) onExternalOpenChange(false)
+    }
     const [image, setImage] = useState<string | null>(null)
     const [loading, setLoading] = useState(false)
     const [analyzing, setAnalyzing] = useState(false)

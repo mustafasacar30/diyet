@@ -85,14 +85,13 @@ export async function POST(req: NextRequest) {
                     tags: foodData.tags,
                     compatibility_tags: foodData.compatibility_tags,
                     notes: foodData.notes,
-                    ingredients: foodData.ingredients || null,
-                    recipe_text: foodData.recipe_text || null,
-                    meta: { 
-                        source: 'user_proposal', 
+                    meta: {
+                        source: 'user_proposal',
                         original_proposal_id: id,
-                        image_url: foodData.image_url 
+                        image_url: foodData.image_url,
+                        ingredients: foodData.ingredients || null,
+                        recipe_text: foodData.recipe_text || null,
                     },
-                    ai_analysis: foodData.ai_analysis || null
                 }, { onConflict: 'id' })
                 .select()
                 .single();

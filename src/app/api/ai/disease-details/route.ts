@@ -70,9 +70,7 @@ export async function POST(req: NextRequest) {
 
         // 1. Fetch system prompt
         let promptTemplate = DEFAULT_PROMPT;
-        let modelName = 'gemini-1.5-flash'; // Fast model is sufficient, but user preferred pro for meds. Let's stick to flash for speed or pro if needed.
-        // User previously upgraded to 3-pro-preview. Let's use that for quality.
-        modelName = 'gemini-2.0-flash'; // Using 2.0 Flash as it's the current "smart & fast" standard in this project
+        let modelName = 'gemini-2.5-flash';
 
         try {
             const { data: promptData, error: promptError } = await supabaseAdmin

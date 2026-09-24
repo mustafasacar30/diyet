@@ -361,9 +361,12 @@ export default function PatientEnergyPage() {
             {/* Header */}
             <div className="flex items-center gap-2">
                 <Link href="/patient" className="p-1.5 rounded-lg hover:bg-gray-100"><ArrowLeft className="h-4 w-4 text-gray-500" /></Link>
-                <h1 className="text-base font-bold text-gray-900 flex items-center gap-1.5 flex-1">
-                    <Zap className="h-4 w-4 text-amber-500" /> Enerji Hesabım
-                </h1>
+                <div className="flex items-center gap-1.5 flex-1">
+                    <Zap className="h-4 w-4 text-amber-500" />
+                    {activeDietType && (
+                        <span className="text-sm font-bold text-gray-900">{activeDietType.name}</span>
+                    )}
+                </div>
                 <button onClick={() => setShowInfo(!showInfo)} className="p-1.5 rounded-lg hover:bg-gray-100">
                     <Info className="h-4 w-4 text-gray-400" />
                 </button>

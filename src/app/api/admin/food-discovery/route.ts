@@ -204,7 +204,7 @@ async function verifyMacrosWithUSDA(ingredients: string, geminiKey: string, usda
     // Step 1: Use Gemini to translate ingredients to English with gram weights
     const genAI = new GoogleGenerativeAI(geminiKey)
     const model = genAI.getGenerativeModel({
-        model: 'gemini-1.5-flash',
+        model: 'gemini-2.5-flash',
         generationConfig: { temperature: 0.1, responseMimeType: 'application/json' }
     })
 
@@ -383,7 +383,7 @@ export async function POST(req: Request) {
             console.warn('Could not fetch existing foods by prompt:', e)
         }
 
-        const selectedModel = promptData.model || "gemini-1.5-flash"
+        const selectedModel = promptData.model || "gemini-2.5-flash"
         const selectedTemperature = promptData.temperature ?? 0.7
 
         const model = genAI.getGenerativeModel({

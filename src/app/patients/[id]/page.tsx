@@ -117,7 +117,7 @@ type Patient = {
         max_future_weeks: number
         allow_past: boolean
     }
-    macro_target_mode?: 'calculated' | 'plan'
+    macro_target_mode?: 'calculated' | 'plan' | 'custom'
     patient_goals?: string[]
     program_template_id?: string | null
     program_templates?: any | null

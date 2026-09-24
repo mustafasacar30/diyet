@@ -841,7 +841,7 @@ export async function POST(req: NextRequest) {
         };
 
         // 3. Build modular prompt (NO DB prompt - always use code-built prompt)
-        const modelName = 'gemini-2.0-flash';
+        const modelName = 'gemini-2.5-flash';
         const prompt = buildPrompt(dataMap, modules as AnalysisModule[], audience, tones as ToneOption[], length as LengthOption);
 
         // 4. Build input_snapshot for storage

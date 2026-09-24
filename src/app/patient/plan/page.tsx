@@ -2,6 +2,7 @@
 
 import { useAuth } from "@/contexts/auth-context"
 import { useEffect, useState, useRef, useMemo, type ReactNode } from "react"
+import { createPortal } from "react-dom"
 import { format } from "date-fns"
 import { tr } from "date-fns/locale"
 import { supabase } from "@/lib/supabase"
@@ -54,7 +55,9 @@ import {
     BookOpen,
     Edit2,
     FileDown,
-    Loader2
+    Loader2,
+    Clock,
+    Lightbulb
 } from "lucide-react"
 import {
     Select,
@@ -924,6 +927,9 @@ export default function PatientPlanPage() {
     const { manualMatches, bans, cards } = useRecipeManager()
     const [selectedRecipe, setSelectedRecipe] = useState<{ url: string, name: string } | null>(null)
     const [recipeDialogOpen, setRecipeDialogOpen] = useState(false)
+    const [aiRecipeModal, setAiRecipeModal] = useState<any>(null)
+    const [aiRecipeDownloading, setAiRecipeDownloading] = useState(false)
+    const aiRecipeContentRef = useRef<HTMLDivElement>(null)
 
     // Swap State
     // We need the WHOLE meal (slot) context for Main Dish detection
@@ -1342,7 +1348,8 @@ export default function PatientPlanPage() {
 
     // Foods database for adding new meals
     const [allFoods, setAllFoods] = useState<any[]>([])
-    const [inlineSearchOpen, setInlineSearchOpen] = useState<string | null>(null)
+    const [inlinePopoverOpen, setInlinePopoverOpen] = useState<string | null>(null)
+    const [photoModalOpen, setPhotoModalOpen] = useState<string | null>(null)
     const [expandedFoodId, setExpandedFoodId] = useState<string | null>(null)
     const [isMealTemplateModalOpen, setIsMealTemplateModalOpen] = useState(false)
     const [isEditingWeek, setIsEditingWeek] = useState(false)
@@ -2459,13 +2466,17 @@ export default function PatientPlanPage() {
                 const dayNames = ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar']
                 const dayName = dayNames[(day.day_number - 1) % 7] || `${day.day_number}.Gün`
 
-                // Calculate targets dynamically if needed
-                const dayTarget = calculateDailyTargets(
-                    (customPatientInfo || patientInfo)?.weight || 70,
-                    (customPatientInfo || patientInfo)?.activity_level || 3,
-                    (customDietType || activeDietType),
-                    (customPatientInfo || patientInfo)?.patient_goals
-                )
+                // Calculate targets — use custom if set
+                const pInfo = customPatientInfo || patientInfo
+                const customT = pInfo?.macro_target_mode === 'custom' && pInfo?.preferences?.custom_targets
+                const dayTarget = customT && customT.calories
+                    ? { calories: customT.calories, protein: customT.protein, carb: customT.carb, fat: customT.fat }
+                    : calculateDailyTargets(
+                        pInfo?.weight || 70,
+                        pInfo?.activity_level || 3,
+                        (customDietType || activeDietType),
+                        pInfo?.patient_goals
+                    )
 
                 return {
                     id: day.id,
@@ -2990,12 +3001,8 @@ export default function PatientPlanPage() {
 
     const dailyTargets = (() => {
         if (patientInfo?.macro_target_mode === 'plan' && currentDay) {
-            console.log("[PatientPlan] Using PLAN mode targets for day:", currentDay.day_name)
-            // FIX: Use target_* values (based on ORIGINAL foods) for targets, not current foods
-            // This ensures swapped foods don't change the target
             const planTotals = currentDay.diet_meals.reduce((acc, m) => {
                 return m.diet_foods.reduce((accInner, f) => {
-                    // Use target values if available (original food macros), fallback to current
                     const cals = Number((f as any).target_calories) || Number((f as any).calories) || 0
                     const prot = Number((f as any).target_protein) || Number((f as any).protein) || 0
                     const carb = Number((f as any).target_carbs) || Number((f as any).carbs) || 0
@@ -3013,7 +3020,17 @@ export default function PatientPlanPage() {
             return planTotals
         }
 
-        // Mode 2: Calculated Targets (Formula)
+        if (patientInfo?.macro_target_mode === 'custom' && (patientInfo as any).preferences?.custom_targets) {
+            const ct = (patientInfo as any).preferences.custom_targets
+            return {
+                calories: ct.calories || 0,
+                protein: ct.protein || 0,
+                carbs: ct.carb || 0,
+                fat: ct.fat || 0,
+            }
+        }
+
+        // Mode 3: Calculated Targets (Formula)
         if (patientInfo?.weight) {
             // Priority: Week Log > Patient Profile (Ignore -1 magic flag)
             const effectiveWeight = (activeWeek?.weight_log && activeWeek.weight_log !== -1) ? activeWeek.weight_log : patientInfo.weight
@@ -3521,10 +3538,6 @@ export default function PatientPlanPage() {
                 const { error } = await supabase.from('diet_meals').insert(inserts)
                 if (error) throw error
 
-                // Force calculated mode if not already
-                if (patientInfo?.id && patientInfo.macro_target_mode !== 'calculated') {
-                    await supabase.from('patients').update({ macro_target_mode: 'calculated' }).eq('id', patientInfo.id)
-                }
 
                 // Log the activity to trace auto_plan limit
                 let clientIp = 'Bilinmiyor';
@@ -5027,66 +5040,104 @@ export default function PatientPlanPage() {
 
     return (
         <div className="flex flex-col h-full bg-gray-50 min-h-screen">
-            {/* Custom Sticky Header - Redesigned Mobile-First Layout */}
-            <header className="relative sm:sticky sm:top-0 z-30 bg-white/95 backdrop-blur-md border-b border-gray-100 shadow-sm px-4 py-4 shrink-0">
-                <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
+            {/* Custom Sticky Header - Compact Mobile-First Layout */}
+            <header className="relative sm:sticky sm:top-0 z-30 bg-white/95 backdrop-blur-md border-b border-gray-100 shadow-sm px-3 py-2 shrink-0">
+                <div className="max-w-7xl mx-auto flex flex-col gap-1">
 
-                    <div className="flex flex-col min-w-0 flex-1">
-                        {/* Line 1: İsim (Program) & Kilo */}
-                        <div className="flex items-center justify-between mb-1.5 min-w-0">
-                            <h1 className="text-sm sm:text-base font-extrabold text-gray-900 leading-tight truncate mr-2">
-                                {profile?.full_name || patientInfo?.full_name || 'Diyet Planım'}
-                                <span className="text-[10px] sm:text-xs font-semibold text-gray-400 ml-1.5">
-                                    ({patientProgram?.name || 'Program'})
-                                </span>
-                            </h1>
-                            
-                            {/* Kilo / Aktivite Badge */}
+                    {/* Row 1: Program name left */}
+                    {patientProgram?.name && (
+                        <p className="text-[10px] font-semibold text-slate-400 truncate leading-none">
+                            {patientProgram.name}
+                        </p>
+                    )}
+
+                    {/* Row 2: Name left, Kilo + Menu right */}
+                    <div className="flex items-center justify-between min-w-0">
+                        <h1 className="text-sm font-extrabold text-emerald-800 leading-tight truncate mr-2 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-100">
+                            {profile?.full_name || patientInfo?.full_name || 'Diyet Planım'}
+                        </h1>
+                        <div className="flex items-center gap-1.5 shrink-0">
                             {(activeWeek?.weight_log || patientInfo?.weight) && (
-                                <Button 
-                                    variant="ghost" 
+                                <Button
+                                    variant="ghost"
                                     onClick={openWeightModal}
-                                    className="flex items-center gap-1 h-7 sm:h-8 bg-slate-100/80 hover:bg-emerald-50 px-2 rounded-lg border border-slate-200/50 hover:border-emerald-200 transition-all group shrink-0"
+                                    className="flex items-center gap-1 h-6 bg-slate-100/80 hover:bg-emerald-50 px-1.5 rounded-md border border-slate-200/50 hover:border-emerald-200 transition-all group shrink-0"
                                 >
-                                    <span className="text-xs sm:text-sm font-bold text-slate-700 group-hover:text-emerald-700">
+                                    <span className="text-[11px] font-bold text-slate-700 group-hover:text-emerald-700">
                                         {activeWeek?.weight_log || patientInfo?.weight}kg
                                     </span>
-                                    <Edit2 className="w-2.5 h-2.5 text-slate-400 group-hover:text-emerald-500" />
+                                    <Edit2 className="w-2 h-2 text-slate-400 group-hover:text-emerald-500" />
                                 </Button>
                             )}
-                        </div>
-
-                        {/* Line 2: Breadcrumb Style (Diet -> Week Selection) */}
-                        <div className="flex items-center gap-1 min-w-0 overflow-hidden">
-                            {activeDietType?.name && (
-                                <div className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-700 text-[10px] sm:text-[11px] font-bold border border-emerald-100/50 truncate shrink-0 max-w-[120px] sm:max-w-none">
-                                    {activeDietType.name}
-                                </div>
-                            )}
-
-                            <ChevronRight className="h-3 w-3 text-slate-300 shrink-0" />
-
                             <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
-                                    <Button 
-                                        variant="outline" 
-                                        className="h-7 sm:h-8 px-1.5 bg-white border-slate-200 shadow-sm hover:border-emerald-400 hover:bg-emerald-50/30 text-slate-700 rounded-lg flex items-center gap-1 transition-all group min-w-0 overflow-hidden"
-                                    >
-                                        <Calendar className="h-3 w-3 text-emerald-600 shrink-0" />
-                                        <div className="flex items-center gap-1 truncate">
-                                            <span className="text-[11px] sm:text-xs font-bold whitespace-nowrap">
-                                                {activeWeek?.week_number || 1}. Hafta
-                                            </span>
-                                            {activeWeek?.start_date && (
-                                                <span className="text-[12px] sm:text-[10px] font-medium text-slate-500 whitespace-nowrap">
-                                                    {new Date(activeWeek.start_date).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' })}
-                                                    {activeWeek.end_date ? ` - ${new Date(activeWeek.end_date).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' })}` : ''}
-                                                </span>
-                                            )}
-                                        </div>
-                                        <ChevronDown className="h-3 w-3 text-slate-400 group-hover:text-emerald-500 transition-colors shrink-0" />
+                                    <Button variant="ghost" className="h-6 w-6 rounded-md bg-slate-50 hover:bg-emerald-50 border border-slate-100 hover:border-emerald-200 transition-all group p-0 shadow-sm">
+                                        <LayoutGrid className="h-3 w-3 text-slate-400 group-hover:text-emerald-500 transition-colors" />
                                     </Button>
                                 </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" className="w-56 p-1.5 rounded-xl border-slate-100 shadow-xl">
+                                    <DropdownMenuItem
+                                        onClick={() => setIsMealTemplateModalOpen(true)}
+                                        className="flex items-center gap-3 py-2.5 px-3 rounded-lg cursor-pointer text-indigo-700 font-bold hover:bg-indigo-50 transition-all"
+                                    >
+                                        <ClipboardList className="h-4 w-4" />
+                                        <span className="text-xs">Öğün Düzeni Seç</span>
+                                    </DropdownMenuItem>
+                                    <DropdownMenuSeparator className="my-1 bg-slate-50" />
+                                    <DropdownMenuItem
+                                        onClick={handleUndo}
+                                        className="flex items-center gap-3 py-2.5 px-3 rounded-lg cursor-pointer text-blue-700 font-bold hover:bg-blue-50 transition-all"
+                                    >
+                                        <RotateCcw className="h-4 w-4" />
+                                        <span className="text-xs">Geri Al</span>
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                        onClick={handleReset}
+                                        className="flex items-center gap-3 py-2.5 px-3 rounded-lg cursor-pointer text-red-600 font-bold hover:bg-red-50 transition-all"
+                                    >
+                                        <Eraser className="h-4 w-4" />
+                                        <span className="text-xs">Haftayı Sıfırla</span>
+                                    </DropdownMenuItem>
+                                    <DropdownMenuSeparator className="my-1 bg-slate-50" />
+                                    <Link href="/patient/settings" passHref>
+                                        <DropdownMenuItem className="flex items-center gap-3 py-2.5 px-3 rounded-lg cursor-pointer text-slate-600 font-bold hover:bg-emerald-50 hover:text-emerald-700 transition-all">
+                                            <Settings className="h-4 w-4" />
+                                            <span className="text-xs">Ayarlar</span>
+                                        </DropdownMenuItem>
+                                    </Link>
+                                    <DropdownMenuItem
+                                        onClick={() => signOut()}
+                                        className="flex items-center gap-3 py-2.5 px-3 rounded-lg cursor-pointer text-slate-600 font-bold hover:bg-red-50 hover:text-red-700 transition-all"
+                                    >
+                                        <LogOut className="h-4 w-4" />
+                                        <span className="text-xs">Çıkış Yap</span>
+                                    </DropdownMenuItem>
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                        </div>
+                    </div>
+
+                    {/* Row 3: Week/Date left, Diet type right */}
+                    <div className="flex items-center justify-between min-w-0">
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button
+                                    variant="ghost"
+                                    className="h-5 px-0 text-slate-600 hover:bg-emerald-50/30 rounded-md flex items-center gap-1 transition-all group min-w-0 shrink-0"
+                                >
+                                    <Calendar className="h-3 w-3 text-emerald-600 shrink-0" />
+                                    <span className="text-[10px] font-bold whitespace-nowrap">
+                                        {activeWeek?.week_number || 1}. Hafta
+                                    </span>
+                                    {activeWeek?.start_date && (
+                                        <span className="text-[9px] font-medium text-slate-400 whitespace-nowrap">
+                                            {new Date(activeWeek.start_date).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' })}
+                                            {activeWeek.end_date ? ` – ${new Date(activeWeek.end_date).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' })}` : ''}
+                                        </span>
+                                    )}
+                                    <ChevronDown className="h-2.5 w-2.5 text-slate-400 group-hover:text-emerald-500 transition-colors shrink-0" />
+                                </Button>
+                            </DropdownMenuTrigger>
                                 <DropdownMenuContent align="center" className="w-64 max-h-[60vh] overflow-y-auto p-1.5 rounded-xl border-emerald-100 shadow-xl">
                                     <div className="px-2 py-1.5 mb-1 text-[10px] font-black text-emerald-600 uppercase tracking-widest bg-emerald-50 rounded-lg">
                                         Hafta Seçimi
@@ -5153,74 +5204,14 @@ export default function PatientPlanPage() {
                                         </DropdownMenuItem>
                                     )}
                                 </DropdownMenuContent>
-                            </DropdownMenu>
-
-                        </div>
-                    </div>
-
-                    {/* Right: Actions Menu */}
-                    <div className="flex items-center gap-2 shrink-0">
-                        <Button
-                            onClick={() => window.dispatchEvent(new CustomEvent('trigger-autoplan'))}
-                            className="hidden sm:flex h-9 sm:h-10 px-3 sm:px-4 bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 text-white shadow-md shadow-indigo-200/50 rounded-xl font-bold text-xs sm:text-sm items-center gap-1.5 transition-all"
-                        >
-                            <Wand2 className="h-4 w-4" />
-                            <span>Otomatik Planla</span>
-                        </Button>
-                        <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" className="h-9 w-9 sm:h-10 sm:w-10 rounded-xl bg-slate-50 hover:bg-emerald-50 border border-slate-100 hover:border-emerald-200 transition-all group p-0 shadow-sm">
-                                    <LayoutGrid className="h-4 w-4 sm:h-5 sm:w-5 text-slate-400 group-hover:text-emerald-500 transition-colors" />
-                                </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-56 p-1.5 rounded-xl border-slate-100 shadow-xl">
-
-                                <DropdownMenuItem
-                                    onClick={() => setIsMealTemplateModalOpen(true)}
-                                    className="flex items-center gap-3 py-2.5 px-3 rounded-lg cursor-pointer text-indigo-700 font-bold hover:bg-indigo-50 transition-all"
-                                >
-                                    <ClipboardList className="h-4 w-4" />
-                                    <span className="text-xs">Öğün Düzeni Seç</span>
-                                </DropdownMenuItem>
-
-                                <DropdownMenuSeparator className="my-1 bg-slate-50" />
-
-                                <DropdownMenuItem
-                                    onClick={handleUndo}
-                                    className="flex items-center gap-3 py-2.5 px-3 rounded-lg cursor-pointer text-blue-700 font-bold hover:bg-blue-50 transition-all"
-                                >
-                                    <RotateCcw className="h-4 w-4" />
-                                    <span className="text-xs">Geri Al</span>
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                    onClick={handleReset}
-                                    className="flex items-center gap-3 py-2.5 px-3 rounded-lg cursor-pointer text-red-600 font-bold hover:bg-red-50 transition-all"
-                                >
-                                    <Eraser className="h-4 w-4" />
-                                    <span className="text-xs">Haftayı Sıfırla</span>
-                                </DropdownMenuItem>
-
-                                <DropdownMenuSeparator className="my-1 bg-slate-50" />
-
-                                <Link href="/patient/settings" passHref>
-                                    <DropdownMenuItem
-                                        className="flex items-center gap-3 py-2.5 px-3 rounded-lg cursor-pointer text-slate-600 font-bold hover:bg-emerald-50 hover:text-emerald-700 transition-all"
-                                    >
-                                        <Settings className="h-4 w-4" />
-                                        <span className="text-xs">Ayarlar</span>
-                                    </DropdownMenuItem>
-                                </Link>
-
-                                <DropdownMenuItem
-                                    onClick={() => signOut()}
-                                    className="flex items-center gap-3 py-2.5 px-3 rounded-lg cursor-pointer text-slate-600 font-bold hover:bg-red-50 hover:text-red-700 transition-all"
-                                >
-                                    <LogOut className="h-4 w-4" />
-                                    <span className="text-xs">Çıkış Yap</span>
-                                </DropdownMenuItem>
-                            </DropdownMenuContent>
                         </DropdownMenu>
+                        {activeDietType?.name && (
+                            <span className="text-[9px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 truncate max-w-[120px] sm:max-w-none shrink-0">
+                                {activeDietType.name}
+                            </span>
+                        )}
                     </div>
+
                 </div>
             </header>
 
@@ -5325,92 +5316,6 @@ export default function PatientPlanPage() {
                         {/* â”€â”€ STICKY TOP REGION (Day Selector + Dashboard + Menu Header) â”€â”€ */}
                         <div className="sticky top-0 sm:top-[74px] z-[40] bg-gray-50 flex flex-col shadow-[0_4px_10px_-5px_rgba(0,0,0,0.1)] rounded-b-xl border-b border-gray-200/60 pb-1.5 transition-all">
                             
-                            {/* Day Selector & Action Buttons (Combined) */}
-                            <div className="bg-white border-b border-gray-100 px-2 py-1.5 flex items-center justify-between shadow-sm z-50 rounded-t-xl sm:rounded-none">
-                                
-                                <div className="flex items-center">
-                                    <Button 
-                                        variant="ghost" 
-                                        size="icon" 
-                                        onClick={() => setSelectedDayIndex(prev => prev > 0 ? prev - 1 : weekDays.length - 1)}
-                                        className="h-8 w-8 text-emerald-600 hover:bg-emerald-50"
-                                    >
-                                        <ChevronLeft className="h-5 w-5" />
-                                    </Button>
-                                    
-                                    <span className="h-8 font-black text-xs sm:text-base text-emerald-700 uppercase px-2 flex items-center select-none">
-                                        {currentDay?.day_name}
-                                    </span>
-
-                                    <Button 
-                                        variant="ghost" 
-                                        size="icon" 
-                                        onClick={() => setSelectedDayIndex(prev => prev < weekDays.length - 1 ? prev + 1 : 0)}
-                                        className="h-8 w-8 text-emerald-600 hover:bg-emerald-50"
-                                    >
-                                        <ChevronRight className="h-5 w-5" />
-                                    </Button>
-                                </div>
-
-                                <div className="flex items-center gap-1.5 shrink-0">
-                                    {(() => {
-                                        const allDayConsumed = currentDay?.diet_meals.every(m =>
-                                            m.diet_foods.every(f => f.is_consumed)
-                                        ) || false
-                                        return (
-                                            <button
-                                                onClick={() => toggleAllDayConsumed(!allDayConsumed)}
-                                                className={cn(
-                                                    "h-8 px-2 sm:px-2.5 rounded-lg text-[10px] sm:text-[11px] font-bold transition-all flex items-center gap-1 border shadow-sm cursor-pointer",
-                                                    allDayConsumed
-                                                        ? "bg-green-100 border-green-200 text-green-700 hover:bg-green-200"
-                                                        : "bg-white border-gray-200 text-gray-600 hover:bg-gray-100 hover:border-gray-300"
-                                                )}
-                                                title={allDayConsumed ? "Tümünü Kaldır" : "Tümünü Seç"}
-                                            >
-                                                <CheckCheck size={14} />
-                                                <span>SEÇ</span>
-                                            </button>
-                                        )
-                                    })()}
-
-
-                                    {/* PDF Download Button */}
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        className="h-8 px-2 sm:px-3 bg-white border-red-200 shadow-sm hover:border-red-400 hover:bg-red-50 text-red-600 rounded-lg transition-all shrink-0 flex items-center gap-1.5"
-                                        disabled={isPdfGenerating}
-                                        onClick={async () => {
-                                            try {
-                                                setIsPdfGenerating(true)
-                                                await generateWeeklyPlanPdf({
-                                                    patientName: profile?.full_name || patientInfo?.full_name || 'Hasta',
-                                                    weekNumber: activeWeek?.week_number || 1,
-                                                    startDate: activeWeek?.start_date,
-                                                    endDate: activeWeek?.end_date,
-                                                    days: weekDays,
-                                                    logoUrl: pdfBranding?.logoUrl,
-                                                    footerText: pdfBranding?.footerText,
-                                                    manualMatches: manualMatches || [],
-                                                    bans: bans || [],
-                                                    cards: cards || [],
-                                                })
-                                            } catch (err: any) {
-                                                console.error('PDF oluşturma hatası:', err)
-                                                await showAppModal('Hata', 'PDF oluştururken bir hata oluştu: ' + err.message, 'alert')
-                                            } finally {
-                                                setIsPdfGenerating(false)
-                                            }
-                                        }}
-                                    >
-                                        <FileDown className={cn("h-3.5 w-3.5 sm:h-4 w-4", isPdfGenerating && "animate-bounce")} />
-                                        <span className="text-[10px] sm:text-xs font-bold whitespace-nowrap">
-                                            {isPdfGenerating ? 'İndiriliyor...' : 'PDF'}
-                                        </span>
-                                    </Button>
-                                </div>
-                            </div>
 
                             {/* Macro Dashboard — accordion slide */}
                             <div
@@ -5434,30 +5339,96 @@ export default function PatientPlanPage() {
                                 />
                             </div>
 
-                            {/* ÖZET Kulakçığı — üst bantın altından sarkan tab, sağda */}
-                            <div className="flex justify-end px-2 -mt-0.5">
+                        </div>
+
+                        {/* Tab Buttons — hanging from top of meal list */}
+                        <div className="flex items-end justify-between px-1.5 -mb-[1px] relative z-10">
+                            {/* Day tab with arrows — left */}
+                            <div className="flex items-end ml-1">
+                                <div className="flex items-center rounded-t-lg bg-emerald-50 border border-b-0 border-emerald-200 overflow-hidden">
+                                    <button onClick={() => setSelectedDayIndex(prev => prev > 0 ? prev - 1 : weekDays.length - 1)} className="px-1 py-1 text-emerald-500 hover:bg-emerald-100 transition-colors cursor-pointer">
+                                        <ChevronLeft className="h-3 w-3" />
+                                    </button>
+                                    <span className="px-1.5 py-1 text-[10px] font-black uppercase text-emerald-700 select-none tracking-wide">
+                                        {currentDay?.day_name}
+                                    </span>
+                                    <button onClick={() => setSelectedDayIndex(prev => prev < weekDays.length - 1 ? prev + 1 : 0)} className="px-1 py-1 text-emerald-500 hover:bg-emerald-100 transition-colors cursor-pointer">
+                                        <ChevronRight className="h-3 w-3" />
+                                    </button>
+                                </div>
+                            </div>
+                            {/* Action tabs — right */}
+                            <div className="flex items-end gap-0.5">
                                 <button
                                     onClick={toggleDashboard}
                                     className={cn(
-                                        "flex items-center gap-1 px-3 py-1 rounded-b-lg text-[10px] font-bold transition-all active:scale-95",
+                                        "px-2.5 py-1 rounded-t-lg text-[10px] font-bold flex items-center gap-1 border border-b-0 transition-all cursor-pointer",
                                         isDashboardVisible
-                                            ? "bg-purple-100 text-purple-600 border border-t-0 border-purple-200 shadow-sm"
-                                            : "bg-gradient-to-r from-purple-600 to-indigo-500 text-white shadow-md shadow-purple-300/30"
+                                            ? "bg-purple-100 border-purple-300 text-purple-700"
+                                            : "bg-gradient-to-r from-purple-600 to-indigo-500 text-white border-purple-500 shadow-sm"
                                     )}
                                 >
                                     <BarChart3 className="h-3 w-3" />
-                                    <span>ÖZET</span>
-                                    {isDashboardVisible
-                                        ? <ChevronUp className="h-3 w-3" />
-                                        : <ChevronDown className="h-3 w-3" />
-                                    }
+                                    ÖZET
+                                </button>
+                                {(() => {
+                                    const allDayConsumed = currentDay?.diet_meals.every(m =>
+                                        m.diet_foods.every(f => f.is_consumed)
+                                    ) || false
+                                    return (
+                                        <button
+                                            onClick={() => toggleAllDayConsumed(!allDayConsumed)}
+                                            className={cn(
+                                                "px-2.5 py-1 rounded-t-lg text-[10px] font-bold flex items-center gap-1 border border-b-0 transition-all cursor-pointer",
+                                                allDayConsumed
+                                                    ? "bg-green-50 border-green-200 text-green-600"
+                                                    : "bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100"
+                                            )}
+                                            title={allDayConsumed ? "Tümünü Kaldır" : "Tümünü Seç"}
+                                        >
+                                            <CheckCheck size={11} />
+                                            SEÇ
+                                        </button>
+                                    )
+                                })()}
+                                <button
+                                    className={cn(
+                                        "px-2.5 py-1 rounded-t-lg text-[10px] font-bold flex items-center gap-1 border border-b-0 transition-all cursor-pointer",
+                                        "bg-gray-50 border-gray-200 text-red-500 hover:bg-red-50 disabled:opacity-50"
+                                    )}
+                                    disabled={isPdfGenerating}
+                                    onClick={async () => {
+                                        try {
+                                            setIsPdfGenerating(true)
+                                            await generateWeeklyPlanPdf({
+                                                patientName: profile?.full_name || patientInfo?.full_name || 'Hasta',
+                                                weekNumber: activeWeek?.week_number || 1,
+                                                startDate: activeWeek?.start_date,
+                                                endDate: activeWeek?.end_date,
+                                                days: weekDays,
+                                                logoUrl: pdfBranding?.logoUrl,
+                                                footerText: pdfBranding?.footerText,
+                                                manualMatches: manualMatches || [],
+                                                bans: bans || [],
+                                                cards: cards || [],
+                                            })
+                                        } catch (err: any) {
+                                            console.error('PDF oluşturma hatası:', err)
+                                            await showAppModal('Hata', 'PDF oluştururken bir hata oluştu: ' + err.message, 'alert')
+                                        } finally {
+                                            setIsPdfGenerating(false)
+                                        }
+                                    }}
+                                >
+                                    <FileDown className={cn("h-3 w-3", isPdfGenerating && "animate-bounce")} />
+                                    {isPdfGenerating ? '...' : 'PDF'}
                                 </button>
                             </div>
                         </div>
 
                         {/* Meals List - Contents */}
-                        <div 
-                            className={cn("space-y-2 px-1.5 mt-0", inlineSearchOpen ? "pb-[100vh]" : "pb-24")}
+                        <div
+                            className={cn("space-y-2 px-1.5 mt-0", "pb-24")}
                             style={{ zIndex: 1, position: 'relative' }}
                             onTouchStart={onTouchStart}
                             onTouchMove={onTouchMove}
@@ -5486,9 +5457,191 @@ export default function PatientPlanPage() {
                                                     <span className="text-[11px] opacity-70 font-bold">{meal.time}</span>
                                                 </div>
 
-
-
-                                                {/* Removed Daily Total Calories Badge from here */}
+                                                {(() => {
+                                                    const mealKey = `${currentDay!.id}-${meal.meal_time}`
+                                                    const consumedCals = meal.diet_foods.reduce((acc: number, f: any) => {
+                                                        if (!f.is_consumed) return acc
+                                                        const multiplier = Number(f.amount || f.portion_multiplier) || 1
+                                                        return acc + ((Number(f.calories) || 0) * multiplier)
+                                                    }, 0)
+                                                    const targetCals = dailyTargets?.calories || 2000
+                                                    const dayConsumed = currentDay?.diet_meals?.reduce((acc: number, m: any) => {
+                                                        return m.diet_foods.reduce((accInner: number, f: any) => {
+                                                            if (!f.is_consumed) return accInner
+                                                            const multiplier = Number(f.amount || f.portion_multiplier) || 1
+                                                            return accInner + ((Number(f.calories) || 0) * multiplier)
+                                                        }, acc)
+                                                    }, 0) || 0
+                                                    const gap = Math.max(0, targetCals - dayConsumed)
+                                                    const targetProtein = dailyTargets?.protein || 0
+                                                    const dayProtein = currentDay?.diet_meals?.reduce((acc: number, m: any) => {
+                                                        return m.diet_foods.reduce((accInner: number, f: any) => {
+                                                            if (!f.is_consumed) return accInner
+                                                            const multiplier = Number(f.amount || f.portion_multiplier) || 1
+                                                            return accInner + ((Number(f.protein) || 0) * multiplier)
+                                                        }, acc)
+                                                    }, 0) || 0
+                                                    const pGap = Math.max(0, targetProtein - dayProtein)
+                                                    const targetFat = dailyTargets?.fat || 0
+                                                    const dayFat = currentDay?.diet_meals?.reduce((acc: number, m: any) => {
+                                                        return m.diet_foods.reduce((accInner: number, f: any) => {
+                                                            if (!f.is_consumed) return accInner
+                                                            const multiplier = Number(f.amount || f.portion_multiplier) || 1
+                                                            return accInner + (((Number(f.fat) || Number((f as any).fats)) || 0) * multiplier)
+                                                        }, acc)
+                                                    }, 0) || 0
+                                                    const fGap = Math.max(0, targetFat - dayFat)
+                                                    return (
+                                                        <div className="flex items-center gap-1">
+                                                            <FoodSearchSelector
+                                                                open={inlinePopoverOpen === mealKey}
+                                                                onOpenChange={(popOpen) => {
+                                                                    if (popOpen) {
+                                                                        fetchFoods()
+                                                                        setInlinePopoverOpen(mealKey)
+                                                                    } else {
+                                                                        setInlinePopoverOpen(null)
+                                                                    }
+                                                                }}
+                                                                foods={allFoods || []}
+                                                                calorieGap={gap}
+                                                                proteinGap={pGap}
+                                                                fatGap={fGap}
+                                                                patientId={patientInfo?.id}
+                                                                onSelect={async (food) => {
+                                                                    setInlinePopoverOpen(null)
+                                                                    const { data: existingMeals } = await supabase
+                                                                        .from('diet_meals')
+                                                                        .select('sort_order')
+                                                                        .eq('diet_day_id', currentDay!.id)
+                                                                        .eq('meal_time', meal.meal_time)
+                                                                        .order('sort_order', { ascending: false })
+                                                                        .limit(1)
+                                                                    const nextOrder = (existingMeals?.[0]?.sort_order || 0) + 1
+                                                                    const { error } = await supabase.from('diet_meals').insert([{
+                                                                        diet_day_id: currentDay!.id,
+                                                                        food_id: food.id,
+                                                                        meal_time: meal.meal_time,
+                                                                        portion_multiplier: 1,
+                                                                        sort_order: nextOrder,
+                                                                        is_consumed: true,
+                                                                        consumed_at: new Date().toISOString(),
+                                                                        swapped_by: 'patient',
+                                                                        calories: food.calories,
+                                                                        protein: food.protein,
+                                                                        carbs: food.carbs,
+                                                                        fat: food.fat
+                                                                    }])
+                                                                    if (error) alert("Hata: " + error.message)
+                                                                    else if (activeWeek) await fetchWeekDays(activeWeek.id)
+                                                                }}
+                                                                onCreate={async (name, foodData: any, source?: string) => {
+                                                                    setInlinePopoverOpen(null)
+                                                                    const { data: existingMeals } = await supabase
+                                                                        .from('diet_meals')
+                                                                        .select('sort_order')
+                                                                        .eq('diet_day_id', currentDay!.id)
+                                                                        .eq('meal_time', meal.meal_time)
+                                                                        .order('sort_order', { ascending: false })
+                                                                        .limit(1)
+                                                                    const nextOrder = (existingMeals?.[0]?.sort_order || 0) + 1
+                                                                    if (foodData) {
+                                                                        const p = foodData.protein || 0
+                                                                        const c = foodData.carbs || 0
+                                                                        const f = foodData.fat || 0
+                                                                        const calories = foodData.calories || Math.round((p * 4) + (c * 4) + (f * 9))
+                                                                        const recipeInfo = foodData.recipe || null
+                                                                        const ingredientsText = recipeInfo?.ingredients?.map((ing: any) => `${ing.amount || ''} ${ing.unit || ''} ${ing.name}`.trim()).join('\n') || null
+                                                                        const recipeText = recipeInfo?.steps?.map((s: string, i: number) => `${i + 1}. ${s}`).join('\n') || null
+                                                                        const { error: proposalError } = await supabase.from('food_proposals').insert({
+                                                                            user_id: user?.id || profile?.id || null,
+                                                                            suggested_name: foodData.food_name || name,
+                                                                            calories,
+                                                                            protein: p,
+                                                                            carbs: c,
+                                                                            fat: f,
+                                                                            portion_unit: foodData.unit || 'porsiyon',
+                                                                            status: 'pending',
+                                                                            ingredients: ingredientsText,
+                                                                            recipe_text: recipeText,
+                                                                            ai_analysis: { source: source || 'patient_ai_search', query: name, recipe: recipeInfo }
+                                                                        })
+                                                                        if (proposalError) console.error("Proposal error:", proposalError)
+                                                                        const newMealData: any = {
+                                                                            diet_day_id: currentDay!.id,
+                                                                            meal_time: meal.meal_time,
+                                                                            portion_multiplier: 1,
+                                                                            sort_order: nextOrder,
+                                                                            is_consumed: true,
+                                                                            consumed_at: new Date().toISOString(),
+                                                                            swapped_by: 'patient',
+                                                                            is_custom: true,
+                                                                            custom_name: foodData.food_name || name,
+                                                                            calories,
+                                                                            protein: p,
+                                                                            carbs: c,
+                                                                            fat: f
+                                                                        }
+                                                                        if (source === 'ai_text') {
+                                                                            newMealData.custom_notes = JSON.stringify({ source: 'ai_text', recipe: recipeInfo || undefined })
+                                                                        }
+                                                                        const { error } = await supabase.from('diet_meals').insert([newMealData])
+                                                                        if (error) alert("Hata: " + error.message)
+                                                                        else if (activeWeek) fetchWeekDays(activeWeek.id)
+                                                                    } else {
+                                                                        const { error } = await supabase.from('diet_meals').insert([{
+                                                                            diet_day_id: currentDay!.id,
+                                                                            meal_time: meal.meal_time,
+                                                                            portion_multiplier: 1,
+                                                                            sort_order: nextOrder,
+                                                                            is_consumed: true,
+                                                                            consumed_at: new Date().toISOString(),
+                                                                            swapped_by: 'patient',
+                                                                            is_custom: true,
+                                                                            custom_name: name,
+                                                                            calories: 0,
+                                                                            protein: 0,
+                                                                            carbs: 0,
+                                                                            fat: 0
+                                                                        }])
+                                                                        if (error) alert("Hata: " + error.message)
+                                                                        else if (activeWeek) fetchWeekDays(activeWeek.id)
+                                                                    }
+                                                                }}
+                                                                trigger={
+                                                                    <button
+                                                                        className="h-6 rounded-full flex items-center gap-0.5 px-1.5 transition-all cursor-pointer text-[9px] font-bold bg-emerald-50 text-emerald-600 hover:bg-emerald-100 border border-emerald-200"
+                                                                    >
+                                                                        <Plus size={11} />
+                                                                        <Search size={10} />
+                                                                    </button>
+                                                                }
+                                                                variant="fullscreen"
+                                                                onCameraClick={() => setPhotoModalOpen(mealKey)}
+                                                            />
+                                                            <PhotoMealLogModal
+                                                                dayId={currentDay!.id}
+                                                                mealTime={meal.meal_time}
+                                                                patientDietType={activeDietType?.name || patientInfo?.diet_type}
+                                                                patientId={patientInfo?.id || ''}
+                                                                onSave={() => {
+                                                                    setRefreshTrigger(prev => prev + 1)
+                                                                    if (activeWeek) fetchWeekDays(activeWeek.id)
+                                                                }}
+                                                                externalOpen={photoModalOpen === mealKey}
+                                                                onExternalOpenChange={(val) => { if (!val) setPhotoModalOpen(null) }}
+                                                                trigger={
+                                                                    <button
+                                                                        className="h-6 w-6 rounded-full flex items-center justify-center transition-all cursor-pointer bg-emerald-50 text-emerald-600 hover:bg-emerald-100 border border-emerald-200"
+                                                                        title="Fotoğraf ile Ekle"
+                                                                    >
+                                                                        <Camera size={11} />
+                                                                    </button>
+                                                                }
+                                                            />
+                                                        </div>
+                                                    )
+                                                })()}
                                             </div>
 
                                             {/* Food List */}
@@ -5601,11 +5754,18 @@ export default function PatientPlanPage() {
                                                                                 !!(food.image_url || food.food_meta?.source === 'user_proposal' || food.is_custom)
                                                                             )
                                                                             
+                                                                            const aiRecipe = (() => {
+                                                                                try {
+                                                                                    const notes = typeof food.custom_notes === 'string' ? JSON.parse(food.custom_notes) : food.custom_notes
+                                                                                    return notes?.recipe || null
+                                                                                } catch { return null }
+                                                                            })()
+
                                                                             return (
                                                                                 <>
                                                                                     {/* Recipe Card (if any) */}
                                                                                     {matchResults.length > 0 && (
-                                                                                        <div 
+                                                                                        <div
                                                                                             className="bg-emerald-50 rounded-xl p-3 flex items-center justify-between border border-emerald-100 cursor-pointer hover:bg-emerald-100 transition-colors shadow-sm"
                                                                                             onClick={(e) => {
                                                                                                 e.stopPropagation()
@@ -5619,6 +5779,31 @@ export default function PatientPlanPage() {
                                                                                             </div>
                                                                                             <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600">
                                                                                                 <BookOpenText size={16} />
+                                                                                            </div>
+                                                                                        </div>
+                                                                                    )}
+
+                                                                                    {/* AI Recipe Card */}
+                                                                                    {matchResults.length === 0 && aiRecipe && (
+                                                                                        <div
+                                                                                            className="bg-orange-50 rounded-xl p-3 border border-orange-100 cursor-pointer hover:bg-orange-100 transition-colors shadow-sm"
+                                                                                            onClick={(e) => {
+                                                                                                e.stopPropagation()
+                                                                                                setAiRecipeModal(aiRecipe)
+                                                                                            }}
+                                                                                        >
+                                                                                            <div className="flex items-center justify-between">
+                                                                                                <div className="flex flex-col gap-0.5">
+                                                                                                    <span className="text-sm font-bold text-orange-700">Tarifi Görüntüle</span>
+                                                                                                    <span className="text-[11px] font-medium text-orange-600/80 flex items-center gap-1">
+                                                                                                        <ChefHat size={10} />
+                                                                                                        {aiRecipe.prep_time && `Hazırlık: ${aiRecipe.prep_time}`}
+                                                                                                        {aiRecipe.cook_time && ` • Pişirme: ${aiRecipe.cook_time}`}
+                                                                                                    </span>
+                                                                                                </div>
+                                                                                                <div className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center text-orange-600">
+                                                                                                    <ChefHat size={16} />
+                                                                                                </div>
                                                                                             </div>
                                                                                         </div>
                                                                                     )}
@@ -5851,212 +6036,8 @@ export default function PatientPlanPage() {
                                             </div>
                                         </div>
 
-                                        {/* Inline Search + Add Food Button */}
-                                        {(() => {
-                                            // Calculate calorie gap for this day
-                                            const consumedCals = meal.diet_foods.reduce((acc: number, f: any) => {
-                                                if (!f.is_consumed) return acc
-                                                const multiplier = Number(f.amount || f.portion_multiplier) || 1
-                                                return acc + ((Number(f.calories) || 0) * multiplier)
-                                            }, 0)
-                                            const targetCals = dailyTargets?.calories || 2000
-                                            const dayConsumed = currentDay?.diet_meals?.reduce((acc: number, m: any) => {
-                                                return m.diet_foods.reduce((accInner: number, f: any) => {
-                                                    if (!f.is_consumed) return accInner
-                                                    const multiplier = Number(f.amount || f.portion_multiplier) || 1
-                                                    return accInner + ((Number(f.calories) || 0) * multiplier)
-                                                }, acc)
-                                            }, 0) || 0
-                                            const gap = Math.max(0, targetCals - dayConsumed)
-
-                                            const targetProtein = dailyTargets?.protein || 0
-                                            const dayProtein = currentDay?.diet_meals?.reduce((acc: number, m: any) => {
-                                                return m.diet_foods.reduce((accInner: number, f: any) => {
-                                                    if (!f.is_consumed) return accInner
-                                                    const multiplier = Number(f.amount || f.portion_multiplier) || 1
-                                                    return accInner + ((Number(f.protein) || 0) * multiplier)
-                                                }, acc)
-                                            }, 0) || 0
-                                            const pGap = Math.max(0, targetProtein - dayProtein)
-
-                                            const targetFat = dailyTargets?.fat || 0
-                                            const dayFat = currentDay?.diet_meals?.reduce((acc: number, m: any) => {
-                                                return m.diet_foods.reduce((accInner: number, f: any) => {
-                                                    if (!f.is_consumed) return accInner
-                                                    const multiplier = Number(f.amount || f.portion_multiplier) || 1
-                                                    return accInner + (((Number(f.fat) || Number((f as any).fats)) || 0) * multiplier)
-                                                }, acc)
-                                            }, 0) || 0
-                                            const fGap = Math.max(0, targetFat - dayFat)
-                                            return (
-                                                <div className="inline-search-container scroll-mt-[70px] sm:scroll-mt-[130px] mt-0.5 ml-3 md:mt-1 md:ml-0 flex items-center gap-1">
-                                                    <FoodSearchSelector
-                                                        open={inlineSearchOpen === `${currentDay!.id}-${meal.meal_time}`}
-                                                        patientId={patientInfo?.id}
-                                                        onOpenChange={(open) => {
-                                                            if (open) {
-                                                                fetchFoods()
-                                                                setInlineSearchOpen(`${currentDay!.id}-${meal.meal_time}`)
-                                                            } else {
-                                                                setInlineSearchOpen(null)
-                                                            }
-                                                        }}
-                                                        foods={allFoods || []}
-                                                        calorieGap={gap}
-                                                        proteinGap={pGap}
-                                                        fatGap={fGap}
-                                                        onSelect={async (food) => {
-                                                            setInlineSearchOpen(null)
-                                                            const { data: existingMeals } = await supabase
-                                                                .from('diet_meals')
-                                                                .select('sort_order')
-                                                                .eq('diet_day_id', currentDay!.id)
-                                                                .eq('meal_time', meal.meal_time)
-                                                                .order('sort_order', { ascending: false })
-                                                                .limit(1)
-                                                            const nextOrder = (existingMeals?.[0]?.sort_order || 0) + 1
-                                                            const { error } = await supabase.from('diet_meals').insert([{
-                                                                diet_day_id: currentDay!.id,
-                                                                food_id: food.id,
-                                                                meal_time: meal.meal_time,
-                                                                portion_multiplier: 1,
-                                                                sort_order: nextOrder,
-                                                                is_consumed: true,
-                                                                consumed_at: new Date().toISOString(),
-                                                                swapped_by: 'patient',
-                                                                calories: food.calories,
-                                                                protein: food.protein,
-                                                                carbs: food.carbs,
-                                                                fat: food.fat
-                                                            }])
-                                                            if (error) alert("Hata: " + error.message)
-                                                            else if (activeWeek) await fetchWeekDays(activeWeek.id)
-                                                        }}
-                                                        onCreate={async (name, foodData: any, source?: string) => {
-                                                            setInlineSearchOpen(null)
-                                                            const { data: existingMeals } = await supabase
-                                                                .from('diet_meals')
-                                                                .select('sort_order')
-                                                                .eq('diet_day_id', currentDay!.id)
-                                                                .eq('meal_time', meal.meal_time)
-                                                                .order('sort_order', { ascending: false })
-                                                                .limit(1)
-                                                            const nextOrder = (existingMeals?.[0]?.sort_order || 0) + 1
-
-                                                            if (foodData) {
-                                                                const p = foodData.protein || 0
-                                                                const c = foodData.carbs || 0
-                                                                const f = foodData.fat || 0
-                                                                const calories = foodData.calories || Math.round((p * 4) + (c * 4) + (f * 9))
-
-                                                                const { error: proposalError } = await supabase.from('food_proposals').insert({
-                                                                    user_id: user?.id || profile?.id || null,
-                                                                    suggested_name: foodData.food_name || name,
-                                                                    calories,
-                                                                    protein: p,
-                                                                    carbs: c,
-                                                                    fat: f,
-                                                                    portion_unit: foodData.unit || 'porsiyon',
-                                                                    status: 'pending',
-                                                                    ai_analysis: { source: source || 'patient_ai_search', query: name }
-                                                                })
-                                                                if (proposalError) console.error("Proposal error:", proposalError)
-
-                                                                const newMealData: any = {
-                                                                    diet_day_id: currentDay!.id,
-                                                                    meal_time: meal.meal_time,
-                                                                    portion_multiplier: 1,
-                                                                    sort_order: nextOrder,
-                                                                    is_consumed: true,
-                                                                    consumed_at: new Date().toISOString(),
-                                                                    swapped_by: 'patient',
-                                                                    is_custom: true,
-                                                                    custom_name: foodData.food_name || name,
-                                                                    calories,
-                                                                    protein: p,
-                                                                    carbs: c,
-                                                                    fat: f
-                                                                }
-
-                                                                if (source === 'ai_text') {
-                                                                    newMealData.custom_notes = JSON.stringify({ source: 'ai_text' })
-                                                                }
-
-                                                                const { error } = await supabase.from('diet_meals').insert([newMealData])
-
-                                                                if (error) alert("Hata: " + error.message)
-                                                                else if (activeWeek) fetchWeekDays(activeWeek.id)
-                                                            } else {
-                                                                const { error } = await supabase.from('diet_meals').insert([{
-                                                                    diet_day_id: currentDay!.id,
-                                                                    meal_time: meal.meal_time,
-                                                                    portion_multiplier: 1,
-                                                                    sort_order: nextOrder,
-                                                                    is_consumed: true,
-                                                                    consumed_at: new Date().toISOString(),
-                                                                    swapped_by: 'patient',
-                                                                    is_custom: true,
-                                                                    custom_name: name,
-                                                                    calories: 0,
-                                                                    protein: 0,
-                                                                    carbs: 0,
-                                                                    fat: 0
-                                                                }])
-
-                                                                if (error) alert("Hata: " + error.message)
-                                                                else if (activeWeek) fetchWeekDays(activeWeek.id)
-                                                            }
-                                                        }}
-                                                        trigger={null}
-                                                        variant="inline"
-                                                    />
-                                                    <button
-                                                        onClick={(e) => {
-                                                            setInlineSearchOpen(`${currentDay!.id}-${meal.meal_time}`);
-                                                            // Scroll the search container into view
-                                                            const target = e.currentTarget;
-                                                            setTimeout(() => {
-                                                                const searchContainer = target.closest('.inline-search-container');
-                                                                if (searchContainer) {
-                                                                    searchContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                                                                }
-                                                            }, 300); // 300ms to allow keyboard to show up on mobile
-                                                        }}
-                                                        className={cn(
-                                                            "py-3 px-3 rounded-xl transition-all flex items-center justify-center group shrink-0 bg-white shadow-sm ring-1 ring-gray-100 hover:bg-gray-50/50 cursor-pointer",
-                                                            (meal.diet_foods.length === 0 || (highlightSequence.isActive && highlightSequence.activeIndex === mealIdx))
-                                                                ? "border-yellow-400 bg-yellow-100/80 text-yellow-800 animate-pulse ring-2 ring-yellow-200 ring-offset-1"
-                                                                : "text-gray-400 hover:text-green-600"
-                                                        )}
-                                                        title="Metin ile Ara"
-                                                    >
-                                                        <Plus size={18} className="group-hover:scale-110 transition-transform" />
-                                                    </button>
-                                                    <PhotoMealLogModal
-                                                        dayId={currentDay!.id}
-                                                        mealTime={meal.meal_time}
-                                                        patientDietType={activeDietType?.name || patientInfo?.diet_type}
-                                                        patientId={patientInfo?.id || ''}
-                                                        onSave={() => {
-                                                            setRefreshTrigger(prev => prev + 1)
-                                                            if (activeWeek) fetchWeekDays(activeWeek.id)
-                                                        }}
-                                                        trigger={
-                                                            <button 
-                                                                className={cn(
-                                                                    "py-3 px-3 rounded-xl transition-all flex items-center justify-center group shrink-0 bg-white shadow-sm ring-1 ring-gray-100 hover:bg-gray-50/50 cursor-pointer",
-                                                                    (meal.diet_foods.length === 0 || (highlightSequence.isActive && highlightSequence.activeIndex === mealIdx))
-                                                                        ? "border-blue-400 bg-blue-100/80 text-blue-800 animate-pulse ring-2 ring-blue-200 ring-offset-1"
-                                                                        : "text-gray-400 hover:text-blue-600"
-                                                                )}
-                                                                title="Fotoğraf ile Ekle"
-                                                            >
-                                                                <Camera size={18} className="group-hover:scale-110 transition-transform" />
-                                                            </button>
-                                                        }
-                                                    />
-                                                </div>
-                                            )
+                                        {/* Old inline search removed — now uses popover from meal header */}
+                                        {(() => { return null
                                         })()}
                                     </div>
                                 </Card>
@@ -6140,6 +6121,10 @@ export default function PatientPlanPage() {
                                         }, { calories: 0, protein: 0, carbs: 0, fat: 0 })
                                     })()}
                                     dailyTargets={(() => {
+                                        const ct = patientInfo?.macro_target_mode === 'custom' && (patientInfo as any).preferences?.custom_targets
+                                        if (ct && ct.calories) {
+                                            return { calories: ct.calories, protein: ct.protein, carb: ct.carb, fat: ct.fat }
+                                        }
                                         if (patientInfo?.weight) {
                                             return calculateDailyTargets(
                                                 patientInfo.weight,
@@ -6213,6 +6198,104 @@ export default function PatientPlanPage() {
                                 />
                             )
                         }
+
+                        {/* AI Recipe Modal - Fullscreen */}
+                        {aiRecipeModal && typeof document !== 'undefined' && createPortal(
+                            <div className="fixed inset-0 bg-white flex flex-col animate-in slide-in-from-bottom duration-200" style={{ zIndex: 99999, top: '2.5rem', height: 'calc(100dvh - 2.5rem)', borderTopLeftRadius: '1rem', borderTopRightRadius: '1rem', boxShadow: '0 -4px 20px rgba(0,0,0,0.15)' }}>
+                                {/* Header */}
+                                <div className="flex items-center justify-between px-4 py-3 border-b bg-orange-50 shrink-0" style={{ borderTopLeftRadius: '1rem', borderTopRightRadius: '1rem' }}>
+                                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                                        <ChefHat size={18} className="text-orange-500 shrink-0" />
+                                        <h2 className="text-sm font-bold text-orange-800 truncate">{aiRecipeModal.food_name || 'Tarif'}</h2>
+                                    </div>
+                                    <div className="flex items-center gap-1 shrink-0">
+                                        <button
+                                            onClick={async () => {
+                                                if (!aiRecipeContentRef.current || aiRecipeDownloading) return
+                                                setAiRecipeDownloading(true)
+                                                try {
+                                                    const html2canvas = (await import('html2canvas-pro')).default
+                                                    const canvas = await html2canvas(aiRecipeContentRef.current, { backgroundColor: '#ffffff', scale: 2, useCORS: true })
+                                                    const link = document.createElement('a')
+                                                    link.download = `tarif-${(aiRecipeModal.food_name || 'tarif').replace(/\s+/g, '-').toLowerCase()}.png`
+                                                    link.href = canvas.toDataURL('image/png')
+                                                    link.click()
+                                                } catch (err) { console.error('Download error:', err) }
+                                                finally { setAiRecipeDownloading(false) }
+                                            }}
+                                            disabled={aiRecipeDownloading}
+                                            className="h-8 w-8 rounded-full flex items-center justify-center hover:bg-orange-100 text-orange-600"
+                                            title="Tarifi İndir"
+                                        >
+                                            {aiRecipeDownloading ? <Loader2 size={16} className="animate-spin" /> : <FileDown size={16} />}
+                                        </button>
+                                        <button onClick={() => setAiRecipeModal(null)} className="h-8 w-8 rounded-full flex items-center justify-center hover:bg-orange-100 text-orange-600">
+                                            <X size={18} />
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Content */}
+                                <div className="flex-1 overflow-y-auto">
+                                    <div ref={aiRecipeContentRef} className="px-4 py-3 space-y-4 bg-white">
+                                        {/* Recipe card header for download */}
+                                        <div className="flex items-center gap-2 pb-2 border-b border-orange-100">
+                                            <ChefHat size={18} className="text-orange-500" />
+                                            <h3 className="text-base font-bold text-gray-800">{aiRecipeModal.food_name || 'Tarif'}</h3>
+                                        </div>
+
+                                        {/* Time */}
+                                        <div className="flex items-center gap-3 text-xs text-gray-500 flex-wrap">
+                                            {aiRecipeModal.serving && <span className="flex items-center gap-1"><UtensilsCrossed size={12} className="text-orange-400" />{aiRecipeModal.serving}</span>}
+                                            {aiRecipeModal.prep_time && <span className="flex items-center gap-1"><Clock size={12} className="text-blue-400" />Hazırlık: {aiRecipeModal.prep_time}</span>}
+                                            {aiRecipeModal.cook_time && <span className="flex items-center gap-1"><Clock size={12} className="text-red-400" />Pişirme: {aiRecipeModal.cook_time}</span>}
+                                        </div>
+
+                                        {/* Ingredients */}
+                                        {aiRecipeModal.ingredients?.length > 0 && (
+                                            <div>
+                                                <h3 className="text-xs font-bold text-gray-700 mb-2 flex items-center gap-1.5"><ChefHat size={14} className="text-orange-500" />Malzemeler</h3>
+                                                <div className="space-y-1.5">
+                                                    {aiRecipeModal.ingredients.map((ing: any, i: number) => (
+                                                        <div key={i} className="flex items-center gap-2 text-sm">
+                                                            <div className="w-1.5 h-1.5 rounded-full bg-orange-300 shrink-0" />
+                                                            <span className="text-gray-700">
+                                                                {ing.amount && <span className="font-medium text-orange-700">{ing.amount} {ing.unit} </span>}
+                                                                {ing.name}
+                                                            </span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Steps */}
+                                        {aiRecipeModal.steps?.length > 0 && (
+                                            <div>
+                                                <h3 className="text-xs font-bold text-gray-700 mb-2 flex items-center gap-1.5"><UtensilsCrossed size={14} className="text-emerald-500" />Yapılışı</h3>
+                                                <div className="space-y-2">
+                                                    {aiRecipeModal.steps.map((step: string, i: number) => (
+                                                        <div key={i} className="flex gap-2.5 text-sm">
+                                                            <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">{i + 1}</span>
+                                                            <span className="text-gray-600 leading-relaxed">{step}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Tip */}
+                                        {aiRecipeModal.tip && (
+                                            <div className="flex gap-2 p-2.5 rounded-lg bg-amber-50 border border-amber-100">
+                                                <Lightbulb size={14} className="text-amber-500 shrink-0 mt-0.5" />
+                                                <span className="text-xs text-amber-800 leading-relaxed">{aiRecipeModal.tip}</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>,
+                            document.body
+                        )}
 
                         {
                             isMealTemplateModalOpen && (

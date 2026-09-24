@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
         // Clean base64 string
         const base64Data = image.replace(/^data:image\/\w+;base64,/, "");
 
-        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" }); // Use 2.0 Flash for best vision performance
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
         const prompt = `
         !!! ÇOK ÖNEMLİ DİKKAT - SANSÜR / KARALAMA KURALI !!!

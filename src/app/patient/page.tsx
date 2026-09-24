@@ -482,32 +482,27 @@ export default function PatientDashboardPage() {
     }
 
     return (
-        <div className="space-y-2 pb-24">
+        <div className="space-y-2 pb-20">
             {/* Welcome Header + Program Info — merged */}
-            <div className="rounded-2xl bg-emerald-50 border border-emerald-200 px-4 py-3 shadow-sm mt-1">
-                <div className="flex items-center justify-between">
+            <div className="rounded-2xl bg-emerald-50 border border-emerald-200 px-3 py-2.5 shadow-sm mt-1">
+                <h1 className="text-base font-bold text-emerald-800 tracking-tight">
+                    Merhaba, {profile?.full_name?.split(' ')[0] || 'Danışan'} 👋
+                </h1>
+                <div className="flex items-start justify-between mt-1">
                     <div>
-                        <p className="text-[10px] font-semibold tracking-wide text-emerald-500 uppercase">{today}</p>
-                        <h1 className="text-lg font-bold text-emerald-800 tracking-tight">
-                            Merhaba, {profile?.full_name?.split(' ')[0] || 'Danışan'}! 👋
-                        </h1>
+                        <p className="text-[11px] font-semibold text-emerald-700">
+                            {programName || 'Sağlıklı Beslenme'}
+                        </p>
+                        <p className="text-[10px] text-emerald-600">
+                            {dietType?.name || ''}
+                        </p>
                     </div>
-                </div>
-                {/* Program info inline */}
-                <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
-                    <div className="flex items-center gap-1 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-200">
-                        <Flame className="h-3 w-3 text-emerald-600" />
-                        <span className="text-[10px] font-medium text-emerald-700">
-                            {dietType?.name || 'Sağlıklı Beslenme'}
-                        </span>
+                    <div className="text-right shrink-0">
+                        {weekDateRange && (
+                            <p className="text-[10px] text-emerald-500">{weekDateRange}</p>
+                        )}
+                        <p className="text-[10px] font-bold text-emerald-700">{weekNumber}/{totalWeeks}. Hafta</p>
                     </div>
-                    <div className="flex items-center gap-1 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-200">
-                        <Calendar className="h-3 w-3 text-emerald-600" />
-                        <span className="text-[10px] font-bold text-emerald-700">{weekNumber}/{totalWeeks}. Hafta</span>
-                    </div>
-                    {weekDateRange && (
-                        <span className="text-[10px] text-emerald-500">{weekDateRange}</span>
-                    )}
                 </div>
 
                 {showStartWarning && (
@@ -540,8 +535,8 @@ export default function PatientDashboardPage() {
             </Link>
 
             {/* Günlük Hedefler — compact inline */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-3">
-                <div className="flex items-center gap-1.5 mb-2">
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-2.5">
+                <div className="flex items-center gap-1.5 mb-1.5">
                     <Target className="h-3 w-3 text-emerald-500" />
                     <span className="text-[11px] font-bold text-gray-800">Günlük Hedeflerin</span>
                     {macroTargetMode === 'custom' && customTargetSource && (
@@ -574,7 +569,7 @@ export default function PatientDashboardPage() {
                     </div>
 
                     {/* Macros */}
-                    <div className="flex-1 space-y-2">
+                    <div className="flex-1 space-y-1.5">
                         {[
                             { label: 'Protein', value: stats.protein, color: 'bg-blue-500', bg: 'bg-blue-100' },
                             { label: 'Karb.', value: stats.carbs, color: 'bg-amber-500', bg: 'bg-amber-100' },
@@ -602,8 +597,8 @@ export default function PatientDashboardPage() {
             </div>
 
             {/* Bilgilerini Güncelle — merged values + edit */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-3">
-                <div className="flex items-center justify-between mb-2">
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-2.5">
+                <div className="flex items-center justify-between mb-1.5">
                     <span className="text-[11px] font-bold text-gray-800">Bilgilerin</span>
                     {!isEditing ? (
                         <button
@@ -624,20 +619,14 @@ export default function PatientDashboardPage() {
                     )}
                 </div>
                 {!isEditing ? (
-                    <div className="flex items-center gap-3">
-                        <div className="flex-1 flex items-center gap-2 p-2.5 bg-gray-50 rounded-lg border border-gray-100/50">
-                            <Scale className="h-3.5 w-3.5 text-gray-400" />
-                            <div>
-                                <span className="text-[10px] text-gray-400 block">Kilo</span>
-                                <span className="text-sm font-bold text-gray-900">{displayWeight} kg</span>
-                            </div>
+                    <div className="flex items-center gap-2">
+                        <div className="flex-1 flex items-center gap-1.5 p-2 bg-gray-50 rounded-lg border border-gray-100/50">
+                            <Scale className="h-3 w-3 text-gray-400" />
+                            <span className="text-[11px] font-bold text-gray-900">{displayWeight} kg</span>
                         </div>
-                        <div className="flex-1 flex items-center gap-2 p-2.5 bg-gray-50 rounded-lg border border-gray-100/50">
-                            <Activity className="h-3.5 w-3.5 text-gray-400" />
-                            <div>
-                                <span className="text-[10px] text-gray-400 block">Aktivite</span>
-                                <span className="text-sm font-bold text-gray-900">{currentActivityLabel}</span>
-                            </div>
+                        <div className="flex-1 flex items-center gap-1.5 p-2 bg-gray-50 rounded-lg border border-gray-100/50">
+                            <Activity className="h-3 w-3 text-gray-400" />
+                            <span className="text-[11px] font-bold text-gray-900">{currentActivityLabel}</span>
                         </div>
                     </div>
                 ) : (
@@ -674,7 +663,15 @@ export default function PatientDashboardPage() {
                 <div className="p-3">
                     <div className="flex items-center gap-2.5">
                         <div className="h-8 w-8 bg-emerald-500 rounded-lg flex items-center justify-center shrink-0">
-                            <span className="text-sm">🌿</span>
+                            <svg viewBox="0 0 24 24" className="h-5 w-5 text-white" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                                <circle cx="12" cy="8" r="4" />
+                                <path d="M5.5 7.5a6.5 6.5 0 0 1 13 0" />
+                                <path d="M5 7.5v2a1 1 0 0 0 1 1h.5" />
+                                <path d="M19 7.5v2a1 1 0 0 1-1 1h-.5" />
+                                <path d="M12 12v2" />
+                                <path d="M9 17a6 6 0 0 0 6 0" />
+                                <path d="M8 20c0-2.2 1.8-4 4-4s4 1.8 4 4" />
+                            </svg>
                         </div>
                         <div className="flex-1 min-w-0">
                             <h3 className="text-[12px] font-bold text-gray-900">Sera — Beslenme Asistanın</h3>
@@ -724,37 +721,27 @@ export default function PatientDashboardPage() {
                 </div>
             </div>
 
-            {/* Enerji Hesabım Kartı */}
-            <Link href="/patient/energy" className="block">
-                <div className="rounded-xl bg-violet-50 border border-violet-200 shadow-sm p-3 flex items-center gap-3 hover:bg-violet-100/60 transition-colors">
-                    <div className="h-8 w-8 bg-gradient-to-br from-amber-500 to-orange-500 rounded-lg flex items-center justify-center shrink-0">
-                        <Flame className="h-4 w-4 text-white" />
+            {/* Enerji + Tercih — 2 column grid */}
+            <div className="grid grid-cols-2 gap-2">
+                <Link href="/patient/energy" className="block">
+                    <div className="rounded-xl bg-violet-50 border border-violet-200 shadow-sm p-2.5 hover:bg-violet-100/60 transition-colors text-center">
+                        <div className="h-7 w-7 bg-gradient-to-br from-amber-500 to-orange-500 rounded-lg flex items-center justify-center mx-auto mb-1">
+                            <Flame className="h-3.5 w-3.5 text-white" />
+                        </div>
+                        <h3 className="text-[11px] font-bold text-gray-900">Enerji Hesabım</h3>
+                        <p className="text-[9px] text-gray-400 mt-0.5">Kalori & makro hedefi</p>
                     </div>
-                    <div className="flex-1 min-w-0">
-                        <h3 className="text-[12px] font-bold text-gray-900">Enerji Hesabım</h3>
-                        <p className="text-[10px] text-gray-500 leading-snug">
-                            BMR, kalori hedefi ve makro dağılımını gör
-                        </p>
+                </Link>
+                <Link href="/patient/preferences" className="block">
+                    <div className="rounded-xl bg-teal-50 border border-teal-200 shadow-sm p-2.5 hover:bg-teal-100/60 transition-colors text-center">
+                        <div className="h-7 w-7 bg-teal-500 rounded-lg flex items-center justify-center mx-auto mb-1">
+                            <span className="text-xs">⭐</span>
+                        </div>
+                        <h3 className="text-[11px] font-bold text-gray-900">Yemek Tercihlerim</h3>
+                        <p className="text-[9px] text-gray-400 mt-0.5">Besin tercihlerin</p>
                     </div>
-                    <ArrowRight className="h-4 w-4 text-violet-400 shrink-0" />
-                </div>
-            </Link>
-
-            {/* Yemek Tercihlerim Kartı */}
-            <Link href="/patient/preferences" className="block">
-                <div className="rounded-xl bg-amber-50 border border-amber-200 shadow-sm p-3 flex items-center gap-3 hover:bg-amber-100/60 transition-colors">
-                    <div className="h-8 w-8 bg-amber-500 rounded-lg flex items-center justify-center shrink-0">
-                        <span className="text-sm">⭐</span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                        <h3 className="text-[12px] font-bold text-gray-900">Yemek Tercihlerim</h3>
-                        <p className="text-[10px] text-gray-500 leading-snug">
-                            Hangi yemekleri daha çok veya az istediğini belirle
-                        </p>
-                    </div>
-                    <ArrowRight className="h-4 w-4 text-amber-400 shrink-0" />
-                </div>
-            </Link>
+                </Link>
+            </div>
         </div>
     )
 }

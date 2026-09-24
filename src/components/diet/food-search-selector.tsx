@@ -1,7 +1,8 @@
 "use client"
 
 import { useState, useMemo, useEffect, useRef, useCallback } from "react"
-import { Filter, Check, Search, Plus, AlertTriangle, Heart, Info, Loader2, Sparkles } from "lucide-react"
+import { createPortal } from "react-dom"
+import { Filter, Check, Search, Plus, AlertTriangle, Heart, Info, Loader2, Sparkles, X, Camera, ChefHat, Clock, Lightbulb, ChevronLeft, UtensilsCrossed, Download } from "lucide-react"
 import { checkCompatibility, DietRules } from "@/utils/compatibility-checker"
 import { supabase } from "@/lib/supabase"
 import { useAiLimit } from "@/hooks/use-ai-limit"
@@ -56,7 +57,8 @@ interface FoodSearchSelectorProps {
     proteinGap?: number
     fatGap?: number
     patientId?: string
-    variant?: 'default' | 'inline'
+    variant?: 'default' | 'inline' | 'fullscreen'
+    onCameraClick?: () => void
 }
 
 // Utility to normalize text for searching (Turkish char support)
@@ -92,7 +94,8 @@ export function FoodSearchSelector({
     proteinGap,
     fatGap,
     patientId,
-    variant = 'default'
+    variant = 'default',
+    onCameraClick
 }: FoodSearchSelectorProps) {
     const [query, setQuery] = useState("")
     const [showFilters, setShowFilters] = useState(false)
@@ -102,23 +105,37 @@ export function FoodSearchSelector({
     const inputRef = useRef<HTMLInputElement>(null)
     const triggerInputRef = useRef<HTMLInputElement>(null)
     const scrollRestoreRef = useRef<{ node: Element | Window, top: number } | null>(null)
-    
-    useEffect(() => {
-        if (!open && scrollRestoreRef.current) {
-            const { node, top } = scrollRestoreRef.current;
-            if (node === window) {
-                window.scrollTo({ top, behavior: 'smooth' });
-            } else {
-                (node as Element).scrollTo({ top, behavior: 'smooth' });
-            }
-            scrollRestoreRef.current = null;
-        }
-    }, [open])
 
-    // Typewriter animation for placeholder — only on first session open
+    useEffect(() => {
+        if (variant === 'fullscreen' && open) {
+            setTimeout(() => inputRef.current?.focus(), 100)
+        }
+    }, [open, variant])
+
+    // Typewriter animation for placeholder
     const [typedPlaceholder, setTypedPlaceholder] = useState("")
     const [showCursor, setShowCursor] = useState(false)
     const typewriterDone = useRef(false)
+    const [fsTypedPlaceholder, setFsTypedPlaceholder] = useState("")
+    const [fsShowCursor, setFsShowCursor] = useState(false)
+    const fsTypewriterDone = useRef(false)
+
+    useEffect(() => {
+        if (variant !== 'fullscreen' || !open || fsTypewriterDone.current) return
+        const text = "Öğünlerinize yeni yemek ekleyin..."
+        let i = 0
+        setFsShowCursor(true)
+        const timer = setInterval(() => {
+            i++
+            setFsTypedPlaceholder(text.slice(0, i))
+            if (i >= text.length) {
+                clearInterval(timer)
+                fsTypewriterDone.current = true
+                setFsShowCursor(false)
+            }
+        }, 40)
+        return () => clearInterval(timer)
+    }, [open, variant])
 
     useEffect(() => {
         if (variant !== 'inline' || typewriterDone.current) return
@@ -346,6 +363,110 @@ export function FoodSearchSelector({
         }
     }, [calorieGap, activeMacroPreference])
 
+    const [estimatingMacros, setEstimatingMacros] = useState(false)
+    const createWithMacroEstimate = useCallback(async (foodQuery: string) => {
+        setEstimatingMacros(true)
+        try {
+            const res = await fetch('/api/ai/estimate-food-macros', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ query: foodQuery })
+            })
+            if (res.ok) {
+                const data = await res.json()
+                onCreate(data.food_name || foodQuery, {
+                    calories: data.calories || 0,
+                    protein: data.protein || 0,
+                    carbs: data.carbs || 0,
+                    fat: data.fat || 0,
+                    food_name: data.food_name || foodQuery,
+                    unit: data.unit || 'porsiyon'
+                } as any, 'ai_text')
+            } else {
+                onCreate(foodQuery)
+            }
+        } catch {
+            onCreate(foodQuery)
+        } finally {
+            setEstimatingMacros(false)
+            setQuery("")
+        }
+    }, [onCreate])
+
+    // Recipe detail sheet state
+    const [recipeFood, setRecipeFood] = useState<Food | null>(null)
+    const [recipeData, setRecipeData] = useState<any>(null)
+    const [recipeLoading, setRecipeLoading] = useState(false)
+    const [recipeSource, setRecipeSource] = useState<'db' | 'ai'>('db')
+    const recipeContentRef = useRef<HTMLDivElement>(null)
+    const [downloading, setDownloading] = useState(false)
+
+    const openRecipeSheet = useCallback((food: Food, source: 'db' | 'ai') => {
+        setRecipeFood(food)
+        setRecipeSource(source)
+        setRecipeData(null)
+        setRecipeLoading(true)
+        fetch('/api/ai/food-recipe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                foodName: food.name,
+                calories: food.calories,
+                protein: food.protein,
+                carbs: food.carbs,
+                fat: food.fat
+            })
+        })
+            .then(res => res.ok ? res.json() : null)
+            .then(data => setRecipeData(data))
+            .catch(() => setRecipeData(null))
+            .finally(() => setRecipeLoading(false))
+    }, [])
+
+    const handleRecipeAdd = useCallback(() => {
+        if (!recipeFood) return
+        if (recipeSource === 'ai') {
+            const macros: any = {
+                calories: recipeFood.calories,
+                protein: recipeFood.protein,
+                carbs: recipeFood.carbs,
+                fat: recipeFood.fat,
+                food_name: recipeFood.name
+            }
+            if (recipeData) {
+                macros.recipe = recipeData
+            }
+            onCreate(recipeFood.name, macros, 'ai_text')
+        } else {
+            onSelect(recipeFood)
+        }
+        setRecipeFood(null)
+        setRecipeData(null)
+        setQuery("")
+        setAiSuggestions([])
+    }, [recipeFood, recipeSource, recipeData, onCreate, onSelect])
+
+    const downloadRecipeAsImage = useCallback(async () => {
+        if (!recipeContentRef.current || !recipeFood) return
+        setDownloading(true)
+        try {
+            const html2canvas = (await import('html2canvas-pro')).default
+            const canvas = await html2canvas(recipeContentRef.current, {
+                backgroundColor: '#ffffff',
+                scale: 2,
+                useCORS: true
+            })
+            const link = document.createElement('a')
+            link.download = `tarif-${recipeFood.name.replace(/\s+/g, '-').toLowerCase()}.png`
+            link.href = canvas.toDataURL('image/png')
+            link.click()
+        } catch (err) {
+            console.error('Download error:', err)
+        } finally {
+            setDownloading(false)
+        }
+    }, [recipeFood])
+
     // Debounced AI search when no DB results
     useEffect(() => {
         if (aiTimerRef.current) clearTimeout(aiTimerRef.current)
@@ -385,6 +506,543 @@ export function FoodSearchSelector({
         })
     }
 
+    const searchContent = (
+        <Command shouldFilter={false} className={variant === 'fullscreen' ? "flex flex-col h-full" : undefined}>
+            {variant === 'fullscreen' && (
+                <div className="flex items-center border-b px-3 gap-2 bg-white shrink-0">
+                    <Search className="h-4 w-4 shrink-0 text-emerald-500" />
+                    <input
+                        ref={inputRef}
+                        className="flex h-12 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-gray-400"
+                        placeholder={fsTypewriterDone.current ? "Öğünlerinize yeni yemek ekleyin..." : (fsTypedPlaceholder + (fsShowCursor ? "│" : ""))}
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                        autoFocus
+                    />
+                    {onCameraClick && (
+                        <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-8 w-8 shrink-0 text-blue-500 hover:bg-blue-50"
+                            onClick={() => { onOpenChange(false); setQuery(""); onCameraClick() }}
+                            title="Fotoğraf ile Ekle"
+                        >
+                            <Camera size={16} />
+                        </Button>
+                    )}
+                    <Button
+                        size="icon"
+                        variant="ghost"
+                        className={`h-8 w-8 shrink-0 ${query.length > 1 ? 'text-purple-500 hover:bg-purple-50' : 'text-gray-300 cursor-not-allowed'}`}
+                        onClick={() => { if (query.length > 1) triggerAiFallback(query) }}
+                        title={query.length > 1 ? "AI ile Ara" : "Önce bir yemek adı yazın"}
+                        disabled={query.length <= 1}
+                    >
+                        <Sparkles size={16} />
+                    </Button>
+                    <Button
+                        size="icon"
+                        variant={showFilters ? "secondary" : "ghost"}
+                        className="h-8 w-8 shrink-0"
+                        onClick={() => setShowFilters(!showFilters)}
+                        title="Filtrele"
+                    >
+                        <Filter size={16} className={(Object.keys(selectedFilters).length > 0 || searchScopes.length > 1) ? "text-emerald-600" : ""} />
+                    </Button>
+                </div>
+            )}
+            {variant === 'default' && (
+                <div className="flex items-center border-b px-3 gap-2">
+                    <Search className="h-4 w-4 shrink-0 opacity-50" />
+                    <input
+                        ref={inputRef}
+                        className="flex h-11 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground"
+                        placeholder="Yemek ara... (örn: pey yum)"
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                        autoFocus
+                    />
+                    <Button
+                        size="icon"
+                        variant={showFilters ? "secondary" : "ghost"}
+                        className="h-8 w-8"
+                        onClick={() => setShowFilters(!showFilters)}
+                        title="Filtrele"
+                    >
+                        <Filter size={16} className={(Object.keys(selectedFilters).length > 0 || searchScopes.length > 1) ? "text-blue-600" : ""} />
+                    </Button>
+                </div>
+            )}
+            {variant === 'inline' && (
+                <div className="flex justify-end p-1 border-b bg-gray-50/50">
+                    <Button
+                        size="sm"
+                        variant={showFilters ? "secondary" : "ghost"}
+                        className="h-7 text-[10px]"
+                        onClick={() => setShowFilters(!showFilters)}
+                    >
+                        <Filter size={12} className={(Object.keys(selectedFilters).length > 0 || searchScopes.length > 1) ? "text-blue-600 mr-1" : "mr-1"} />
+                        Filtreler
+                    </Button>
+                </div>
+            )}
+
+            {showFilters && (
+                <div className="flex h-64 border-b text-xs">
+                    <div className="w-1/3 border-r bg-gray-50 p-1 space-y-0.5 overflow-y-auto">
+                        <div className="px-2 py-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Arama Ayarları</div>
+                        <button
+                            className={`w-full text-left px-2 py-1.5 rounded flex justify-between items-center ${activeFilterCategory === 'scope' ? 'bg-white shadow-sm font-medium text-blue-600' : 'hover:bg-gray-100 text-gray-700'}`}
+                            onClick={() => setActiveFilterCategory('scope')}
+                        >
+                            <span>Arama Kapsamı</span>
+                            {searchScopes.length > 0 && <span className="bg-blue-100 text-blue-700 px-1.5 rounded-full text-[9px]">{searchScopes.length}</span>}
+                        </button>
+
+                        <div className="px-2 py-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider mt-2">Filtreler</div>
+                        {['category', 'role', 'tags', 'season', 'compatibility'].map(cat => (
+                            <button
+                                key={cat}
+                                className={`w-full text-left px-2 py-1.5 rounded flex justify-between items-center ${activeFilterCategory === cat ? 'bg-white shadow-sm font-medium text-blue-600' : 'hover:bg-gray-100 text-gray-700'}`}
+                                onClick={() => setActiveFilterCategory(cat)}
+                            >
+                                <span className="capitalize">{cat === 'category' ? 'Kategori' : cat === 'tags' ? 'Diyet/Etiket' : cat === 'role' ? 'Rol' : cat === 'season' ? 'Sezon' : cat === 'compatibility' ? 'Uyumluluk' : cat}</span>
+                                {selectedFilters[cat]?.length > 0 && (
+                                    <span className="bg-blue-100 text-blue-700 px-1.5 rounded-full text-[9px]">{selectedFilters[cat].length}</span>
+                                )}
+                            </button>
+                        ))}
+                        {(Object.keys(selectedFilters).length > 0) && (
+                            <button className="w-full text-left px-2 py-1.5 text-red-500 hover:bg-red-50 mt-4 text-[10px]" onClick={() => setSelectedFilters({})}>
+                                Filtreleri Temizle
+                            </button>
+                        )}
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto p-1">
+                        {(filterOptions[activeFilterCategory as keyof typeof filterOptions] || []).length === 0 ? (
+                            <div className="text-gray-400 p-2 italic">Seçenek yok</div>
+                        ) : (
+                            (filterOptions[activeFilterCategory as keyof typeof filterOptions] || []).map((val: string) => {
+                                let isSelected = false
+                                if (activeFilterCategory === 'scope') {
+                                    const mapKeys: Record<string, string> = { 'İsim': 'name', 'Etiketler': 'tags', 'Uyumluluk': 'compatibility' }
+                                    isSelected = searchScopes.includes(mapKeys[val])
+                                } else {
+                                    isSelected = selectedFilters[activeFilterCategory]?.includes(val)
+                                }
+
+                                return (
+                                    <button
+                                        key={val}
+                                        className={`w-full text-left px-2 py-1.5 rounded flex items-center gap-2 mb-0.5 ${isSelected ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-50'}`}
+                                        onClick={() => toggleFilter(activeFilterCategory, val)}
+                                    >
+                                        <div className={`w-3 h-3 border rounded flex items-center justify-center ${isSelected ? 'bg-blue-600 border-blue-600' : 'border-gray-300'}`}>
+                                            {isSelected && <Check size={8} className="text-white" />}
+                                        </div>
+                                        <span className="truncate">{val}</span>
+                                    </button>
+                                )
+                            })
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {variant === 'fullscreen' && query.length > 1 && (
+                <div className="flex items-center gap-2 px-3 py-2 border-b bg-gray-50/80 shrink-0">
+                    <button
+                        onClick={() => triggerAiFallback(query)}
+                        className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-semibold text-purple-700 bg-purple-50 border border-purple-200 hover:bg-purple-100 transition-colors"
+                    >
+                        <Sparkles size={13} />
+                        AI ile Ara
+                    </button>
+                    <button
+                        onClick={() => createWithMacroEstimate(query)}
+                        disabled={estimatingMacros}
+                        className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 transition-colors disabled:opacity-50"
+                    >
+                        {estimatingMacros ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+                        {estimatingMacros ? 'Makrolar hesaplanıyor...' : <>&ldquo;{query.length > 15 ? query.slice(0, 15) + '...' : query}&rdquo; Ekle</>}
+                    </button>
+                </div>
+            )}
+
+            <CommandList className={variant === 'fullscreen' ? "max-h-none flex-1 overflow-y-auto pb-[300px]" : undefined}>
+                {calorieGap !== undefined && calorieGap > 0 && !query && (
+                    <div className="flex flex-col border-b bg-emerald-50/50">
+                        <div className="px-3 py-1.5 text-[10px] text-emerald-700 flex items-center gap-1">
+                            <Info size={10} />
+                            <span>Kalori açığı: <strong>{Math.round(calorieGap)} kcal</strong> — en yakın eşleşmeler üstte</span>
+                        </div>
+                        {(proteinGap !== undefined || fatGap !== undefined) && (
+                            <div className="px-4 pb-3 pt-1">
+                                <div className="flex justify-between text-[9px] font-medium text-gray-500 mb-1.5 px-1">
+                                    <span className={activeMacroPreference < 0 ? "text-blue-600 font-bold" : ""}>Protein Öncelikli</span>
+                                    <span className={activeMacroPreference === 0 ? "text-gray-700 font-bold" : ""}>Dengeli</span>
+                                    <span className={activeMacroPreference > 0 ? "text-yellow-600 font-bold" : ""}>Yağ Öncelikli</span>
+                                </div>
+                                <Slider
+                                    defaultValue={[activeMacroPreference]}
+                                    value={[activeMacroPreference]}
+                                    min={-100}
+                                    max={100}
+                                    step={5}
+                                    onValueChange={(vals) => setMacroPreference(vals[0])}
+                                />
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {filteredFoods.length === 0 && query.length > 0 && !aiLoading && aiSuggestions.length === 0 && (
+                    variant === 'fullscreen' ? (
+                        <div className="py-8 text-center text-sm text-muted-foreground">
+                            <p>"{query}" veritabanında bulunamadı.</p>
+                            <p className="text-xs mt-1">Yukarıdaki butonlarla AI ile arayabilir veya yeni oluşturabilirsiniz.</p>
+                        </div>
+                    ) : (
+                        <div className="py-6 text-center text-sm flex flex-col items-center gap-2">
+                            <p className="text-muted-foreground mb-2">"{query}" bulunamadı.</p>
+                            <div className="flex items-center gap-2">
+                                <Button size="sm" variant="secondary" className="h-8 gap-1 text-purple-600 border-purple-200 bg-purple-50 hover:bg-purple-100" onClick={() => triggerAiFallback(query)}>
+                                    <Sparkles size={14} /> AI'ya Sor
+                                </Button>
+                                <Button size="sm" variant="outline" className="h-8 gap-1" onClick={() => onCreate(query)}>
+                                    <Plus size={14} /> Yeni Oluştur
+                                </Button>
+                            </div>
+                        </div>
+                    )
+                )}
+
+                {aiErrorMsg && (
+                    <div className="w-full my-1 p-2 bg-orange-50/80 text-orange-900 text-[11px] flex flex-col items-center gap-1 border-y border-orange-100/50 animate-in fade-in slide-in-from-top-1 duration-200">
+                        <div className="flex items-center gap-1.5 opacity-90">
+                            <AlertTriangle size={13} className="text-orange-600 shrink-0" />
+                            <span className="font-bold text-orange-800 uppercase tracking-tighter text-[9px]">Analiz Sınırı</span>
+                        </div>
+                        <span className="text-center font-medium leading-tight px-2 break-words w-full">
+                            {aiEligibility.nextAvailableTime ? (
+                                <>Akıllı arama hakkınız doldu. <br/> Yeni arama için: <AiCountdown endDate={aiEligibility.nextAvailableTime} /></>
+                            ) : aiErrorMsg}
+                        </span>
+                        <button
+                            className="mt-1 text-[10px] font-bold text-orange-700 hover:text-orange-900 underline underline-offset-2"
+                            onClick={() => setAiErrorMsg(null)}
+                        >
+                            Anladım
+                        </button>
+                    </div>
+                )}
+
+                {aiLoading && (
+                    <div className="py-4 text-center text-sm text-muted-foreground flex items-center justify-center gap-2">
+                        <Loader2 size={14} className="animate-spin" />
+                        <span>AI ile aranıyor...</span>
+                    </div>
+                )}
+
+                {aiSuggestions.length > 0 && (
+                    <CommandGroup heading={
+                        <span className="flex items-center gap-1">
+                            <Sparkles size={12} className="text-purple-500" />
+                            AI Önerileri ({aiSuggestions.length})
+                        </span>
+                    }>
+                        {aiSuggestions.map(food => (
+                            <CommandItem
+                                key={food.id}
+                                value={food.id}
+                                onSelect={() => { onCreate(food.name, { calories: food.calories, protein: food.protein, carbs: food.carbs, fat: food.fat }, 'ai_text'); setQuery(""); setAiSuggestions([]) }}
+                                className="flex flex-col items-start gap-1 py-2 cursor-pointer"
+                            >
+                                <div className="font-medium flex items-center gap-2 w-full justify-between">
+                                    <span className="flex items-center gap-1.5 min-w-0">
+                                        <Sparkles size={10} className="text-purple-400 shrink-0" />
+                                        <span className="truncate">{food.name}</span>
+                                    </span>
+                                    <Badge variant="outline" className="text-[9px] h-4 font-normal text-purple-500 border-purple-200 shrink-0">AI</Badge>
+                                </div>
+                                <div className="text-[10px] text-muted-foreground flex gap-2 w-full justify-between">
+                                    <div className="flex gap-2">
+                                        <span>{Math.round(food.calories)} kcal</span>
+                                        <span className="text-orange-600">K:{Math.round(food.carbs)}</span>
+                                        <span className="text-blue-600">P:{Math.round(food.protein)}</span>
+                                        <span className="text-yellow-600">Y:{Math.round(food.fat)}</span>
+                                    </div>
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); openRecipeSheet(food, 'ai') }}
+                                        className="text-[9px] font-semibold text-orange-500 hover:text-orange-700 flex items-center gap-0.5 shrink-0"
+                                    >
+                                        <ChefHat size={10} />
+                                        Tarif
+                                    </button>
+                                </div>
+                            </CommandItem>
+                        ))}
+                        <CommandItem onSelect={() => onCreate(query)} className="text-blue-600 cursor-pointer mt-1">
+                            <Plus size={14} className="mr-2" /> "{query}" olarak yeni oluştur
+                        </CommandItem>
+                    </CommandGroup>
+                )}
+
+                {filteredFoods.length > 0 && (
+                    <CommandGroup heading={`Sonuçlar (${filteredFoods.length})`}>
+                        {filteredFoods.map(food => {
+                            const compatibility = checkCompatibility(food, activeDietRules, patientDiseases, patientLabs, patientMedicationRules)
+                            return (
+                                <TooltipProvider key={food.id}>
+                                    <Tooltip delayDuration={300}>
+                                        <TooltipTrigger asChild>
+                                            <CommandItem
+                                                value={food.id}
+                                                onSelect={() => { onSelect(food); setQuery("") }}
+                                                className="flex flex-col items-start gap-1 py-2 cursor-pointer"
+                                            >
+                                                <div className="font-medium flex items-center gap-2 w-full justify-between">
+                                                    <span className="flex items-center gap-1.5 min-w-0">
+                                                        {!compatibility.compatible && <AlertTriangle size={12} className="text-red-500 shrink-0" />}
+                                                        {compatibility.recommended && <Heart size={12} fill="currentColor" className="text-blue-500 shrink-0" />}
+                                                        <span className="truncate">{food.name}</span>
+                                                    </span>
+                                                    {food.category && <Badge variant="outline" className="text-[9px] h-4 font-normal text-gray-500 shrink-0">{food.category}</Badge>}
+                                                </div>
+                                                <div className="text-[10px] text-muted-foreground flex gap-2">
+                                                    <span>{Math.round(food.calories)} kcal</span>
+                                                    <span className="text-orange-600">K:{Math.round(food.carbs)}</span>
+                                                    <span className="text-blue-600">P:{Math.round(food.protein)}</span>
+                                                    <span className="text-yellow-600">Y:{Math.round(food.fat)}</span>
+                                                </div>
+                                            </CommandItem>
+                                        </TooltipTrigger>
+                                        <TooltipContent side="right" className="max-w-sm text-xs p-3">
+                                            <div className="space-y-2">
+                                                <div className="font-bold border-b pb-1 mb-1">{food.name}</div>
+                                                <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                                                    <div className="flex justify-between"><span>Enerji:</span> <span>{Math.round(food.calories)} kcal</span></div>
+                                                    <div className="flex justify-between text-orange-600"><span>Karbonhidrat:</span> <span>{Math.round(food.carbs)}g</span></div>
+                                                    <div className="flex justify-between text-blue-600"><span>Protein:</span> <span>{Math.round(food.protein)}g</span></div>
+                                                    <div className="flex justify-between text-yellow-600"><span>Yağ:</span> <span>{Math.round(food.fat)}g</span></div>
+                                                </div>
+
+                                                {compatibility.warnings?.length > 0 && (
+                                                    <div className="mt-2 pt-2 border-t border-gray-200">
+                                                        <div className="font-semibold text-red-600 mb-1">Uyumluluk Uyarıları:</div>
+                                                        {compatibility.warnings.map((w, i) => (
+                                                            <div key={i} className="text-[10px] leading-tight mb-1 flex gap-1 items-start">
+                                                                <span>{w.type === 'negative' ? '🚫' : '⚠️'}</span>
+                                                                <span><strong>{w.sourceName}:</strong> {w.warning || w.info || w.keyword}</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                                {compatibility.reason && !compatibility.compatible && (
+                                                    <div className="mt-1 text-[10px] text-red-500 italic">{compatibility.reason}</div>
+                                                )}
+                                            </div>
+                                        </TooltipContent>
+                                    </Tooltip>
+                                </TooltipProvider>
+                            )
+                        })}
+                    </CommandGroup>
+                )}
+
+                {variant !== 'fullscreen' && filteredFoods.length > 0 && query.length > 2 && aiSuggestions.length === 0 && !aiLoading && (
+                    <CommandGroup heading="Diğer">
+                        <CommandItem onSelect={() => triggerAiFallback(query)} className="text-purple-600 cursor-pointer font-medium border border-purple-100 bg-purple-50/50 mb-1 rounded-sm">
+                            <Sparkles size={14} className="mr-2" /> Aradığınızı bulamadınız mı? "{query}" için AI'ya Sor
+                        </CommandItem>
+                        <CommandItem onSelect={() => onCreate(query)} className="text-blue-600 cursor-pointer">
+                            <Plus size={14} className="mr-2" /> "{query}" olarak yeni oluştur
+                        </CommandItem>
+                    </CommandGroup>
+                )}
+            </CommandList>
+        </Command>
+    )
+
+    if (variant === 'fullscreen') {
+        return (
+            <>
+                <span onClick={() => onOpenChange(true)}>{trigger}</span>
+                {open && typeof document !== 'undefined' && createPortal(
+                    <div className="fixed inset-0 bg-white flex flex-col" style={{ zIndex: 99999, height: '100dvh' }}>
+                        <div className="flex items-center justify-between px-3 py-2 border-b bg-emerald-50 shrink-0">
+                            <h2 className="text-sm font-bold text-emerald-800">Yemek Ara</h2>
+                            <button
+                                onClick={() => { onOpenChange(false); setQuery("") }}
+                                className="h-8 w-8 rounded-full flex items-center justify-center hover:bg-emerald-100 text-emerald-600"
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
+                        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+                            {searchContent}
+                        </div>
+
+                        {/* Recipe Detail Bottom Sheet */}
+                        {recipeFood && (
+                            <div className="absolute inset-0 bg-white flex flex-col animate-in slide-in-from-bottom duration-200" style={{ zIndex: 100000 }}>
+                                {/* Header */}
+                                <div className="flex items-center gap-2 px-3 py-2 border-b bg-orange-50 shrink-0">
+                                    <button
+                                        onClick={() => { setRecipeFood(null); setRecipeData(null) }}
+                                        className="h-8 w-8 rounded-full flex items-center justify-center hover:bg-orange-100 text-orange-600"
+                                    >
+                                        <ChevronLeft size={20} />
+                                    </button>
+                                    <div className="flex-1 min-w-0">
+                                        <h2 className="text-sm font-bold text-orange-800 truncate">{recipeFood.name}</h2>
+                                        <div className="text-[10px] text-orange-600 flex gap-2">
+                                            <span>{Math.round(recipeFood.calories)} kcal</span>
+                                            <span>P:{Math.round(recipeFood.protein)}</span>
+                                            <span>K:{Math.round(recipeFood.carbs)}</span>
+                                            <span>Y:{Math.round(recipeFood.fat)}</span>
+                                        </div>
+                                    </div>
+                                    {recipeData && !recipeLoading && (
+                                        <button
+                                            onClick={downloadRecipeAsImage}
+                                            disabled={downloading}
+                                            className="h-8 w-8 rounded-full flex items-center justify-center hover:bg-orange-100 text-orange-600"
+                                            title="Tarifi İndir"
+                                        >
+                                            {downloading ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+                                        </button>
+                                    )}
+                                    <button
+                                        onClick={() => { setRecipeFood(null); setRecipeData(null) }}
+                                        className="h-8 w-8 rounded-full flex items-center justify-center hover:bg-orange-100 text-orange-600"
+                                    >
+                                        <X size={18} />
+                                    </button>
+                                </div>
+
+                                {/* Content */}
+                                <div className="flex-1 overflow-y-auto pb-24">
+                                    {recipeLoading ? (
+                                        <div className="flex flex-col items-center justify-center py-12 gap-3">
+                                            <Loader2 size={24} className="animate-spin text-orange-500" />
+                                            <span className="text-sm text-gray-500">Tarif hazırlanıyor...</span>
+                                        </div>
+                                    ) : recipeData ? (
+                                        <div ref={recipeContentRef} className="px-4 py-3 space-y-4 bg-white">
+                                            {/* Recipe card header for download */}
+                                            <div className="flex items-center gap-2 pb-2 border-b border-orange-100">
+                                                <ChefHat size={18} className="text-orange-500" />
+                                                <div>
+                                                    <h3 className="text-base font-bold text-gray-800">{recipeFood.name}</h3>
+                                                    <div className="text-[10px] text-gray-500 flex gap-2">
+                                                        <span>{Math.round(recipeFood.calories)} kcal</span>
+                                                        <span className="text-blue-600">P:{Math.round(recipeFood.protein)}g</span>
+                                                        <span className="text-orange-600">K:{Math.round(recipeFood.carbs)}g</span>
+                                                        <span className="text-yellow-600">Y:{Math.round(recipeFood.fat)}g</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Serving & Time */}
+                                            <div className="flex items-center gap-3 text-xs text-gray-500 flex-wrap">
+                                                {recipeData.serving && (
+                                                    <span className="flex items-center gap-1">
+                                                        <UtensilsCrossed size={12} className="text-orange-400" />
+                                                        {recipeData.serving}
+                                                    </span>
+                                                )}
+                                                {recipeData.prep_time && (
+                                                    <span className="flex items-center gap-1">
+                                                        <Clock size={12} className="text-blue-400" />
+                                                        Hazırlık: {recipeData.prep_time}
+                                                    </span>
+                                                )}
+                                                {recipeData.cook_time && (
+                                                    <span className="flex items-center gap-1">
+                                                        <Clock size={12} className="text-red-400" />
+                                                        Pişirme: {recipeData.cook_time}
+                                                    </span>
+                                                )}
+                                            </div>
+
+                                            {/* Ingredients */}
+                                            {recipeData.ingredients && recipeData.ingredients.length > 0 && (
+                                                <div>
+                                                    <h3 className="text-xs font-bold text-gray-700 mb-2 flex items-center gap-1.5">
+                                                        <ChefHat size={14} className="text-orange-500" />
+                                                        Malzemeler
+                                                    </h3>
+                                                    <div className="space-y-1.5">
+                                                        {recipeData.ingredients.map((ing: any, i: number) => (
+                                                            <div key={i} className="flex items-center gap-2 text-sm">
+                                                                <div className="w-1.5 h-1.5 rounded-full bg-orange-300 shrink-0" />
+                                                                <span className="text-gray-700">
+                                                                    {ing.amount && <span className="font-medium text-orange-700">{ing.amount} {ing.unit} </span>}
+                                                                    {ing.name}
+                                                                </span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Steps */}
+                                            {recipeData.steps && recipeData.steps.length > 0 && (
+                                                <div>
+                                                    <h3 className="text-xs font-bold text-gray-700 mb-2 flex items-center gap-1.5">
+                                                        <UtensilsCrossed size={14} className="text-emerald-500" />
+                                                        Yapılışı
+                                                    </h3>
+                                                    <div className="space-y-2">
+                                                        {recipeData.steps.map((step: string, i: number) => (
+                                                            <div key={i} className="flex gap-2.5 text-sm">
+                                                                <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">
+                                                                    {i + 1}
+                                                                </span>
+                                                                <span className="text-gray-600 leading-relaxed">{step}</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Tip */}
+                                            {recipeData.tip && (
+                                                <div className="flex gap-2 p-2.5 rounded-lg bg-amber-50 border border-amber-100">
+                                                    <Lightbulb size={14} className="text-amber-500 shrink-0 mt-0.5" />
+                                                    <span className="text-xs text-amber-800 leading-relaxed">{recipeData.tip}</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <div className="flex flex-col items-center justify-center py-12 gap-2 text-gray-400">
+                                            <ChefHat size={24} />
+                                            <span className="text-sm">Tarif yüklenemedi</span>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Bottom Add Button */}
+                                <div className="absolute bottom-0 left-0 right-0 p-3 bg-white border-t shadow-[0_-4px_12px_rgba(0,0,0,0.05)]">
+                                    <button
+                                        onClick={handleRecipeAdd}
+                                        className="w-full py-3 rounded-xl text-sm font-bold text-white bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700 transition-colors flex items-center justify-center gap-2"
+                                    >
+                                        <Plus size={16} />
+                                        Öğüne Ekle
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>,
+                    document.body
+                )}
+            </>
+        )
+    }
+
     return (
         <Popover open={open} onOpenChange={onOpenChange}>
             <PopoverTrigger asChild>
@@ -397,361 +1055,25 @@ export function FoodSearchSelector({
                             placeholder={typewriterDone.current ? "Yeni yemek ekle (örn: pey yum)" : (typedPlaceholder + (showCursor ? "│" : ""))}
                             value={query}
                             onChange={(e) => { setQuery(e.target.value); if (!open) onOpenChange(true); }}
-                            onClick={(e) => { 
-                                // Ensure scroll runs on click (safeguard for mobile touch events)
-                                if (!scrollRestoreRef.current) {
-                                    let scrollNode: Element | Window = window;
-                                    let node = e.currentTarget.parentElement;
-                                    while(node) {
-                                        const overflow = window.getComputedStyle(node).overflowY;
-                                        if (overflow === 'auto' || overflow === 'scroll') {
-                                            scrollNode = node;
-                                            break;
-                                        }
-                                        node = node.parentElement;
-                                    }
-                                    const top = scrollNode === window ? window.scrollY : (scrollNode as Element).scrollTop;
-                                    scrollRestoreRef.current = { node: scrollNode, top };
-                                }
-                                const target = e.currentTarget;
-                                
-                                // Instant scroll to prevent iOS Safari from panning the whole window
-                                target.scrollIntoView({ behavior: 'auto', block: 'start' });
-                                window.scrollTo(0, 0);
-                                
-                                // Smooth scroll after keyboard settles
-                                setTimeout(() => {
-                                    window.scrollTo(0, 0); // Keep window at top
-                                    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                                }, 300);
-                                
-                                if (!open) onOpenChange(true); 
+                            onClick={() => {
+                                if (!open) onOpenChange(true);
                             }}
-                            onFocus={(e) => {
-                                // Record current scroll position before scrolling
-                                if (!scrollRestoreRef.current) {
-                                    let scrollNode: Element | Window = window;
-                                    let node = e.target.parentElement;
-                                    while(node) {
-                                        const overflow = window.getComputedStyle(node).overflowY;
-                                        if (overflow === 'auto' || overflow === 'scroll') {
-                                            scrollNode = node;
-                                            break;
-                                        }
-                                        node = node.parentElement;
-                                    }
-                                    const top = scrollNode === window ? window.scrollY : (scrollNode as Element).scrollTop;
-                                    scrollRestoreRef.current = { node: scrollNode, top };
-                                }
-                                const target = e.target;
-                                
-                                // Instant scroll to prevent iOS Safari from panning the whole window
-                                target.scrollIntoView({ behavior: 'auto', block: 'start' });
-                                window.scrollTo(0, 0);
-                                
-                                // Smooth scroll after keyboard settles
-                                setTimeout(() => {
-                                    window.scrollTo(0, 0); // Keep window at top
-                                    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                                }, 300);
-                                
+                            onFocus={() => {
                                 if (!open) onOpenChange(true);
                             }}
                         />
                     </div>
                 ) : trigger}
             </PopoverTrigger>
-            <PopoverContent 
-                className="p-0 w-[min(500px,calc(100vw-2rem))] bg-slate-50 border border-indigo-100 shadow-[0_15px_50px_-12px_rgba(0,0,0,0.25)] rounded-2xl overflow-hidden" 
-                align="start" 
+            <PopoverContent
+                className="p-0 w-[min(500px,calc(100vw-2rem))] bg-slate-50 border border-indigo-100 shadow-[0_15px_50px_-12px_rgba(0,0,0,0.25)] rounded-2xl overflow-hidden"
+                align="start"
                 side="bottom"
                 avoidCollisions={false}
                 sideOffset={8}
                 onOpenAutoFocus={e => variant === 'inline' ? e.preventDefault() : undefined}
             >
-                <Command shouldFilter={false}>
-                    {variant !== 'inline' && (
-                        <div className="flex items-center border-b px-3 gap-2">
-                            <Search className="h-4 w-4 shrink-0 opacity-50" />
-                            <input
-                                ref={inputRef}
-                                className="flex h-11 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground"
-                                placeholder="Yemek ara... (örn: pey yum)"
-                                value={query}
-                                onChange={(e) => setQuery(e.target.value)}
-                                autoFocus
-                            />
-                            <Button
-                                size="icon"
-                                variant={showFilters ? "secondary" : "ghost"}
-                                className="h-8 w-8"
-                                onClick={() => setShowFilters(!showFilters)}
-                                title="Filtrele"
-                            >
-                                <Filter size={16} className={(Object.keys(selectedFilters).length > 0 || searchScopes.length > 1) ? "text-blue-600" : ""} />
-                            </Button>
-                        </div>
-                    )}
-                    {variant === 'inline' && (
-                        <div className="flex justify-end p-1 border-b bg-gray-50/50">
-                            <Button
-                                size="sm"
-                                variant={showFilters ? "secondary" : "ghost"}
-                                className="h-7 text-[10px]"
-                                onClick={() => setShowFilters(!showFilters)}
-                            >
-                                <Filter size={12} className={(Object.keys(selectedFilters).length > 0 || searchScopes.length > 1) ? "text-blue-600 mr-1" : "mr-1"} />
-                                Filtreler
-                            </Button>
-                        </div>
-                    )}
-
-                    {showFilters && (
-                        <div className="flex h-64 border-b text-xs">
-                            {/* Left: Categories */}
-                            <div className="w-1/3 border-r bg-gray-50 p-1 space-y-0.5 overflow-y-auto">
-                                <div className="px-2 py-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Arama Ayarları</div>
-                                <button
-                                    className={`w-full text-left px-2 py-1.5 rounded flex justify-between items-center ${activeFilterCategory === 'scope' ? 'bg-white shadow-sm font-medium text-blue-600' : 'hover:bg-gray-100 text-gray-700'}`}
-                                    onClick={() => setActiveFilterCategory('scope')}
-                                >
-                                    <span>Arama Kapsamı</span>
-                                    {searchScopes.length > 0 && <span className="bg-blue-100 text-blue-700 px-1.5 rounded-full text-[9px]">{searchScopes.length}</span>}
-                                </button>
-
-                                <div className="px-2 py-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider mt-2">Filtreler</div>
-                                {['category', 'role', 'tags', 'season', 'compatibility'].map(cat => (
-                                    <button
-                                        key={cat}
-                                        className={`w-full text-left px-2 py-1.5 rounded flex justify-between items-center ${activeFilterCategory === cat ? 'bg-white shadow-sm font-medium text-blue-600' : 'hover:bg-gray-100 text-gray-700'}`}
-                                        onClick={() => setActiveFilterCategory(cat)}
-                                    >
-                                        <span className="capitalize">{cat === 'category' ? 'Kategori' : cat === 'tags' ? 'Diyet/Etiket' : cat === 'role' ? 'Rol' : cat === 'season' ? 'Sezon' : cat === 'compatibility' ? 'Uyumluluk' : cat}</span>
-                                        {selectedFilters[cat]?.length > 0 && (
-                                            <span className="bg-blue-100 text-blue-700 px-1.5 rounded-full text-[9px]">{selectedFilters[cat].length}</span>
-                                        )}
-                                    </button>
-                                ))}
-                                {(Object.keys(selectedFilters).length > 0) && (
-                                    <button className="w-full text-left px-2 py-1.5 text-red-500 hover:bg-red-50 mt-4 text-[10px]" onClick={() => setSelectedFilters({})}>
-                                        Filtreleri Temizle
-                                    </button>
-                                )}
-                            </div>
-
-                            {/* Right: Values */}
-                            <div className="flex-1 overflow-y-auto p-1">
-                                {(filterOptions[activeFilterCategory as keyof typeof filterOptions] || []).length === 0 ? (
-                                    <div className="text-gray-400 p-2 italic">Seçenek yok</div>
-                                ) : (
-                                    (filterOptions[activeFilterCategory as keyof typeof filterOptions] || []).map((val: string) => {
-                                        let isSelected = false
-                                        if (activeFilterCategory === 'scope') {
-                                            const mapKeys: Record<string, string> = { 'İsim': 'name', 'Etiketler': 'tags', 'Uyumluluk': 'compatibility' }
-                                            isSelected = searchScopes.includes(mapKeys[val])
-                                        } else {
-                                            isSelected = selectedFilters[activeFilterCategory]?.includes(val)
-                                        }
-
-                                        return (
-                                            <button
-                                                key={val}
-                                                className={`w-full text-left px-2 py-1.5 rounded flex items-center gap-2 mb-0.5 ${isSelected ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-50'}`}
-                                                onClick={() => toggleFilter(activeFilterCategory, val)}
-                                            >
-                                                <div className={`w-3 h-3 border rounded flex items-center justify-center ${isSelected ? 'bg-blue-600 border-blue-600' : 'border-gray-300'}`}>
-                                                    {isSelected && <Check size={8} className="text-white" />}
-                                                </div>
-                                                <span className="truncate">{val}</span>
-                                            </button>
-                                        )
-                                    })
-                                )}
-                            </div>
-                        </div>
-                    )}
-
-                    <CommandList>
-                        {/* Calorie gap indicator */}
-                        {calorieGap !== undefined && calorieGap > 0 && !query && (
-                            <div className="flex flex-col border-b bg-emerald-50/50">
-                                <div className="px-3 py-1.5 text-[10px] text-emerald-700 flex items-center gap-1">
-                                    <Info size={10} />
-                                    <span>Kalori açığı: <strong>{Math.round(calorieGap)} kcal</strong> — en yakın eşleşmeler üstte</span>
-                                </div>
-                                {(proteinGap !== undefined || fatGap !== undefined) && (
-                                    <div className="px-4 pb-3 pt-1">
-                                        <div className="flex justify-between text-[9px] font-medium text-gray-500 mb-1.5 px-1">
-                                            <span className={activeMacroPreference < 0 ? "text-blue-600 font-bold" : ""}>Protein Öncelikli</span>
-                                            <span className={activeMacroPreference === 0 ? "text-gray-700 font-bold" : ""}>Dengeli</span>
-                                            <span className={activeMacroPreference > 0 ? "text-yellow-600 font-bold" : ""}>Yağ Öncelikli</span>
-                                        </div>
-                                        <Slider
-                                            defaultValue={[activeMacroPreference]}
-                                            value={[activeMacroPreference]}
-                                            min={-100}
-                                            max={100}
-                                            step={5}
-                                            onValueChange={(vals) => setMacroPreference(vals[0])}
-                                        />
-                                    </div>
-                                )}
-                            </div>
-                        )}
-
-                        {/* No DB results */}
-                        {filteredFoods.length === 0 && query.length > 0 && !aiLoading && aiSuggestions.length === 0 && (
-                            <div className="py-6 text-center text-sm flex flex-col items-center gap-2">
-                                <p className="text-muted-foreground mb-2">"{query}" bulunamadı.</p>
-                                <div className="flex items-center gap-2">
-                                    <Button size="sm" variant="secondary" className="h-8 gap-1 text-purple-600 border-purple-200 bg-purple-50 hover:bg-purple-100" onClick={() => triggerAiFallback(query)}>
-                                        <Sparkles size={14} /> AI'ya Sor
-                                    </Button>
-                                    <Button size="sm" variant="outline" className="h-8 gap-1" onClick={() => onCreate(query)}>
-                                        <Plus size={14} /> Yeni Oluştur
-                                    </Button>
-                                </div>
-                            </div>
-                        )}
-
-                        {aiErrorMsg && (
-                            <div className="w-full my-1 p-2 bg-orange-50/80 text-orange-900 text-[11px] flex flex-col items-center gap-1 border-y border-orange-100/50 animate-in fade-in slide-in-from-top-1 duration-200">
-                                <div className="flex items-center gap-1.5 opacity-90">
-                                    <AlertTriangle size={13} className="text-orange-600 shrink-0" />
-                                    <span className="font-bold text-orange-800 uppercase tracking-tighter text-[9px]">Analiz Sınırı</span>
-                                </div>
-                                <span className="text-center font-medium leading-tight px-2 break-words w-full">
-                                    {aiEligibility.nextAvailableTime ? (
-                                        <>Akıllı arama hakkınız doldu. <br/> Yeni arama için: <AiCountdown endDate={aiEligibility.nextAvailableTime} /></>
-                                    ) : aiErrorMsg}
-                                </span>
-                                <button 
-                                    className="mt-1 text-[10px] font-bold text-orange-700 hover:text-orange-900 underline underline-offset-2" 
-                                    onClick={() => setAiErrorMsg(null)}
-                                >
-                                    Anladım
-                                </button>
-                            </div>
-                        )}
-
-                        {/* AI Loading */}
-                        {aiLoading && (
-                            <div className="py-4 text-center text-sm text-muted-foreground flex items-center justify-center gap-2">
-                                <Loader2 size={14} className="animate-spin" />
-                                <span>AI ile aranıyor...</span>
-                            </div>
-                        )}
-
-                        {/* AI Suggestions */}
-                        {aiSuggestions.length > 0 && (
-                            <CommandGroup heading={
-                                <span className="flex items-center gap-1">
-                                    <Sparkles size={12} className="text-purple-500" />
-                                    AI Önerileri ({aiSuggestions.length})
-                                </span>
-                            }>
-                                {aiSuggestions.map(food => (
-                                    <CommandItem
-                                        key={food.id}
-                                        value={food.id}
-                                        onSelect={() => { onCreate(food.name, { calories: food.calories, protein: food.protein, carbs: food.carbs, fat: food.fat }, 'ai_text'); setQuery(""); setAiSuggestions([]) }}
-                                        className="flex flex-col items-start gap-1 py-2 cursor-pointer"
-                                    >
-                                        <div className="font-medium flex items-center gap-2 w-full justify-between">
-                                            <span className="flex items-center gap-1.5 min-w-0">
-                                                <Sparkles size={10} className="text-purple-400 shrink-0" />
-                                                <span className="truncate">{food.name}</span>
-                                            </span>
-                                            <Badge variant="outline" className="text-[9px] h-4 font-normal text-purple-500 border-purple-200 shrink-0">AI</Badge>
-                                        </div>
-                                        <div className="text-[10px] text-muted-foreground flex gap-2">
-                                            <span>{Math.round(food.calories)} kcal</span>
-                                            <span className="text-orange-600">K:{Math.round(food.carbs)}</span>
-                                            <span className="text-blue-600">P:{Math.round(food.protein)}</span>
-                                            <span className="text-yellow-600">Y:{Math.round(food.fat)}</span>
-                                        </div>
-                                    </CommandItem>
-                                ))}
-                                <CommandItem onSelect={() => onCreate(query)} className="text-blue-600 cursor-pointer mt-1">
-                                    <Plus size={14} className="mr-2" /> "{query}" olarak yeni oluştur
-                                </CommandItem>
-                            </CommandGroup>
-                        )}
-
-                        {filteredFoods.length > 0 && (
-                            <CommandGroup heading={`Sonuçlar (${filteredFoods.length})`}>
-                                {filteredFoods.map(food => {
-                                    const compatibility = checkCompatibility(food, activeDietRules, patientDiseases, patientLabs, patientMedicationRules)
-                                    return (
-                                        <TooltipProvider key={food.id}>
-                                            <Tooltip delayDuration={300}>
-                                                <TooltipTrigger asChild>
-                                                    <CommandItem
-                                                        value={food.id}
-                                                        onSelect={() => { onSelect(food); setQuery("") }}
-                                                        className="flex flex-col items-start gap-1 py-2 cursor-pointer"
-                                                    >
-                                                        <div className="font-medium flex items-center gap-2 w-full justify-between">
-                                                            <span className="flex items-center gap-1.5 min-w-0">
-                                                                {!compatibility.compatible && <AlertTriangle size={12} className="text-red-500 shrink-0" />}
-                                                                {compatibility.recommended && <Heart size={12} fill="currentColor" className="text-blue-500 shrink-0" />}
-                                                                <span className="truncate">{food.name}</span>
-                                                            </span>
-                                                            {food.category && <Badge variant="outline" className="text-[9px] h-4 font-normal text-gray-500 shrink-0">{food.category}</Badge>}
-                                                        </div>
-                                                        <div className="text-[10px] text-muted-foreground flex gap-2">
-                                                            <span>{Math.round(food.calories)} kcal</span>
-                                                            <span className="text-orange-600">K:{Math.round(food.carbs)}</span>
-                                                            <span className="text-blue-600">P:{Math.round(food.protein)}</span>
-                                                            <span className="text-yellow-600">Y:{Math.round(food.fat)}</span>
-                                                        </div>
-                                                    </CommandItem>
-                                                </TooltipTrigger>
-                                                <TooltipContent side="right" className="max-w-sm text-xs p-3">
-                                                    <div className="space-y-2">
-                                                        <div className="font-bold border-b pb-1 mb-1">{food.name}</div>
-                                                        <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-                                                            <div className="flex justify-between"><span>Enerji:</span> <span>{Math.round(food.calories)} kcal</span></div>
-                                                            <div className="flex justify-between text-orange-600"><span>Karbonhidrat:</span> <span>{Math.round(food.carbs)}g</span></div>
-                                                            <div className="flex justify-between text-blue-600"><span>Protein:</span> <span>{Math.round(food.protein)}g</span></div>
-                                                            <div className="flex justify-between text-yellow-600"><span>Yağ:</span> <span>{Math.round(food.fat)}g</span></div>
-                                                        </div>
-
-                                                        {compatibility.warnings?.length > 0 && (
-                                                            <div className="mt-2 pt-2 border-t border-gray-200">
-                                                                <div className="font-semibold text-red-600 mb-1">Uyumluluk Uyarıları:</div>
-                                                                {compatibility.warnings.map((w, i) => (
-                                                                    <div key={i} className="text-[10px] leading-tight mb-1 flex gap-1 items-start">
-                                                                        <span>{w.type === 'negative' ? '🚫' : '⚠️'}</span>
-                                                                        <span><strong>{w.sourceName}:</strong> {w.warning || w.info || w.keyword}</span>
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                        )}
-                                                        {compatibility.reason && !compatibility.compatible && (
-                                                            <div className="mt-1 text-[10px] text-red-500 italic">{compatibility.reason}</div>
-                                                        )}
-                                                    </div>
-                                                </TooltipContent>
-                                            </Tooltip>
-                                        </TooltipProvider>
-                                    )
-                                })}
-                            </CommandGroup>
-                        )}
-
-                        {filteredFoods.length > 0 && query.length > 2 && aiSuggestions.length === 0 && !aiLoading && (
-                            <CommandGroup heading="Diğer">
-                                <CommandItem onSelect={() => triggerAiFallback(query)} className="text-purple-600 cursor-pointer font-medium border border-purple-100 bg-purple-50/50 mb-1 rounded-sm">
-                                    <Sparkles size={14} className="mr-2" /> Aradığınızı bulamadınız mı? "{query}" için AI'ya Sor
-                                </CommandItem>
-                                <CommandItem onSelect={() => onCreate(query)} className="text-blue-600 cursor-pointer">
-                                    <Plus size={14} className="mr-2" /> "{query}" olarak yeni oluştur
-                                </CommandItem>
-                            </CommandGroup>
-                        )}
-                    </CommandList>
-                </Command>
+                {searchContent}
             </PopoverContent>
         </Popover>
     )

@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -39,6 +40,7 @@ interface Proposal {
 }
 
 export default function FoodProposalsPage() {
+    const router = useRouter()
     const [proposals, setProposals] = useState<Proposal[]>([])
     const [loading, setLoading] = useState(true)
     const [searchTerm, setSearchTerm] = useState("")
@@ -130,10 +132,14 @@ export default function FoodProposalsPage() {
             }
 
             // Success
+            const result = await res.json()
             setIsFoodDialogOpen(false)
             setProposals(prev => prev.filter(p => p.id !== selectedProposal.id))
-            alert("Yemek başarıyla eklendi ve öneri onaylandı.")
-            return await res.json() // Return to dialog if needed
+            const foodId = result.food?.id || selectedProposal.id
+            if (confirm("Yemek başarıyla eklendi! Kart Maker'a gidip tarif kartı oluşturmak ister misiniz?")) {
+                router.push(`/admin/card-maker?foodId=${foodId}`)
+            }
+            return result
         } catch (err: any) {
             console.error(err)
             alert('Hata: ' + err.message)
