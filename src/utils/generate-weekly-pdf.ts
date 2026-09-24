@@ -301,36 +301,57 @@ export async function generateWeeklyPlanPdf(options: PdfOptions): Promise<void> 
     // --- 1. PRE-PROCESS ALL DAYS TO FIND RECIPE MATCHES ---
     const matchedCards: RecipeCard[] = []
     const recipesByMeal = new Map<string, RecipeCard[]>()
+    const aiImageCards = new Set<string>()
 
-    if (cards && manualMatches && bans) {
-        for (const day of days) {
-            for (const meal of day.diet_meals) {
-                const mealRecipes: RecipeCard[] = []
-                for (const food of meal.diet_foods) {
-                    const hasCustomImage = !!(food.image_url || food.food_meta?.source === 'user_proposal' || food.is_custom)
-                    const matches = findRecipeMatch(food.food_name, manualMatches, bans, cards, hasCustomImage)
-                    if (matches.length > 0) {
-                        (food as any)._hasRecipe = true
-                        const firstMatch = matches[0]
-                        
-                        // Ensure it's in matchedCards and store its index on the food
-                        let cIdx = matchedCards.findIndex(c => c.filename === firstMatch.filename)
-                        if (cIdx === -1) {
-                            matchedCards.push(firstMatch)
-                            cIdx = matchedCards.length - 1
-                        }
-                        (food as any)._recipeIdx = cIdx
+    for (const day of days) {
+        for (const meal of day.diet_meals) {
+            const mealRecipes: RecipeCard[] = []
+            for (const food of meal.diet_foods) {
+                const hasCustomImage = !!(food.image_url || food.food_meta?.source === 'user_proposal' || food.is_custom)
+                const matches = (cards && manualMatches && bans)
+                    ? findRecipeMatch(food.food_name, manualMatches, bans, cards, hasCustomImage)
+                    : []
+                if (matches.length > 0) {
+                    (food as any)._hasRecipe = true
+                    const firstMatch = matches[0]
 
-                        for (const c of matches) {
-                            if (!mealRecipes.find(r => r.filename === c.filename)) {
-                                mealRecipes.push(c)
-                            }
+                    let cIdx = matchedCards.findIndex(c => c.filename === firstMatch.filename)
+                    if (cIdx === -1) {
+                        matchedCards.push(firstMatch)
+                        cIdx = matchedCards.length - 1
+                    }
+                    (food as any)._recipeIdx = cIdx
+
+                    for (const c of matches) {
+                        if (!mealRecipes.find(r => r.filename === c.filename)) {
+                            mealRecipes.push(c)
                         }
                     }
+                } else if ((food.image_url || food.food_meta?.image_url) && (food.image_url || food.food_meta?.image_url).startsWith('data:')) {
+                    const aiImageUrl = food.image_url || food.food_meta.image_url
+                    // AI-generated image with no formal recipe card — create a virtual card
+                    const virtualFilename = `ai_${food.food_name.replace(/[^a-zA-Z0-9çğıöşüÇĞİÖŞÜ]/g, '_')}.jpg`
+                    let cIdx = matchedCards.findIndex(c => c.filename === virtualFilename)
+                    if (cIdx === -1) {
+                        matchedCards.push({
+                            id: `ai_${food.id || food.food_name}`,
+                            filename: virtualFilename,
+                            url: aiImageUrl,
+                            metadata: { ai_generated: true, food_name: food.food_name },
+                            created_at: new Date().toISOString()
+                        })
+                        cIdx = matchedCards.length - 1
+                        aiImageCards.add(virtualFilename)
+                    }
+                    (food as any)._hasRecipe = true
+                    (food as any)._recipeIdx = cIdx
+                    if (!mealRecipes.find(r => r.filename === virtualFilename)) {
+                        mealRecipes.push(matchedCards[cIdx])
+                    }
                 }
-                const mealKey = meal.id || `${day.day_name}_${meal.meal_name}`
-                recipesByMeal.set(mealKey, mealRecipes)
             }
+            const mealKey = meal.id || `${day.day_name}_${meal.meal_name}`
+            recipesByMeal.set(mealKey, mealRecipes)
         }
     }
 
@@ -427,8 +448,11 @@ export async function generateWeeklyPlanPdf(options: PdfOptions): Promise<void> 
                         thumbnailUsageCount
                     )
                     for (const thumbCard of thumbCandidates) {
-                        // Show only TOP 40% of the card where name and photo are
-                        const thumbData = await loadImageAsDataUrl(thumbCard.url, 260, 2, 'image/jpeg', 40)
+                        const isAiThumb = aiImageCards.has(thumbCard.filename)
+                        // AI images are plain photos — no crop needed; recipe cards show top 40%
+                        const thumbData = isAiThumb
+                            ? thumbCard.url
+                            : await loadImageAsDataUrl(thumbCard.url, 260, 2, 'image/jpeg', 40)
                         if (!thumbData) continue
 
                         const img = new Image()
@@ -441,7 +465,8 @@ export async function generateWeeklyPlanPdf(options: PdfOptions): Promise<void> 
                             const finalThumbW = 35 // Larger as requested
                             const finalThumbH = (img.height / img.width) * finalThumbW
                             const drawY = mealStartY + 4
-                            doc.addImage(thumbData, 'JPEG', pageW - margin - finalThumbW, drawY, finalThumbW, finalThumbH, undefined, 'FAST')
+                            const thumbFormat = thumbData.startsWith('data:image/png') ? 'PNG' : 'JPEG'
+                            doc.addImage(thumbData, thumbFormat, pageW - margin - finalThumbW, drawY, finalThumbW, finalThumbH, undefined, 'FAST')
 
                             // Store link metadata for later
                             const cardIdx = matchedCards.findIndex(c => c.filename === thumbCard.filename)
@@ -502,7 +527,7 @@ export async function generateWeeklyPlanPdf(options: PdfOptions): Promise<void> 
 
         for (let i = 0; i < matchedCards.length; i++) {
             const card = matchedCards[i]
-            const dataUrl = await loadImageAsDataUrl(card.url, 900)
+            const dataUrl = card.url.startsWith('data:') ? card.url : await loadImageAsDataUrl(card.url, 900)
             if (!dataUrl) continue
 
             ensureSpace(80) 
@@ -514,7 +539,10 @@ export async function generateWeeklyPlanPdf(options: PdfOptions): Promise<void> 
             doc.setFont('Roboto', 'bold')
             doc.setFontSize(10)
             doc.setTextColor(...COLORS.TEXT_DARK)
-            const cardLabel = card.filename.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ').toLocaleUpperCase('tr-TR')
+            const isAiCard = aiImageCards.has(card.filename)
+            const cardLabel = isAiCard
+                ? (card.metadata?.food_name || card.filename.replace(/^ai_/, '').replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ')).toLocaleUpperCase('tr-TR')
+                : card.filename.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ').toLocaleUpperCase('tr-TR')
             doc.text(cardLabel, margin, y)
             y += 5
 
@@ -534,7 +562,8 @@ export async function generateWeeklyPlanPdf(options: PdfOptions): Promise<void> 
                     const finalW = imgH > maxH ? (maxH / imgH) * imgW : imgW
                     const finalH = imgH > maxH ? maxH : imgH
 
-                    doc.addImage(dataUrl, 'JPEG', margin, y, finalW, finalH, undefined, 'FAST')
+                    const imgFormat = dataUrl.startsWith('data:image/png') ? 'PNG' : 'JPEG'
+                    doc.addImage(dataUrl, imgFormat, margin, y, finalW, finalH, undefined, 'FAST')
                     recipeDrawInfo.push({ cardIdx: i, p, x: margin, y, w: finalW, h: finalH })
                     y += finalH + 10
                 }

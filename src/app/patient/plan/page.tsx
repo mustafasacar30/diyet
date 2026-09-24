@@ -2419,6 +2419,7 @@ export default function PatientPlanPage() {
                         consumed_at: meal.consumed_at,
                         is_custom: meal.is_custom,
                         food_meta: meal.foods?.meta,
+                        image_url: meal.foods?.meta?.image_url || null,
                         min_quantity: meal.foods?.min_quantity,
                         max_quantity: meal.foods?.max_quantity,
                         step: meal.foods?.step,
