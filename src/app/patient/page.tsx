@@ -70,6 +70,8 @@ export default function PatientDashboardPage() {
     const [showEndWarning, setShowEndWarning] = useState(false)
     const [planStartDate, setPlanStartDate] = useState<string | null>(null)
     const [canUseAI, setCanUseAI] = useState(false)
+    const [macroTargetMode, setMacroTargetMode] = useState<string>('calculated')
+    const [customTargetSource, setCustomTargetSource] = useState<string | null>(null)
 
     useEffect(() => {
         // Wait for profile to be loaded before fetching
@@ -124,7 +126,7 @@ export default function PatientDashboardPage() {
             // Priority 1: user_id match (legacy patients like HACER with existing plans)
             // Priority 2: id match (new patients created via portal)
             const patientQueryStr = `
-                id, status, weight, height, birth_date, gender, activity_level, patient_goals, visibility_settings, preferences,
+                id, status, weight, height, birth_date, gender, activity_level, patient_goals, visibility_settings, preferences, macro_target_mode,
                 program_templates (
                     id, name, default_activity_level,
                     program_template_weeks (week_start, week_end, diet_type_id)
@@ -362,8 +364,26 @@ export default function PatientDashboardPage() {
                 }
             }
 
-            // 5. Calculate Targets with resolved values
-            const calcTargets = calculateTargets(effectiveWeight, effectiveActivity, resolvedDietType, patient.patient_goals)
+            // 5. Calculate Targets — use custom if set via energy page
+            const mode = (patient as any).macro_target_mode || 'calculated'
+            setMacroTargetMode(mode)
+            const prefs2 = (patient as any).preferences || {}
+            const customTargets = prefs2.custom_targets
+
+            let calcTargets
+            if (mode === 'custom' && customTargets && customTargets.calories) {
+                calcTargets = {
+                    calories: customTargets.calories,
+                    protein: customTargets.protein,
+                    carbs: customTargets.carb,
+                    fat: customTargets.fat,
+                    water: parseFloat((effectiveWeight * 0.033).toFixed(1))
+                }
+                setCustomTargetSource(customTargets.source || null)
+            } else {
+                calcTargets = calculateTargets(effectiveWeight, effectiveActivity, resolvedDietType, patient.patient_goals)
+                setCustomTargetSource(null)
+            }
 
             setStats({
                 ...calcTargets,
@@ -407,9 +427,11 @@ export default function PatientDashboardPage() {
             setWeekWeight(newWeight)
             setActivityLevel(newActivity)
 
-            // Recalculate stats
-            const newStats = calculateTargets(newWeight, newActivity, dietType, patientGoals)
-            setStats({ ...newStats, mealCount: 0 })
+            // Recalculate stats — only if not using custom targets
+            if (macroTargetMode !== 'custom') {
+                const newStats = calculateTargets(newWeight, newActivity, dietType, patientGoals)
+                setStats({ ...newStats, mealCount: 0 })
+            }
 
             setIsEditing(false)
         } catch (error) {
@@ -522,6 +544,11 @@ export default function PatientDashboardPage() {
                 <div className="flex items-center gap-1.5 mb-2">
                     <Target className="h-3 w-3 text-emerald-500" />
                     <span className="text-[11px] font-bold text-gray-800">Günlük Hedeflerin</span>
+                    {macroTargetMode === 'custom' && customTargetSource && (
+                        <span className="ml-auto text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700">
+                            {{ coefficient: 'Katsayı', mifflin: 'Mifflin', harris: 'Harris-B', keto_klinik: 'Keto' }[customTargetSource] || customTargetSource}
+                        </span>
+                    )}
                 </div>
                 <div className="flex items-center gap-3">
                     {/* Calorie Ring */}
@@ -696,6 +723,22 @@ export default function PatientDashboardPage() {
                     </div>
                 </div>
             </div>
+
+            {/* Enerji Hesabım Kartı */}
+            <Link href="/patient/energy" className="block">
+                <div className="rounded-xl bg-violet-50 border border-violet-200 shadow-sm p-3 flex items-center gap-3 hover:bg-violet-100/60 transition-colors">
+                    <div className="h-8 w-8 bg-gradient-to-br from-amber-500 to-orange-500 rounded-lg flex items-center justify-center shrink-0">
+                        <Flame className="h-4 w-4 text-white" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                        <h3 className="text-[12px] font-bold text-gray-900">Enerji Hesabım</h3>
+                        <p className="text-[10px] text-gray-500 leading-snug">
+                            BMR, kalori hedefi ve makro dağılımını gör
+                        </p>
+                    </div>
+                    <ArrowRight className="h-4 w-4 text-violet-400 shrink-0" />
+                </div>
+            </Link>
 
             {/* Yemek Tercihlerim Kartı */}
             <Link href="/patient/preferences" className="block">

@@ -12,7 +12,8 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { MultiSelectCreatable, Option } from "@/components/ui/multi-select-creatable"
-import { Loader2, Save, User, Activity, AlertCircle, Info, Leaf, Star, ChevronRight } from "lucide-react"
+import { Loader2, Save, User, Activity, AlertCircle, Info, Leaf, Star, ChevronRight, Zap } from "lucide-react"
+import Link from "next/link"
 
 export default function PatientSettingsPage() {
     const { user, profile } = useAuth()
@@ -426,6 +427,20 @@ export default function PatientSettingsPage() {
                     </div>
                 </CardContent>
             </Card>
+
+            {/* Enerji Hesabım Link */}
+            <Link href="/patient/energy" className="block">
+                <div className="rounded-xl bg-gradient-to-r from-violet-50 to-amber-50 border border-violet-200 p-3 flex items-center gap-3 hover:shadow-md transition-all">
+                    <div className="h-9 w-9 bg-gradient-to-br from-amber-500 to-orange-500 rounded-lg flex items-center justify-center shrink-0 shadow-sm">
+                        <Zap className="h-4 w-4 text-white" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                        <h3 className="text-sm font-bold text-gray-900">Enerji Hesabım</h3>
+                        <p className="text-xs text-gray-500">BMR, TDEE ve kalori hedefi hesapla</p>
+                    </div>
+                    <ChevronRight className="h-4 w-4 text-violet-400 shrink-0" />
+                </div>
+            </Link>
 
             <Card>
                 <CardHeader>

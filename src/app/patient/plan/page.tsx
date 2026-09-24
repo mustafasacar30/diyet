@@ -677,8 +677,12 @@ function WeeklyPerformanceReport({ days, patientInfo, activeWeek, activeDietType
                     return fSum + val
                 }, 0)
             }, 0)
+        } else if (patientInfo?.macro_target_mode === 'custom' && (patientInfo as any).preferences?.custom_targets?.calories) {
+            const ct = (patientInfo as any).preferences.custom_targets
+            target = metric === 'calories' ? ct.calories :
+                metric === 'protein' ? ct.protein :
+                    metric === 'carbs' ? ct.carb : ct.fat
         } else if (patientInfo?.weight) {
-            // Calculated Mode: Use Formula with Week Logs if available
             const effectiveWeight = activeWeek?.weight_log || patientInfo.weight
             const effectiveActivity = activeWeek?.activity_level_log || activeWeek?.activity_level || patientInfo.activity_level || 3
 
@@ -3359,14 +3363,20 @@ export default function PatientPlanPage() {
             const currentWeight = (activeWeek?.weight_log !== undefined && activeWeek.weight_log !== -1 ? activeWeek.weight_log as number : null) || (patientInfo as any)?.weight_log || (patientInfo as any)?.weight || 70
             const activityLevel = (activeWeek?.activity_level_log !== undefined && activeWeek.activity_level_log !== null ? activeWeek.activity_level_log as number : null) || (patientInfo as any)?.activity_level || 3
 
-            // Calculate actual targets using the formula
-            const calculated = calculateDailyTargets(currentWeight, activityLevel, dietTypeFactors || undefined, patientInfo?.patient_goals)
-            const targetMacros = calculated ? {
-                calories: calculated.calories,
-                protein: calculated.protein,
-                carbs: calculated.carb,
-                fat: calculated.fat
-            } : { calories: 1800, protein: 90, carbs: 180, fat: 60 }
+            // Calculate actual targets — use custom if set via energy page
+            const customT = patientInfo?.macro_target_mode === 'custom' && (patientInfo as any).preferences?.custom_targets
+            let targetMacros: { calories: number; protein: number; carbs: number; fat: number }
+            if (customT && customT.calories) {
+                targetMacros = { calories: customT.calories, protein: customT.protein, carbs: customT.carb, fat: customT.fat }
+            } else {
+                const calculated = calculateDailyTargets(currentWeight, activityLevel, dietTypeFactors || undefined, patientInfo?.patient_goals)
+                targetMacros = calculated ? {
+                    calories: calculated.calories,
+                    protein: calculated.protein,
+                    carbs: calculated.carb,
+                    fat: calculated.fat
+                } : { calories: 1800, protein: 90, carbs: 180, fat: 60 }
+            }
 
             // 5. Get banned tags from program template restrictions
             const programBannedTags = patientProgram?.program_template_restrictions
