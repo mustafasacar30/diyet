@@ -387,7 +387,7 @@ function CardMakerInner() {
         }
     }
 
-    function handleFoodSelect(food: FoodItem) {
+    async function handleFoodSelect(food: FoodItem) {
         setSelectedFood(food)
 
         if (iframeRef.current?.contentWindow) {
@@ -400,7 +400,24 @@ function CardMakerInner() {
             const portionUnit = food.unit || food.portion_unit || 'porsiyon'
             const ingredients = food.ingredients || food.meta?.ingredients || ""
             const recipeText = food.recipe_text || food.meta?.recipe_text || ""
-            const heroImage = food.image_url || food.meta?.image_url || food.meta?.ai_analysis?.recipe?.image_url || null
+            let heroImage = food.meta?.image_url || food.meta?.ai_analysis?.recipe?.image_url || null
+
+            // If no image in foods meta, try fetching from food_proposals
+            if (!heroImage) {
+                try {
+                    const proposalId = food.meta?.original_proposal_id || food.id
+                    const { data: proposal } = await supabase
+                        .from('food_proposals')
+                        .select('image_url')
+                        .eq('id', proposalId)
+                        .maybeSingle()
+                    if (proposal?.image_url) {
+                        heroImage = proposal.image_url
+                    }
+                } catch (e) {
+                    // non-critical
+                }
+            }
 
             iframeRef.current.contentWindow.postMessage({
                 type: 'LOAD_RECIPE',
