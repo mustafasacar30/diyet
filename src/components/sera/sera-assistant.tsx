@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
@@ -94,6 +94,9 @@ interface SeraAssistantProps {
   scope?: 'patient' | 'program' | 'team' | 'global'
   /** Compact mode: hides the outer card wrapper (for embedding in a tab/sheet). */
   compact?: boolean
+  onRedirectToChat?: (message: string) => void
+  initialPrompt?: string
+  onInitialPromptUsed?: () => void
 }
 
 // ─── Hasta-Dostu Örnek Promptlar (gerçek kural örnekleri) ───
@@ -203,6 +206,9 @@ export function SeraAssistant({
   requireApproval,
   scope = 'patient',
   compact = false,
+  onRedirectToChat,
+  initialPrompt,
+  onInitialPromptUsed,
 }: SeraAssistantProps) {
   const effectiveScope = scope
   const [prompt, setPrompt] = useState('')
@@ -230,6 +236,18 @@ export function SeraAssistant({
   // Faz 6 States
   const [simulationReport, setSimulationReport] = useState<string | null>(null)
   const [isSimulating, setIsSimulating] = useState(false)
+
+  // ─── initialPrompt (sohbetten yönlendirme) ───
+  const initialPromptUsedRef = useRef<string | null>(null)
+  const shouldAutoGenerate = useRef(false)
+  useEffect(() => {
+    if (initialPrompt && initialPromptUsedRef.current !== initialPrompt) {
+      initialPromptUsedRef.current = initialPrompt
+      setPrompt(initialPrompt)
+      shouldAutoGenerate.current = true
+      onInitialPromptUsed?.()
+    }
+  }, [initialPrompt])
 
   // ─── Sera'ya Mesaj Gönder ───
   const [clarificationInput, setClarificationInput] = useState('')
@@ -394,7 +412,29 @@ export function SeraAssistant({
   // ─── Sera'ya Mesaj Gönder ───
   const handleGenerate = useCallback(async (additionalPrompt?: string) => {
     const basePrompt = prompt.trim()
-    const activePrompt = additionalPrompt 
+
+    if (!additionalPrompt && onRedirectToChat) {
+      const q = basePrompt.toLowerCase()
+      const isRule = [
+        /olsun\b/, /olmasın\b/, /eklenmesi/, /çıkar/, /kaldır/, /koyma/,
+        /istemi?yorum/, /istemem/,
+        /sevmi?yorum/, /sevmem/, /sevmiyorum/,
+        /yemem/, /yiyemem/, /yemiyorum/, /yiyemiyorum/,
+        /alerjim/, /haftada\s*(\d|bir|iki|üç|dört|beş)/, /günde\s*(\d|bir|iki|üç)/,
+        /sık\s*(olsun|gelsin)/, /az\s*(olsun|gelsin)/, /tercih\s*ederim/,
+        /verme\b/, /vermeyiniz/, /yapma\b/, /koymayın/,
+        /azalt/, /arttır/, /daha\s*(az|çok|fazla)\s*(olsun|gelsin)/,
+        /hiç\s*(olmasın|verme|koyma|istemem|istemiyorum)/,
+      ].some(p => p.test(q))
+
+      if (!isRule) {
+        onRedirectToChat(basePrompt)
+        setPrompt('')
+        return
+      }
+    }
+
+    const activePrompt = additionalPrompt
       ? `Orijinal İsteğim: "${basePrompt}"\n\nSera'nın Notu/Sorusu (Varsa): "${aiResult?.clarification_message || 'Yok'}"\n\nBenim Ek Düzeltmem/Revizyonum: "${additionalPrompt.trim()}"\n\nGörev: Orijinal isteğimle bu son düzeltmemi/cevabımı HARMANLAYARAK benim "Nihai İsteğimi" anla. Ve bu nihai isteğe göre TÜM KURALLARI (iptal edilmeyen geçerli eski isteklerimi de dahil ederek) EKSİKSİZ BİR TAM LİSTE halinde yeniden oluştur. Aksi halde eski kurallarım ekrandan silinir!`
       : basePrompt
 
@@ -425,6 +465,11 @@ export function SeraAssistant({
       const data = await response.json()
 
       if (!data.success) {
+        if (onRedirectToChat && response.status === 422) {
+          onRedirectToChat(basePrompt)
+          setPrompt('')
+          return
+        }
         setError(data.error || 'Bir sorun oluştu, lütfen tekrar deneyin.')
         return
       }
@@ -443,6 +488,14 @@ export function SeraAssistant({
       setIsLoading(false)
     }
   }, [prompt, patientId, programTemplateId, teamOwnerId, aiResult])
+
+  // Auto-generate when redirected from chat
+  useEffect(() => {
+    if (shouldAutoGenerate.current && prompt && !isLoading) {
+      shouldAutoGenerate.current = false
+      handleGenerate()
+    }
+  })
 
   // ─── Suggestion'ı Pakete Ekle ───
   const handleAppendSuggestion = async (suggestion: string) => {
@@ -869,32 +922,33 @@ export function SeraAssistant({
               </div>
             )}
 
-            {/* Mesaj Kutusu */}
+            {/* Mesaj Kutusu — her zaman göster */}
+            <div className="flex gap-2">
+              <Textarea
+                value={prompt}
+                onChange={(e) => { setPrompt(e.target.value); if (successMessage) setSuccessMessage(null) }}
+                onKeyDown={handleKeyDown}
+                placeholder="Sen de isteklerini belirt... (örn: enginar sevmem)"
+                className="min-h-[44px] max-h-[100px] text-sm resize-none bg-white border-emerald-200 focus-visible:ring-emerald-400 placeholder:text-emerald-400/60"
+                rows={1}
+                disabled={isLoading}
+              />
+              <Button
+                onClick={() => handleGenerate()}
+                disabled={isLoading || prompt.trim().length < 3}
+                size="sm"
+                className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 shrink-0 self-end"
+              >
+                {isLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
+              </Button>
+            </div>
+
             {!successMessage && (
               <>
-                <div className="flex gap-2">
-                  <Textarea
-                    value={prompt}
-                    onChange={(e) => setPrompt(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    placeholder="Sen de isteklerini belirt... (örn: enginar sevmem)"
-                    className="min-h-[44px] max-h-[100px] text-sm resize-none bg-white border-emerald-200 focus-visible:ring-emerald-400 placeholder:text-emerald-400/60"
-                    rows={1}
-                    disabled={isLoading}
-                  />
-                  <Button
-                    onClick={() => handleGenerate()}
-                    disabled={isLoading || prompt.trim().length < 3}
-                    size="sm"
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 shrink-0 self-end"
-                  >
-                    {isLoading ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Send className="h-4 w-4" />
-                    )}
-                  </Button>
-                </div>
 
                 {/* Örnek İpuçları */}
                 {!aiResult && !error && !isLoading && (
@@ -980,30 +1034,64 @@ export function SeraAssistant({
                       /* ── Normal Kural Sonucu ── */
                       <>
                       {/* Sera'nın Yanıtı */}
-                      <div className="p-3 bg-white border border-emerald-200 rounded-lg space-y-2">
+                      <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
                         <p className="text-sm text-gray-600 leading-relaxed">
                           {aiResult.explanation}
                         </p>
                       </div>
 
-                      {/* Hazırlanan Tercihler (Paket) */}
-                      <div className="space-y-2 pt-3 mt-3">
-                        <p className="text-sm font-medium text-emerald-800 mb-2 flex items-center gap-1.5">
-                          <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                          Onayınıza Sunulan Tercihler:
-                        </p>
-                        {[aiResult.rule, ...(aiResult.additional_rules || [])].map((ruleObj, idx) => (
-                           <div key={idx} className="bg-emerald-50/50 px-3 py-2 rounded-lg border border-emerald-100 shadow-sm">
-                             <div className="flex items-center justify-between gap-2 mb-0.5">
-                               <p className="text-[13px] font-medium text-gray-800 leading-snug">{ruleObj.name}</p>
-                               <span className="flex items-center gap-0.5 text-[9px] font-semibold text-emerald-600 bg-emerald-100/60 px-1.5 py-0.5 rounded shrink-0">
-                                 <CheckCircle2 className="h-2.5 w-2.5" />
-                                 Dahil
-                               </span>
-                             </div>
-                             <p className="text-[11px] text-gray-500 leading-relaxed">{ruleObj.description}</p>
-                           </div>
-                        ))}
+                      {/* Hazırlanan Tercihler — belirgin kart */}
+                      <div className="mt-3 rounded-xl border-2 border-emerald-400 bg-white overflow-hidden shadow-sm">
+                        <div className="px-3 py-2 bg-emerald-600 flex items-center gap-1.5">
+                          <CheckCircle2 className="h-3.5 w-3.5 text-white" />
+                          <p className="text-xs font-semibold text-white">Onayınıza Sunulan Tercihler</p>
+                        </div>
+                        <div className="p-3 space-y-2">
+                          {[aiResult.rule, ...(aiResult.additional_rules || [])].map((ruleObj, idx) => (
+                            <div key={idx} className="px-3 py-2.5 rounded-lg bg-gray-50 border border-gray-200">
+                              <div className="flex items-center justify-between gap-2 mb-0.5">
+                                <p className="text-[13px] font-semibold text-gray-800 leading-snug">{ruleObj.name}</p>
+                                <span className="text-[9px] font-semibold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded-full shrink-0">
+                                  Dahil
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-gray-500 leading-relaxed">{ruleObj.description}</p>
+                            </div>
+                          ))}
+
+                          {/* Onay Butonları */}
+                          <div className="flex items-center gap-2 pt-1">
+                            <Button
+                              onClick={handleSaveDirectly}
+                              disabled={isLoading}
+                              size="sm"
+                              className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white shadow-md animate-[pulse_2s_ease-in-out_infinite] hover:animate-none h-10 text-sm font-semibold"
+                            >
+                              {isLoading ? (
+                                <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                              ) : (
+                                <CheckCircle2 className="h-4 w-4 mr-1.5" />
+                              )}
+                              {requireApproval
+                                ? (aiResult.additional_rules && aiResult.additional_rules.length > 0 ? 'Tüm Tercihleri Kaydet' : 'Tercihi Kaydet')
+                                : (aiResult.additional_rules && aiResult.additional_rules.length > 0 ? 'Tüm Tercihleri Uygula' : 'Tercihi Uygula')}
+                            </Button>
+                            <Button
+                              onClick={() => { setAiResult(null); setPrompt('') }}
+                              disabled={isLoading}
+                              variant="ghost"
+                              size="sm"
+                              className="text-gray-500 hover:text-gray-700 hover:bg-gray-100 h-10"
+                            >
+                              Vazgeç
+                            </Button>
+                          </div>
+                          {requireApproval && (
+                            <p className="text-[11px] text-amber-600 text-center">
+                              Tercihiniz diyetisyeninizin onayına sunulacaktır.
+                            </p>
+                          )}
+                        </div>
                       </div>
 
                       {/* Çakışma Uyarıları */}
@@ -1063,12 +1151,6 @@ export function SeraAssistant({
                         </div>
                       )}
 
-                      {/* Motor bilgisi */}
-                      {aiResult.engine_rule_count != null && aiResult.engine_rule_count > 0 && (
-                        <div className="text-[10px] text-slate-400 pt-2 text-right">
-                          Motor bu hasta için {aiResult.engine_rule_count} aktif kural kullanıyor
-                        </div>
-                      )}
 
                       {/* Bütçe Etki Uyarısı (Karar Destek) */}
                       {aiResult.budget_impact && aiResult.budget_impact.overflowPercent > 15 && (
@@ -1183,26 +1265,8 @@ export function SeraAssistant({
                           </div>
                         )}
 
-                        {/* Simülasyon Raporu (Faz 6) */}
-                        {isSimulating ? (
-                          <div className="p-3 bg-blue-50/50 border border-blue-100 rounded-lg space-y-2 mt-3 flex flex-col items-center justify-center py-4 shadow-sm">
-                            <Loader2 className="h-5 w-5 text-blue-500 animate-spin mb-2" />
-                            <p className="text-xs font-medium text-blue-800">Sistem Olası Makro ve Lezzet Etkilerini Hesaplıyor...</p>
-                          </div>
-                        ) : simulationReport ? (
-                          <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg space-y-2 mt-3 shadow-sm">
-                            <p className="text-sm font-semibold text-blue-900 flex items-center gap-1.5">
-                              <Activity className="h-4 w-4 text-blue-600" />
-                              Kuralınızın Olası Etkileri
-                            </p>
-                            <div className="text-xs text-blue-800 leading-relaxed whitespace-pre-wrap">
-                              {simulationReport}
-                            </div>
-                          </div>
-                        ) : null}
-
                         {/* Aksiyon Butonları & Düzeltme Alanı */}
-                        <div className="pt-2 border-t border-emerald-100 space-y-3">
+                        <div className="pt-2 space-y-3">
                           <div className="flex gap-2">
                             <Textarea
                               value={clarificationInput}
@@ -1213,8 +1277,8 @@ export function SeraAssistant({
                                     handleGenerate(clarificationInput)
                                   }
                               }}
-                              placeholder="Ekleme veya düzeltme yapmak isterseniz yazın... (Örn: Yoğurdu da ekleyelim)"
-                              className="min-h-[44px] max-h-[100px] text-sm resize-none bg-emerald-50/30 border-emerald-200 focus-visible:ring-emerald-400"
+                              placeholder="Düzeltme veya ekleme yazın... (Örn: Yoğurdu da ekle)"
+                              className="min-h-[48px] max-h-[100px] text-sm resize-none bg-white border-2 border-emerald-300 focus-visible:ring-emerald-400 focus-visible:border-emerald-500 shadow-sm"
                               rows={1}
                               disabled={isLoading}
                             />
@@ -1229,37 +1293,6 @@ export function SeraAssistant({
                             </Button>
                           </div>
 
-                          <div className="flex items-center gap-2 pt-1">
-                            <Button
-                              onClick={handleSaveDirectly}
-                              disabled={isLoading}
-                              size="sm"
-                              className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                            >
-                              {isLoading ? (
-                                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                              ) : (
-                                <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" />
-                              )}
-                              {requireApproval 
-                                ? (aiResult.additional_rules && aiResult.additional_rules.length > 0 ? 'Tüm Tercihleri Kaydet' : 'Bu Tercihi Kaydet') 
-                                : (aiResult.additional_rules && aiResult.additional_rules.length > 0 ? 'Tüm Tercihleri Uygula' : 'Bu Tercihi Uygula')}
-                            </Button>
-                            <Button
-                              onClick={() => { setAiResult(null); setPrompt('') }}
-                              disabled={isLoading}
-                              variant="outline"
-                              size="sm"
-                              className="border-emerald-200 text-emerald-700 hover:bg-emerald-50"
-                            >
-                              Vazgeç (İptal)
-                            </Button>
-                          </div>
-                          {requireApproval && (
-                            <p className="text-xs text-amber-600 mt-1.5">
-                              🌿 Tercihiniz diyetisyeninizin onayına sunulacaktır.
-                            </p>
-                          )}
                         </div>
                       </>
                     )}
@@ -1271,19 +1304,21 @@ export function SeraAssistant({
         )}
       </div>
 
-      {/* ── Beslenme Tercihlerim (Faz 5) — compact modda gizle, diyetisyen PatientRulesDialog kullanır ── */}
-      {!compact && patientRules.length > 0 && (
-        <div className="mt-6 border border-emerald-100 bg-white rounded-xl overflow-hidden shadow-sm">
+      {/* ── Beslenme Tercihlerim ── */}
+      {patientRules.length > 0 && (
+        <div className={`border border-emerald-100 bg-white rounded-xl overflow-hidden shadow-sm ${compact ? "mt-3" : "mt-6"}`}>
           <div className="bg-emerald-50/50 px-4 py-3 border-b border-emerald-100 flex flex-col gap-3">
-            <div className="flex items-center justify-between gap-2">
-              <Button size="sm" variant="outline" className="flex-1 h-9 text-xs bg-emerald-100 text-emerald-800 border-emerald-300 hover:bg-emerald-200" onClick={handleSummarize}>
-                Programımı Özetle
-              </Button>
-              <Button size="sm" variant="outline" className="flex-1 h-9 text-xs bg-white text-emerald-700 border-emerald-200 hover:bg-emerald-50" onClick={() => setIsWizardOpen(true)}>
-                Gözden Geçir
-              </Button>
-            </div>
-            <div 
+            {!compact && (
+              <div className="flex items-center justify-between gap-2">
+                <Button size="sm" variant="outline" className="flex-1 h-9 text-xs bg-emerald-100 text-emerald-800 border-emerald-300 hover:bg-emerald-200" onClick={handleSummarize}>
+                  Programımı Özetle
+                </Button>
+                <Button size="sm" variant="outline" className="flex-1 h-9 text-xs bg-white text-emerald-700 border-emerald-200 hover:bg-emerald-50" onClick={() => setIsWizardOpen(true)}>
+                  Gözden Geçir
+                </Button>
+              </div>
+            )}
+            <div
               className="flex items-center justify-between cursor-pointer hover:bg-emerald-100/50 transition-colors py-1 -mx-2 px-2 rounded-lg"
               onClick={() => setIsRulesExpanded(!isRulesExpanded)}
             >

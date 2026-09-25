@@ -9,6 +9,7 @@ import Link from "next/link"
 import { cn } from "@/lib/utils"
 import { supabase } from "@/lib/supabase"
 import { UnreadListener } from "@/components/layout/unread-listener"
+import { SeraFloatingChat } from "@/components/sera/sera-floating-chat"
 
 export default function PatientLayout({
     children,
@@ -23,6 +24,7 @@ export default function PatientLayout({
     const [patientDisplayInfo, setPatientDisplayInfo] = useState<{
         fullName: string
         programName: string | null
+        patientId: string | null
     } | null>(null)
 
     useEffect(() => {
@@ -86,7 +88,8 @@ export default function PatientLayout({
 
             setPatientDisplayInfo({
                 fullName: patientRecord.full_name || 'Hasta',
-                programName: programName
+                programName: programName,
+                patientId: patientRecord.id
             })
         }
 
@@ -282,6 +285,14 @@ export default function PatientLayout({
             )}>
                 {children}
             </main>
+
+            {/* Floating Sera Chat - shown on dashboard and plan pages, not on Sera's own page */}
+            {patientDisplayInfo?.patientId && pathname !== '/patient/assistant' && pathname !== '/patient/messages' && pathname !== '/patient/settings' && (
+                <SeraFloatingChat
+                    patientId={patientDisplayInfo.patientId}
+                    patientName={patientDisplayInfo.fullName}
+                />
+            )}
 
             {/* Mobile Bottom Navigation */}
             <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-lg border-t border-gray-200 z-50 px-2 pb-[env(safe-area-inset-bottom)] shadow-[0_-4px_20px_-4px_rgba(0,0,0,0.15)]">

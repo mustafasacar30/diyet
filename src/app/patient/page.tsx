@@ -674,39 +674,14 @@ export default function PatientDashboardPage() {
                             </svg>
                         </div>
                         <div className="flex-1 min-w-0">
-                            <h3 className="text-[12px] font-bold text-gray-900">Sera — Beslenme Asistanın</h3>
+                            <h3 className="text-[12px] font-bold text-gray-900">Sera — Lipödem Asistanın</h3>
                             <p className="text-[10px] text-gray-500 leading-snug">
                                 İsteklerini belirt, listelerin sana özel hazırlansın.
                             </p>
                         </div>
                     </div>
 
-                    {/* Sera'nın Önerileri — her açılışta değişir */}
-                    <div className="mt-2 flex flex-wrap gap-1">
-                        {(typeof window !== 'undefined' ? (() => {
-                            const tips = [
-                                'Yumurtalı tariflere daha çok yer ver',
-                                'Akşam öğünlerinde ekmek daha fazla olsun',
-                                'Enginar sevmem, listelere ekleme',
-                                'Süt ürünlerini azalt',
-                                'Kızartma olmasın',
-                                'Balık haftada 2 kez olsun',
-                                'Sebze ağırlıklı akşamlar istiyorum',
-                                'Kuruyemiş ara öğünlerde olsun',
-                                'Çeşitlilik çok olsun tekrar az olsun',
-                                'Hafif akşam yemeği tercih ederim',
-                                'Pratik hazırlanabilir yemekler olsun',
-                                'Baklagil protein kaynağı olarak ekle',
-                            ]
-                            return tips.sort(() => Math.random() - 0.5).slice(0, 3)
-                        })() : ['Yumurtalı tariflere yer ver', 'Kızartma olmasın', 'Balık haftada 2 kez']).map((tip, i) => (
-                            <span key={i} className="text-[9px] px-1.5 py-0.5 rounded-full bg-white text-emerald-700 border border-emerald-200">
-                                &ldquo;{tip}&rdquo;
-                            </span>
-                        ))}
-                    </div>
-
-                    <div className="flex items-center gap-2 mt-2">
+                    <div className="flex items-center gap-2 mt-2.5">
                         <Link href="/patient/assistant" className="flex-1">
                             <div className="bg-emerald-600 text-white text-[10px] font-bold py-1.5 px-3 rounded-lg text-center shadow-sm hover:bg-emerald-700 transition-all">
                                 Sera ile Konuş
