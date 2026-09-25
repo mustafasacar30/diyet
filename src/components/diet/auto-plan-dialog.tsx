@@ -1590,7 +1590,7 @@ export function AutoPlanDialog({ open, onOpenChange, plan, onConfirm, loading, m
                     </Tabs>
 
                     {/* Footer - Fixed */}
-                    <DialogFooter className="px-4 pt-3 pb-8 sm:pb-3 border-t bg-white shrink-0 flex items-center justify-between">
+                    <DialogFooter className="px-4 pt-3 pb-[max(2rem,env(safe-area-inset-bottom))] sm:pb-3 border-t bg-white shrink-0 flex items-center justify-between">
                         <div className="flex items-center gap-2">
                             <button
                                 onClick={() => setSettingsOpen(true)}

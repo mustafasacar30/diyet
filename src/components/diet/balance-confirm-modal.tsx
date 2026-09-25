@@ -359,7 +359,7 @@ export function BalanceConfirmModal({
                     </div>
                 </div>
 
-                <DialogFooter className="p-4 bg-white border-t border-slate-100 shrink-0 flex flex-row items-center gap-3 w-full">
+                <DialogFooter className="p-4 pb-[max(1rem,env(safe-area-inset-bottom))] bg-white border-t border-slate-100 shrink-0 flex flex-row items-center gap-3 w-full">
                     <Button variant="outline" className="flex-1 text-slate-600 border-slate-300 hover:bg-slate-100 hover:text-slate-900" onClick={onClose}>
                         İptal
                     </Button>

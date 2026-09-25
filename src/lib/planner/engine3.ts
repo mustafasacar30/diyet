@@ -8334,6 +8334,17 @@ export class Planner {
             }
         }
 
+        // Auto-balance after flavor tuning to keep macros within tolerance
+        if (changes.length > 0) {
+            try {
+                const { plan: rebalanced, changes: balanceChanges } = await this.balancePlan(newPlan, mode, targetDay)
+                if (balanceChanges.length > 0) {
+                    changes.push(...balanceChanges.map(c => `[auto-balance] ${c}`))
+                    return { plan: rebalanced, changes }
+                }
+            } catch {}
+        }
+
         return { plan: newPlan, changes }
     }
 }
