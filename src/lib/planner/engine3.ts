@@ -3753,6 +3753,10 @@ export class Planner {
                     }
 
                     // Extract role/category from target to facilitate selection
+                    if (!def.target) {
+                        this.log(context.dayIndex + 1, slotName, 'info', `Rule '${rule.name}' has no target defined, skipping`)
+                        break
+                    }
                     const targetType = def.target.type
                     const targetValue = def.target.value
                     let searchRole = 'sideDish' // Default fallback
