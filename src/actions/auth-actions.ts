@@ -175,3 +175,29 @@ export async function logPatientLogin(userId: string) {
         return { error: error.message || "Loglanamadı" }
     }
 }
+
+export async function confirmEmailIfApproved(email: string) {
+    if (!supabaseServiceKey) return { confirmed: false }
+    try {
+        const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
+            auth: { autoRefreshToken: false, persistSession: false }
+        })
+        const { data: userList } = await supabaseAdmin.auth.admin.listUsers()
+        const user = userList.users.find(u => u.email === email)
+        if (!user) return { confirmed: false }
+
+        const { data: patient } = await supabaseAdmin
+            .from('patients')
+            .select('status')
+            .or(`id.eq.${user.id},user_id.eq.${user.id}`)
+            .maybeSingle()
+
+        if (patient?.status === 'active') {
+            await supabaseAdmin.auth.admin.updateUserById(user.id, { email_confirm: true })
+            return { confirmed: true }
+        }
+        return { confirmed: false }
+    } catch {
+        return { confirmed: false }
+    }
+}

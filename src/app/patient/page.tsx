@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { ArrowRight, Calendar, Droplets, Flame, Utensils, Scale, Activity, Save, Pencil, X, FileText, Target, Info, Loader2 } from "lucide-react"
+import { ArrowRight, Calendar, Droplets, Flame, Utensils, Scale, Activity, Save, Pencil, X, FileText, Target, Info, Loader2, Leaf, ListChecks, Sparkles } from "lucide-react"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
 import {
@@ -18,6 +18,9 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select"
+import dynamic from "next/dynamic"
+
+const RuleReviewWizard = dynamic(() => import("@/components/sera/rule-review-wizard").then(m => ({ default: m.RuleReviewWizard })), { ssr: false })
 
 const ACTIVITY_LEVELS = [
     { value: 1, label: 'Sedanter', description: 'Masa başı iş, az hareket', multiplier: 0.8 },
@@ -72,6 +75,9 @@ export default function PatientDashboardPage() {
     const [canUseAI, setCanUseAI] = useState(false)
     const [macroTargetMode, setMacroTargetMode] = useState<string>('calculated')
     const [customTargetSource, setCustomTargetSource] = useState<string | null>(null)
+    const [wizardOpen, setWizardOpen] = useState(false)
+    const [patientRules, setPatientRules] = useState<any[]>([])
+    const [rulesLoading, setRulesLoading] = useState(false)
 
     useEffect(() => {
         // Wait for profile to be loaded before fetching
@@ -399,7 +405,54 @@ export default function PatientDashboardPage() {
         }
     }
 
-    // ADD IMPORT (this will be handled by a later tool request if needed, but I'll add it above)
+    async function fetchPatientRulesForWizard() {
+        if (!patientId) return
+        setRulesLoading(true)
+        try {
+            const { data: patientRow } = await supabase
+                .from('patients')
+                .select('program_template_id')
+                .eq('id', patientId)
+                .maybeSingle()
+
+            const programId = patientRow?.program_template_id
+
+            let query = supabase
+                .from('planning_rules')
+                .select('*')
+                .eq('is_active', true)
+                .order('sort_order', { ascending: true })
+
+            if (programId) {
+                query = query.or(`and(scope.eq.patient,patient_id.eq.${patientId}),and(scope.eq.program,program_template_id.eq.${programId})`)
+            } else {
+                query = query.eq('scope', 'patient').eq('patient_id', patientId)
+            }
+
+            const { data } = await query
+            if (data) setPatientRules(data)
+        } catch (e) {
+            console.error('Error fetching rules:', e)
+        } finally {
+            setRulesLoading(false)
+        }
+    }
+
+    const handleOpenWizard = async () => {
+        await fetchPatientRulesForWizard()
+        setWizardOpen(true)
+    }
+
+    const handleRuleSaved = async (ruleId: string, newDef: any) => {
+        await supabase.from('planning_rules').update({ definition: newDef }).eq('id', ruleId)
+        fetchPatientRulesForWizard()
+    }
+
+    const handleRuleDeleted = async (ruleId: string) => {
+        await supabase.from('planning_rules').delete().eq('id', ruleId)
+        fetchPatientRulesForWizard()
+    }
+
     async function handleSaveChanges() {
         if (!patientId) return
 
@@ -658,65 +711,64 @@ export default function PatientDashboardPage() {
                 )}
             </div>
 
-            {/* Sera Tanıtım Kartı — yeşil tema */}
-            <div className="rounded-xl bg-emerald-50 border border-emerald-200 shadow-sm">
-                <div className="p-3">
-                    <div className="flex items-center gap-2.5">
-                        <div className="h-8 w-8 bg-emerald-500 rounded-lg flex items-center justify-center shrink-0">
-                            <svg viewBox="0 0 24 24" className="h-5 w-5 text-white" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                                <circle cx="12" cy="8" r="4" />
-                                <path d="M5.5 7.5a6.5 6.5 0 0 1 13 0" />
-                                <path d="M5 7.5v2a1 1 0 0 0 1 1h.5" />
-                                <path d="M19 7.5v2a1 1 0 0 1-1 1h-.5" />
-                                <path d="M12 12v2" />
-                                <path d="M9 17a6 6 0 0 0 6 0" />
-                                <path d="M8 20c0-2.2 1.8-4 4-4s4 1.8 4 4" />
-                            </svg>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                            <h3 className="text-[12px] font-bold text-gray-900">Sera — Lipödem Asistanın</h3>
-                            <p className="text-[10px] text-gray-500 leading-snug">
-                                İsteklerini belirt, listelerin sana özel hazırlansın.
-                            </p>
-                        </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 mt-2.5">
-                        <Link href="/patient/assistant" className="flex-1">
-                            <div className="bg-emerald-600 text-white text-[10px] font-bold py-1.5 px-3 rounded-lg text-center shadow-sm hover:bg-emerald-700 transition-all">
-                                Sera ile Konuş
-                            </div>
-                        </Link>
-                        <Link href="/patient/preferences" className="shrink-0">
-                            <div className="bg-white text-emerald-600 text-[10px] font-semibold py-1.5 px-2.5 rounded-lg border border-emerald-200 hover:bg-emerald-50 transition-all">
-                                Tercihlerimi Ayarla
-                            </div>
-                        </Link>
-                    </div>
-                </div>
-            </div>
-
-            {/* Enerji + Tercih — 2 column grid */}
+            {/* Sera — 2x2 grid */}
             <div className="grid grid-cols-2 gap-2">
-                <Link href="/patient/energy" className="block">
-                    <div className="rounded-xl bg-violet-50 border border-violet-200 shadow-sm p-2.5 hover:bg-violet-100/60 transition-colors text-center">
-                        <div className="h-7 w-7 bg-gradient-to-br from-amber-500 to-orange-500 rounded-lg flex items-center justify-center mx-auto mb-1">
-                            <Flame className="h-3.5 w-3.5 text-white" />
+                <Link href="/patient/assistant" className="block">
+                    <div className="rounded-xl bg-emerald-50 border border-emerald-200 shadow-sm p-2.5 hover:bg-emerald-100/60 transition-colors flex items-center gap-2">
+                        <div className="h-8 w-8 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-lg flex items-center justify-center shrink-0 shadow-sm">
+                            <Leaf className="h-4 w-4 text-white" />
                         </div>
-                        <h3 className="text-[11px] font-bold text-gray-900">Enerji Hesabım</h3>
-                        <p className="text-[9px] text-gray-400 mt-0.5">Kalori & makro hedefi</p>
+                        <div className="min-w-0">
+                            <h3 className="text-[11px] font-bold text-gray-900">Sera ile Konuş</h3>
+                            <p className="text-[9px] text-gray-400">Yapay zeka asistanın</p>
+                        </div>
+                    </div>
+                </Link>
+                <button onClick={handleOpenWizard} className="block w-full text-left">
+                    <div className="rounded-xl bg-sky-50 border border-sky-200 shadow-sm p-2.5 hover:bg-sky-100/60 transition-colors flex items-center gap-2">
+                        <div className="h-8 w-8 bg-gradient-to-br from-sky-500 to-blue-600 rounded-lg flex items-center justify-center shrink-0 shadow-sm">
+                            <ListChecks className="h-4 w-4 text-white" />
+                        </div>
+                        <div className="min-w-0">
+                            <h3 className="text-[11px] font-bold text-gray-900">Yemek Kurallarım</h3>
+                            <p className="text-[9px] text-gray-400">Gözden geçir & düzenle</p>
+                        </div>
+                    </div>
+                </button>
+                <Link href="/patient/energy" className="block">
+                    <div className="rounded-xl bg-violet-50 border border-violet-200 shadow-sm p-2.5 hover:bg-violet-100/60 transition-colors flex items-center gap-2">
+                        <div className="h-8 w-8 bg-gradient-to-br from-amber-500 to-orange-500 rounded-lg flex items-center justify-center shrink-0 shadow-sm">
+                            <Flame className="h-4 w-4 text-white" />
+                        </div>
+                        <div className="min-w-0">
+                            <h3 className="text-[11px] font-bold text-gray-900">Enerji Hesabım</h3>
+                            <p className="text-[9px] text-gray-400">Kalori & makro hedefi</p>
+                        </div>
                     </div>
                 </Link>
                 <Link href="/patient/preferences" className="block">
-                    <div className="rounded-xl bg-teal-50 border border-teal-200 shadow-sm p-2.5 hover:bg-teal-100/60 transition-colors text-center">
-                        <div className="h-7 w-7 bg-teal-500 rounded-lg flex items-center justify-center mx-auto mb-1">
-                            <span className="text-xs">⭐</span>
+                    <div className="rounded-xl bg-teal-50 border border-teal-200 shadow-sm p-2.5 hover:bg-teal-100/60 transition-colors flex items-center gap-2">
+                        <div className="h-8 w-8 bg-gradient-to-br from-teal-500 to-emerald-600 rounded-lg flex items-center justify-center shrink-0 shadow-sm">
+                            <Sparkles className="h-4 w-4 text-white" />
                         </div>
-                        <h3 className="text-[11px] font-bold text-gray-900">Yemek Tercihlerim</h3>
-                        <p className="text-[9px] text-gray-400 mt-0.5">Besin tercihlerin</p>
+                        <div className="min-w-0">
+                            <h3 className="text-[11px] font-bold text-gray-900">Yemek Tercihlerim</h3>
+                            <p className="text-[9px] text-gray-400">Besin tercihlerin</p>
+                        </div>
                     </div>
                 </Link>
             </div>
+
+            {/* Rule Review Wizard */}
+            {wizardOpen && patientId && (
+                <RuleReviewWizard
+                    rules={patientRules}
+                    isOpen={wizardOpen}
+                    onClose={() => setWizardOpen(false)}
+                    onRuleUpdated={handleRuleSaved}
+                    onRuleDeleted={handleRuleDeleted}
+                />
+            )}
         </div>
     )
 }

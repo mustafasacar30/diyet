@@ -3,9 +3,11 @@
 import { useEffect, useState, useCallback, useRef } from "react"
 import { useAuth } from "@/contexts/auth-context"
 import { supabase } from "@/lib/supabase"
-import { Star, Search, Loader2, Trash2, ChevronDown, ChevronUp, Info, Minus, Plus, RotateCcw, Undo2, Filter, X, CheckSquare, Square } from "lucide-react"
+import { Star, Search, Loader2, Trash2, ChevronDown, ChevronUp, Info, Minus, Plus, RotateCcw, Undo2, Filter, X, CheckSquare, Square, ClipboardList } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { PreferenceQuestionnaire, type PreferenceData } from "@/components/patient/preference-questionnaire"
+import { savePatientPreferences } from "@/actions/patient-actions"
 
 type FoodOverride = {
     foodId: string
@@ -76,6 +78,8 @@ export default function PreferencesPage() {
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
     const [bulkMode, setBulkMode] = useState(false)
     const [bulkScore, setBulkScore] = useState("")
+    const [viewMode, setViewMode] = useState<'scores' | 'questionnaire'>('scores')
+    const [questionnaireSaving, setQuestionnaireSaving] = useState(false)
     const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
 
     // Typewriter effect for placeholders
@@ -440,6 +444,24 @@ export default function PreferencesPage() {
         )
     }
 
+    const handleQuestionnaireSave = async (data: PreferenceData) => {
+        if (!patientId) return
+        setQuestionnaireSaving(true)
+        try {
+            const result = await savePatientPreferences(patientId, data)
+            if (result.error) {
+                alert(result.error)
+            } else {
+                setViewMode('scores')
+                loadOverrides()
+            }
+        } catch (e: any) {
+            alert(e.message || "Bir hata oluştu")
+        } finally {
+            setQuestionnaireSaving(false)
+        }
+    }
+
     return (
         <div className="max-w-4xl mx-auto p-2 pb-24 sm:p-4 space-y-2">
             {/* Page Title */}
@@ -456,6 +478,32 @@ export default function PreferencesPage() {
                     {showGuide ? "Gizle" : "Skor rehberi"}
                 </button>
             </div>
+
+            {/* View Toggle */}
+            <div className="flex gap-1.5 px-1">
+                <button
+                    onClick={() => setViewMode('scores')}
+                    className={cn(
+                        "flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-medium border transition-all",
+                        viewMode === 'scores'
+                            ? "bg-amber-600 text-white border-amber-600 shadow-sm"
+                            : "bg-white text-gray-600 border-gray-200 hover:border-amber-300"
+                    )}
+                >
+                    <Star className="h-3 w-3" /> Yemek Skorları
+                </button>
+                <button
+                    onClick={() => setViewMode('questionnaire')}
+                    className={cn(
+                        "flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-medium border transition-all",
+                        viewMode === 'questionnaire'
+                            ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
+                            : "bg-white text-gray-600 border-gray-200 hover:border-emerald-300"
+                    )}
+                >
+                    <ClipboardList className="h-3 w-3" /> Tercih Anketi
+                </button>
+            </div>
             {showGuide && (
                 <div className="px-2.5 py-2 rounded-lg bg-amber-50/50 border border-amber-100 space-y-1 text-[10px] text-amber-900">
                     <div className="flex items-center gap-2"><span className="font-bold text-red-600 w-5">0</span> Hiç verilmez</div>
@@ -465,6 +513,19 @@ export default function PreferencesPage() {
                 </div>
             )}
 
+            {viewMode === 'questionnaire' && (
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+                    <PreferenceQuestionnaire
+                        onComplete={handleQuestionnaireSave}
+                        onCancel={() => setViewMode('scores')}
+                        loading={questionnaireSaving}
+                        standalone
+                    />
+                </div>
+            )}
+
+            {viewMode === 'scores' && (
+            <div className="space-y-2">
             {/* Search */}
             <div className="relative">
                 <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white border border-gray-200 shadow-sm focus-within:ring-2 focus-within:ring-amber-300 focus-within:border-amber-300">
@@ -774,6 +835,9 @@ export default function PreferencesPage() {
                     </Button>
                 </div>
             )}
+            </div>
+            )}
+
         </div>
     )
 }

@@ -305,12 +305,12 @@ export default function PatientLayout({
                         const isActive = pathname === item.href || (item.href !== '/patient' && pathname?.startsWith(item.href))
                         const isDiyetim = item.href === '/patient/plan'
                         const isOnDashboard = pathname === '/patient'
-                        // Highlight Diyetim when user is on dashboard
                         const shouldHighlight = isDiyetim && isOnDashboard && !isActive
                         return (
                             <Link
                                 key={item.href}
                                 href={item.href}
+                                onClick={() => setSeraModalOpen(false)}
                                 className={cn(
                                     "flex flex-col items-center gap-0.5 py-2 px-3 rounded-xl transition-all duration-300 relative",
                                     isActive
@@ -346,8 +346,8 @@ export default function PatientLayout({
                     <div className="relative -mt-5 mx-1">
                         <button
                             onClick={() => {
+                                setSeraModalOpen(false)
                                 if (pathname === '/patient/plan') {
-                                    // Already on plan page — trigger auto-plan
                                     window.dispatchEvent(new CustomEvent('trigger-autoplan'))
                                 } else {
                                     router.push('/patient/plan')
@@ -396,6 +396,7 @@ export default function PatientLayout({
                             <Link
                                 key={item.href}
                                 href={item.href}
+                                onClick={() => setSeraModalOpen(false)}
                                 className={cn(
                                     "flex flex-col items-center gap-0.5 py-2 px-3 rounded-xl transition-all duration-300 relative",
                                     isActive

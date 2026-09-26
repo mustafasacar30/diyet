@@ -287,13 +287,28 @@ export function SeraAssistant({
     if (!patientId) return
     try {
       const { supabase } = await import('@/lib/supabase')
-      const { data, error } = await supabase
+
+      const { data: patientRow } = await supabase
+        .from('patients')
+        .select('program_template_id')
+        .eq('id', patientId)
+        .maybeSingle()
+
+      const programId = patientRow?.program_template_id
+
+      let query = supabase
         .from('planning_rules')
         .select('*')
-        .eq('scope', 'patient')
-        .eq('patient_id', patientId)
+        .eq('is_active', true)
         .order('sort_order', { ascending: true })
 
+      if (programId) {
+        query = query.or(`and(scope.eq.patient,patient_id.eq.${patientId}),and(scope.eq.program,program_template_id.eq.${programId})`)
+      } else {
+        query = query.eq('scope', 'patient').eq('patient_id', patientId)
+      }
+
+      const { data } = await query
       if (data) setPatientRules(data)
     } catch (e) {
       console.error('Error fetching patient rules:', e)

@@ -277,6 +277,9 @@ export async function registerPatientSelf(userId: string, email: string, data: a
             birthDateStr = `${year}-${month}-${day}`
         }
 
+        // 2b. Auto-confirm email so Supabase Auth doesn't block login after admin approval
+        await supabaseAdmin.auth.admin.updateUserById(userId, { email_confirm: true })
+
         // 3. Upsert Patient Record (Since we dropped the trigger, it might not exist)
         const { error: patientError } = await supabaseAdmin
             .from('patients')
@@ -345,9 +348,293 @@ export async function registerPatientSelf(userId: string, email: string, data: a
             }
         }
 
+        // 6. Save Preferences (food scores, frequency rules, meal pattern)
+        if (data.preferences) {
+            const prefs = data.preferences
+            try {
+                // 6a. Food score overrides
+                if (prefs.foodRatings && Object.keys(prefs.foodRatings).length > 0) {
+                    const scoreMap: Record<string, number> = {}
+
+                    const foodNames = Object.keys(prefs.foodRatings)
+                    for (const name of foodNames) {
+                        const score = prefs.foodRatings[name]
+                        if (score === 5) continue
+                        const { data: foods } = await supabaseAdmin
+                            .from('foods')
+                            .select('id')
+                            .ilike('name', `%${name}%`)
+                            .limit(3)
+                        if (foods) {
+                            foods.forEach((f: any) => { scoreMap[f.id] = score })
+                        }
+                    }
+
+                    // Also apply cross-query insights as keyword-based scores
+                    if (prefs.foodInsights) {
+                        for (const insight of prefs.foodInsights) {
+                            const keyword = insight.tag.replace(/_/g, ' ')
+                            const score = insight.action === 'avoid' ? 0
+                                : insight.action === 'reduce' ? 2 : 9
+                            const { data: matched } = await supabaseAdmin
+                                .from('foods')
+                                .select('id')
+                                .or(`name.ilike.%${keyword}%,tags.cs.{${keyword}}`)
+                                .limit(50)
+                            if (matched) {
+                                matched.forEach((f: any) => {
+                                    if (!(f.id in scoreMap)) scoreMap[f.id] = score
+                                })
+                            }
+                        }
+                    }
+
+                    if (Object.keys(scoreMap).length > 0) {
+                        await supabaseAdmin
+                            .from('planner_settings')
+                            .upsert({
+                                user_id: userId,
+                                scope: 'patient',
+                                patient_id: userId,
+                                food_score_overrides: scoreMap,
+                            }, { onConflict: 'user_id' })
+                    }
+                }
+
+                // 6b. Frequency rules from preferences
+                if (prefs.freqPrefs) {
+                    const freqToValues = (freq: string) => {
+                        switch (freq) {
+                            case 'every_meal': return { period: 'per_meal' as const, min: 1, max: 1 }
+                            case 'daily': return { period: 'daily' as const, min: 1, max: 1 }
+                            case '3_4_week': return { period: 'weekly' as const, min: 3, max: 4 }
+                            case '1_2_week': return { period: 'weekly' as const, min: 1, max: 2 }
+                            case 'rarely': return { period: 'weekly' as const, min: 0, max: 1 }
+                            default: return { period: 'weekly' as const, min: 2, max: 3 }
+                        }
+                    }
+
+                    const mealMap: Record<string, string> = {
+                        KAHVALTI: 'KAHVALTI', OGLEN: 'OGLEN', AKSAM: 'AKSAM', ARA_OGUN: 'ARA ÖĞÜN'
+                    }
+
+                    const rules: any[] = []
+                    let sortOrder = 100
+
+                    for (const [catId, pref] of Object.entries(prefs.freqPrefs as Record<string, { freq: string; meals: string[] }>)) {
+                        const { period, min, max } = freqToValues(pref.freq)
+                        const scopeMeals = pref.meals.map((m: string) => mealMap[m] || m)
+
+                        rules.push({
+                            name: `${catId} tercih`,
+                            rule_type: 'frequency',
+                            scope: 'patient',
+                            patient_id: userId,
+                            is_active: true,
+                            priority: 5,
+                            sort_order: sortOrder++,
+                            definition: {
+                                target_type: 'category',
+                                target_value: catId,
+                                period,
+                                min_count: min,
+                                max_count: max,
+                                scope_meals: scopeMeals,
+                                scope_days: [],
+                                force_inclusion: min > 0,
+                            },
+                        })
+                    }
+
+                    if (rules.length > 0) {
+                        await supabaseAdmin.from('planning_rules').insert(rules)
+                    }
+                }
+
+                // 6c. Save additional notes
+                if (prefs.additionalNotes) {
+                    await supabaseAdmin
+                        .from('patients')
+                        .update({ notes: prefs.additionalNotes })
+                        .eq('id', userId)
+                }
+            } catch (prefErr) {
+                console.error("Preferences save error (non-blocking):", prefErr)
+            }
+        }
+
         return { success: true }
     } catch (e: any) {
         console.error("Self register error:", e)
+        return { error: e.message }
+    }
+}
+
+/**
+ * Save preference questionnaire data for an existing patient.
+ * Reuses same logic as registration preference saving.
+ */
+export async function savePatientPreferences(patientId: string, prefs: {
+    foodRatings: Record<string, number>
+    foodIdRatings?: Record<string, number>
+    freqPrefs: Record<string, { freq: string; meals: string[] }>
+    mainMeals: string[]
+    snackCount: number
+    snackOptions: string[]
+    lunchSideCount: number
+    dinnerSideCount: number
+    dinnerStructure: string
+    additionalNotes: string
+    foodInsights: { tag: string; label: string; avg: number; count?: number; action: "avoid" | "reduce" | "prioritize" }[]
+}) {
+    if (!supabaseServiceKey) return { error: "Sunucu hatası: Servis anahtarı eksik." }
+
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
+        auth: { autoRefreshToken: false, persistSession: false }
+    })
+
+    try {
+        const scoreMap: Record<string, number> = {}
+
+        if (prefs.foodIdRatings && Object.keys(prefs.foodIdRatings).length > 0) {
+            for (const [foodId, score] of Object.entries(prefs.foodIdRatings)) {
+                if (score === undefined || score === 5) continue
+                scoreMap[foodId] = score
+            }
+        } else if (prefs.foodRatings && Object.keys(prefs.foodRatings).length > 0) {
+            const foodNames = Object.keys(prefs.foodRatings)
+            for (const name of foodNames) {
+                const score = prefs.foodRatings[name]
+                if (score === 5) continue
+                const { data: foods } = await supabaseAdmin
+                    .from('foods')
+                    .select('id')
+                    .ilike('name', `%${name}%`)
+                    .limit(3)
+                if (foods) {
+                    foods.forEach((f: any) => { scoreMap[f.id] = score })
+                }
+            }
+        }
+
+        if (prefs.foodInsights) {
+            for (const insight of prefs.foodInsights) {
+                const keyword = insight.tag.replace(/[:_]/g, ' ').replace(/\s+/g, ' ').trim()
+                const score = insight.action === 'avoid' ? 0
+                    : insight.action === 'reduce' ? 2 : 9
+                const { data: matched } = await supabaseAdmin
+                    .from('foods')
+                    .select('id')
+                    .or(`name.ilike.%${keyword}%,tags.cs.{${keyword}}`)
+                    .limit(50)
+                if (matched) {
+                    matched.forEach((f: any) => {
+                        if (!(f.id in scoreMap)) scoreMap[f.id] = score
+                    })
+                }
+            }
+        }
+
+        if (Object.keys(scoreMap).length > 0) {
+            const { data: existing } = await supabaseAdmin
+                .from('planner_settings')
+                .select('food_score_overrides')
+                .eq('scope', 'patient')
+                .eq('patient_id', patientId)
+                .maybeSingle()
+
+            const merged = { ...(existing?.food_score_overrides || {}), ...scoreMap }
+
+            await supabaseAdmin
+                .from('planner_settings')
+                .upsert({
+                    patient_id: patientId,
+                    scope: 'patient',
+                    food_score_overrides: merged,
+                }, { onConflict: 'patient_id,scope' })
+        }
+
+        // Frequency rules — delete old questionnaire rules first, then insert new
+        if (prefs.freqPrefs) {
+            await supabaseAdmin
+                .from('planning_rules')
+                .delete()
+                .eq('scope', 'patient')
+                .eq('patient_id', patientId)
+                .like('name', '% tercih')
+
+            const freqToValues = (freq: string) => {
+                switch (freq) {
+                    case 'every_meal': return { period: 'per_meal' as const, min: 1, max: 1 }
+                    case 'daily': return { period: 'daily' as const, min: 1, max: 1 }
+                    case '3_4_week': return { period: 'weekly' as const, min: 3, max: 4 }
+                    case '1_2_week': return { period: 'weekly' as const, min: 1, max: 2 }
+                    case 'rarely': return { period: 'weekly' as const, min: 0, max: 1 }
+                    default: return { period: 'weekly' as const, min: 2, max: 3 }
+                }
+            }
+
+            const mealMap: Record<string, string> = {
+                KAHVALTI: 'KAHVALTI', OGLEN: 'OGLEN', AKSAM: 'AKSAM', ARA_OGUN: 'ARA ÖĞÜN'
+            }
+
+            const rules: any[] = []
+            let sortOrder = 100
+
+            for (const [catId, pref] of Object.entries(prefs.freqPrefs)) {
+                const { period, min, max } = freqToValues(pref.freq)
+                const scopeMeals = pref.meals.map((m: string) => mealMap[m] || m)
+
+                rules.push({
+                    name: `${catId} tercih`,
+                    rule_type: 'frequency',
+                    scope: 'patient',
+                    patient_id: patientId,
+                    is_active: true,
+                    priority: 5,
+                    sort_order: sortOrder++,
+                    definition: {
+                        target_type: 'category',
+                        target_value: catId,
+                        period,
+                        min_count: min,
+                        max_count: max,
+                        scope_meals: scopeMeals,
+                        scope_days: [],
+                        force_inclusion: min > 0,
+                    },
+                })
+            }
+
+            if (rules.length > 0) {
+                await supabaseAdmin.from('planning_rules').insert(rules)
+            }
+        }
+
+        // Additional notes — append questionnaire notes with tag for Sera
+        if (prefs.additionalNotes) {
+            const { data: patient } = await supabaseAdmin
+                .from('patients')
+                .select('notes')
+                .eq('id', patientId)
+                .maybeSingle()
+
+            const existingNotes = (patient?.notes || '')
+                .replace(/\n?--- Tercih Anketi Notları ---[\s\S]*?(?=\n---|\s*$)/, '')
+                .trim()
+
+            const tagged = `--- Tercih Anketi Notları ---\n${prefs.additionalNotes}`
+            const merged = existingNotes ? `${existingNotes}\n\n${tagged}` : tagged
+
+            await supabaseAdmin
+                .from('patients')
+                .update({ notes: merged })
+                .eq('id', patientId)
+        }
+
+        return { success: true }
+    } catch (e: any) {
+        console.error("Save preferences error:", e)
         return { error: e.message }
     }
 }

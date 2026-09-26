@@ -358,11 +358,12 @@ export default function PatientsPage() {
 
     async function handleApprovePatient(patient: Patient) {
         if (!confirm(`"${patient.full_name}" isimli hastanın kaydını onaylamak istediğinize emin misiniz?`)) return
-        const { error } = await supabase.from('patients').update({ status: 'active' }).eq('id', patient.id)
-        if (!error) {
+        const { approvePatient } = await import('@/actions/patient-actions')
+        const result = await approvePatient(patient.id, patient.user_id || patient.id)
+        if (result.success) {
             setPatients(patients.map(p => p.id === patient.id ? { ...p, status: 'active' } : p))
         } else {
-            alert("Onaylama hatası: " + error.message)
+            alert("Onaylama hatası: " + (result.error || "Bilinmeyen hata"))
         }
     }
 

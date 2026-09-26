@@ -293,7 +293,7 @@ function detectSortFocus(message: string): { column: string; label: string; asce
 async function buildPatientContext(patientId: string, userMessage: string = ''): Promise<{ context: string; weekNumber: number | null; firstName: string }> {
   const { data: patient, error: patientErr } = await supabase
     .from('patients')
-    .select('id, full_name, birth_date, gender, height, weight, activity_level, program_template_id, patient_goals, preferences')
+    .select('id, full_name, birth_date, gender, height, weight, activity_level, program_template_id, patient_goals, preferences, notes')
     .eq('id', patientId)
     .maybeSingle()
 
@@ -374,6 +374,10 @@ async function buildPatientContext(patientId: string, userMessage: string = ''):
     for (const r of rules) {
       lines.push(`  • ${r.name}`)
     }
+  }
+
+  if (patient.notes) {
+    lines.push(`\n- Hastanın notları:\n${patient.notes}`)
   }
 
   const today = new Date()
