@@ -4022,6 +4022,7 @@ export class Planner {
                 // However, since Pass 2 is "Filling" loop, it might loop again.
                 // Critical check: Does this slot ALREADY have an item matching this target?
                 // If target is specific (Category: Soup), strictly 1 per slot.
+                if (!def.target) continue
                 if (def.target.type === 'category' || def.target.type === 'role') {
                     const hasInSlot = selectedFoods.some(f => this.matchesTarget(f, def.target))
                     if (hasInSlot) continue
