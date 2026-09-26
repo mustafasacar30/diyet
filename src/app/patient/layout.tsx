@@ -132,6 +132,7 @@ export default function PatientLayout({
 
     // Unread Count Logic - Uses isolated component
     const [unreadCount, setUnreadCount] = useState(0)
+    const [seraModalOpen, setSeraModalOpen] = useState(false)
 
     // Prevent hydration mismatch by only rendering after mount
     if (!mounted) return null
@@ -286,11 +287,13 @@ export default function PatientLayout({
                 {children}
             </main>
 
-            {/* Floating Sera Chat - shown on dashboard and plan pages, not on Sera's own page */}
-            {patientDisplayInfo?.patientId && pathname !== '/patient/assistant' && pathname !== '/patient/messages' && pathname !== '/patient/settings' && (
+            {/* Sera Chat Modal — triggered from bottom nav on plan page */}
+            {seraModalOpen && patientDisplayInfo?.patientId && (
                 <SeraFloatingChat
                     patientId={patientDisplayInfo.patientId}
                     patientName={patientDisplayInfo.fullName}
+                    forceOpen
+                    onClose={() => setSeraModalOpen(false)}
                 />
             )}
 
@@ -366,6 +369,29 @@ export default function PatientLayout({
                     {/* Right nav items */}
                     {navItems.slice(2).map((item) => {
                         const isActive = pathname === item.href || (item.href !== '/patient' && pathname?.startsWith(item.href))
+                        const isSeraButton = item.href === '/patient/assistant'
+                        const isOnPlanPage = pathname === '/patient/plan'
+
+                        // Sera button: on plan page → open modal chat, elsewhere → navigate to page
+                        if (isSeraButton && isOnPlanPage) {
+                            return (
+                                <button
+                                    key={item.href}
+                                    onClick={() => setSeraModalOpen(true)}
+                                    className={cn(
+                                        "flex flex-col items-center gap-0.5 py-2 px-3 rounded-xl transition-all duration-300 relative",
+                                        seraModalOpen ? "text-green-600" : "text-gray-400 hover:text-gray-600"
+                                    )}
+                                >
+                                    <item.icon className={cn("h-5 w-5 transition-all duration-300", seraModalOpen && "scale-110")} />
+                                    <span className="text-[10px] font-medium">{item.label}</span>
+                                    {seraModalOpen && (
+                                        <span className="absolute -top-0.5 left-1/2 -translate-x-1/2 w-5 h-0.5 bg-green-500 rounded-full" />
+                                    )}
+                                </button>
+                            )
+                        }
+
                         return (
                             <Link
                                 key={item.href}

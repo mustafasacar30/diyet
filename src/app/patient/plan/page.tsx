@@ -192,6 +192,110 @@ type DietDay = {
     target_fat?: number
 }
 
+// ================== DRAGGABLE FAB ==================
+function DraggableFab({ isDashboardVisible, onToggle, totals, targets }: {
+    isDashboardVisible: boolean
+    onToggle: () => void
+    totals: { calories: number; protein: number; carbs: number; fat: number }
+    targets: { calories: number; protein: number; carb: number; fat: number }
+}) {
+    const fabRef = useRef<HTMLButtonElement>(null)
+    const dragState = useRef({ isDragging: false, startX: 0, startY: 0, startLeft: 0, startTop: 0, moved: false })
+    const [pos, setPos] = useState<{ right: number; bottom: number } | null>(null)
+    const [customPos, setCustomPos] = useState<{ left: number; top: number } | null>(null)
+
+    useEffect(() => {
+        try {
+            const saved = localStorage.getItem('fab_chart_pos')
+            if (saved) setCustomPos(JSON.parse(saved))
+        } catch {}
+    }, [])
+
+    const handlePointerDown = (e: React.PointerEvent) => {
+        const el = fabRef.current
+        if (!el) return
+        const rect = el.getBoundingClientRect()
+        dragState.current = {
+            isDragging: true,
+            startX: e.clientX,
+            startY: e.clientY,
+            startLeft: rect.left,
+            startTop: rect.top,
+            moved: false,
+        }
+        el.setPointerCapture(e.pointerId)
+    }
+
+    const handlePointerMove = (e: React.PointerEvent) => {
+        if (!dragState.current.isDragging) return
+        const dx = e.clientX - dragState.current.startX
+        const dy = e.clientY - dragState.current.startY
+        if (Math.abs(dx) > 4 || Math.abs(dy) > 4) dragState.current.moved = true
+        if (!dragState.current.moved) return
+        const newLeft = Math.max(0, Math.min(window.innerWidth - 56, dragState.current.startLeft + dx))
+        const newTop = Math.max(0, Math.min(window.innerHeight - 56, dragState.current.startTop + dy))
+        setCustomPos({ left: newLeft, top: newTop })
+    }
+
+    const handlePointerUp = (e: React.PointerEvent) => {
+        const wasDrag = dragState.current.moved
+        dragState.current.isDragging = false
+        dragState.current.moved = false
+        fabRef.current?.releasePointerCapture(e.pointerId)
+        if (wasDrag && customPos) {
+            try { localStorage.setItem('fab_chart_pos', JSON.stringify(customPos)) } catch {}
+        } else {
+            onToggle()
+        }
+    }
+
+    // Mini ring data
+    const calPct = targets.calories > 0 ? Math.min(totals.calories / targets.calories, 1.3) : 0
+    const protPct = targets.protein > 0 ? Math.min(totals.protein / targets.protein, 1.3) : 0
+    const carbPct = (targets.carb || 0) > 0 ? Math.min(totals.carbs / (targets.carb || 1), 1.3) : 0
+
+    const style: React.CSSProperties = customPos
+        ? { position: 'fixed', left: customPos.left, top: customPos.top, zIndex: 70 }
+        : { position: 'fixed', right: 16, bottom: 96, zIndex: 70 }
+
+    return (
+        <button
+            ref={fabRef}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            style={style}
+            className={cn(
+                "w-14 h-14 rounded-full shadow-xl flex items-center justify-center transition-shadow duration-300 touch-none select-none",
+                isDashboardVisible
+                    ? "bg-white border-2 border-purple-300 shadow-purple-200/60"
+                    : "bg-gradient-to-br from-purple-600 via-indigo-500 to-blue-500 shadow-purple-400/50 hover:shadow-purple-500/70"
+            )}
+        >
+            {/* Mini concentric rings SVG */}
+            <svg width={36} height={36} className="transform -rotate-90" viewBox="0 0 36 36">
+                {/* Background rings */}
+                <circle cx="18" cy="18" r="15" fill="none" stroke={isDashboardVisible ? '#E9D5FF' : 'rgba(255,255,255,0.2)'} strokeWidth="3" />
+                <circle cx="18" cy="18" r="11" fill="none" stroke={isDashboardVisible ? '#DBEAFE' : 'rgba(255,255,255,0.2)'} strokeWidth="3" />
+                <circle cx="18" cy="18" r="7" fill="none" stroke={isDashboardVisible ? '#FEF3C7' : 'rgba(255,255,255,0.2)'} strokeWidth="3" />
+                {/* Filled arcs — carb (outer), protein (mid), fat (inner) */}
+                <circle cx="18" cy="18" r="15" fill="none" stroke={isDashboardVisible ? '#A855F7' : '#FCA5A5'}
+                    strokeWidth="3" strokeLinecap="round"
+                    strokeDasharray={`${Math.min(carbPct, 1) * 94.25} 94.25`}
+                    className="transition-all duration-700" />
+                <circle cx="18" cy="18" r="11" fill="none" stroke={isDashboardVisible ? '#818CF8' : '#93C5FD'}
+                    strokeWidth="3" strokeLinecap="round"
+                    strokeDasharray={`${Math.min(protPct, 1) * 69.12} 69.12`}
+                    className="transition-all duration-700" />
+                <circle cx="18" cy="18" r="7" fill="none" stroke={isDashboardVisible ? '#C084FC' : '#FCD34D'}
+                    strokeWidth="3" strokeLinecap="round"
+                    strokeDasharray={`${Math.min(calPct, 1) * 43.98} 43.98`}
+                    className="transition-all duration-700" />
+            </svg>
+        </button>
+    )
+}
+
 // ================== MACRO DASHBOARD ==================
 interface MacroDashboardProps {
     totals: any
@@ -1445,16 +1549,76 @@ export default function PatientPlanPage() {
         }
     }
 
+    // Stale-while-revalidate: save plan cache whenever key data updates
+    const planCacheTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    useEffect(() => {
+        if (loading || weekDays.length === 0 || !patientInfo?.id) return
+        if (planCacheTimerRef.current) clearTimeout(planCacheTimerRef.current)
+        planCacheTimerRef.current = setTimeout(() => {
+            try {
+                const todayName = new Date().toLocaleDateString('tr-TR', { weekday: 'long' })
+                const dayIdx = weekDays.findIndex(d => d.day_name.toLowerCase() === todayName.toLowerCase())
+                localStorage.setItem('plan_cache', JSON.stringify({
+                    _ts: Date.now(),
+                    _pid: patientInfo.id,
+                    weekDays,
+                    activeWeek,
+                    allWeeks,
+                    patientInfo,
+                    activeDietType,
+                    activePlan,
+                    patientStatus,
+                    totalWeekCount,
+                    currentWeekId,
+                    currentWeekNumber,
+                    selectedDayIndex: dayIdx >= 0 ? dayIdx : selectedDayIndex
+                }))
+            } catch { /* quota exceeded or private browsing */ }
+        }, 500)
+        return () => { if (planCacheTimerRef.current) clearTimeout(planCacheTimerRef.current) }
+    }, [loading, weekDays, activeWeek?.id, patientInfo?.id])
+
     const initialFetchKeyRef = useRef<string>("")
+    const cacheRestoredRef = useRef(false)
+
+    // Stale-while-revalidate: restore cached plan data instantly on mount
+    useEffect(() => {
+        if (cacheRestoredRef.current || !user) return
+        try {
+            const raw = localStorage.getItem('plan_cache')
+            if (!raw) return
+            const cached = JSON.parse(raw)
+            const age = Date.now() - (cached._ts || 0)
+            if (age > 24 * 60 * 60 * 1000) {
+                localStorage.removeItem('plan_cache')
+                return
+            }
+            if (cached.weekDays?.length > 0) {
+                setWeekDays(cached.weekDays)
+                setActiveWeek(cached.activeWeek || null)
+                setAllWeeks(cached.allWeeks || [])
+                setPatientInfo(cached.patientInfo || null)
+                setActiveDietType(cached.activeDietType || null)
+                setActivePlan(cached.activePlan || null)
+                if (cached.patientStatus) setPatientStatus(cached.patientStatus)
+                if (cached.totalWeekCount) setTotalWeekCount(cached.totalWeekCount)
+                if (cached.currentWeekId) setCurrentWeekId(cached.currentWeekId)
+                if (cached.currentWeekNumber) setCurrentWeekNumber(cached.currentWeekNumber)
+                if (cached.selectedDayIndex !== undefined) setSelectedDayIndex(cached.selectedDayIndex)
+                initialDaySelected.current = true
+                setLoading(false)
+                cacheRestoredRef.current = true
+            }
+        } catch { /* private browsing or corrupt cache */ }
+    }, [user])
+
     useEffect(() => {
         if (user) {
             const fetchKey = `${user.id}:${profile?.id || ""}:${refreshTrigger}`
             if (initialFetchKeyRef.current === fetchKey) return
             initialFetchKeyRef.current = fetchKey
-            // Keep the currently active week focused when a refresh is triggered (background refresh)
-            fetchActivePlan(activeWeek?.id, true)
+            fetchActivePlan(activeWeek?.id, cacheRestoredRef.current)
         }
-        // Exclude activeWeek?.id from deps to prevent loop, we only want to trigger on user/refresh
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user, profile?.id, refreshTrigger])
 
@@ -1562,26 +1726,6 @@ export default function PatientPlanPage() {
             const actualPatientId = scopedPatientRecord.id
             setPatientStatus(scopedPatientRecord.status)
 
-            try {
-                const brandingRes = await fetch('/api/patient/pdf-branding', { method: 'GET' })
-                if (brandingRes.ok) {
-                    const branding = await brandingRes.json()
-                    if (branding?.logoUrl || branding?.footerText) {
-                        setPdfBranding({
-                            logoUrl: branding?.logoUrl || null,
-                            footerText: branding?.footerText || null,
-                        })
-                    } else {
-                        setPdfBranding(null)
-                    }
-                } else {
-                    setPdfBranding(null)
-                }
-            } catch (brandingError) {
-                console.warn('PDF branding fetch failed', brandingError)
-                setPdfBranding(null)
-            }
-
             // Save patient info immediately for targets & planner
             setPatientInfo({
                 id: scopedPatientRecord.id,
@@ -1593,10 +1737,20 @@ export default function PatientPlanPage() {
                 patient_goals: scopedPatientRecord.patient_goals || [],
                 planning_rules: scopedPatientRecord.planning_rules || []
             })
-            
-            // Limit kontrolünü çağır
-            await checkAutoPlanEligibility(actualPatientId, scopedPatientRecord.auto_plan_limit_count, scopedPatientRecord.auto_plan_limit_period_hours)
 
+            // PDF branding + limit check run in background (don't block plan loading)
+            fetch('/api/patient/pdf-branding', { method: 'GET' })
+                .then(res => res.ok ? res.json() : null)
+                .then(branding => {
+                    if (branding?.logoUrl || branding?.footerText) {
+                        setPdfBranding({ logoUrl: branding?.logoUrl || null, footerText: branding?.footerText || null })
+                    } else {
+                        setPdfBranding(null)
+                    }
+                })
+                .catch(() => setPdfBranding(null))
+
+            checkAutoPlanEligibility(actualPatientId, scopedPatientRecord.auto_plan_limit_count, scopedPatientRecord.auto_plan_limit_period_hours)
 
             // Step 2: Get Active Plan & Health Data using the actual patient ID
             const [
@@ -2098,21 +2252,19 @@ export default function PatientPlanPage() {
             // If the week doesn't have meal_types cached or it's empty, fetch the true active settings dynamically
             if (!resolvedMealTypes || resolvedMealTypes.length === 0) {
                 let usedSettings: any = null
-                // a. Patient Settings
-                const { data: patientSettings } = await supabase.from('planner_settings').select('slot_config').eq('patient_id', patientRecord?.id).maybeSingle()
-                if (patientSettings?.slot_config) usedSettings = patientSettings
-
-                // b. Program Settings
-                if (!usedSettings && pProgram) {
-                    const { data: programSettings } = await supabase.from('planner_settings').select('slot_config').eq('scope', 'program').eq('program_template_id', pProgram.id).maybeSingle()
-                    if (programSettings?.slot_config) usedSettings = programSettings
-                }
-
-                // c. Global Settings
-                if (!usedSettings) {
-                    const { data: globalSettings } = await supabase.from('planner_settings').select('slot_config').eq('scope', 'global').maybeSingle()
-                    if (globalSettings?.slot_config) usedSettings = globalSettings
-                }
+                // Fetch all planner settings in parallel instead of sequential cascade
+                const [patientSettingsRes, programSettingsRes, globalSettingsRes] = await Promise.all([
+                    patientRecord?.id
+                        ? supabase.from('planner_settings').select('slot_config').eq('patient_id', patientRecord.id).maybeSingle()
+                        : Promise.resolve({ data: null }),
+                    pProgram?.id
+                        ? supabase.from('planner_settings').select('slot_config').eq('scope', 'program').eq('program_template_id', pProgram.id).maybeSingle()
+                        : Promise.resolve({ data: null }),
+                    supabase.from('planner_settings').select('slot_config').eq('scope', 'global').maybeSingle()
+                ])
+                if (patientSettingsRes.data?.slot_config) usedSettings = patientSettingsRes.data
+                else if (programSettingsRes.data?.slot_config) usedSettings = programSettingsRes.data
+                else if (globalSettingsRes.data?.slot_config) usedSettings = globalSettingsRes.data
 
                 if (usedSettings?.slot_config && Array.isArray(usedSettings.slot_config)) {
                     resolvedMealTypes = usedSettings.slot_config.map((c: any) => c.name || c.mealType)
@@ -6870,6 +7022,9 @@ export default function PatientPlanPage() {
                     setBalanceModal(prev => ({ ...prev, isOpen: false }))
                 }}
             />
+
+            {/* Floating chart toggle button — draggable */}
+            <DraggableFab isDashboardVisible={isDashboardVisible} onToggle={toggleDashboard} totals={dailyTotals} targets={dailyTargets} />
 
         </div>
     )

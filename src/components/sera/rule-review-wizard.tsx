@@ -22,7 +22,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
-import { Loader2, Save, Trash2, AlertTriangle, ArrowRight, ArrowLeft, Info, Lightbulb, ShieldCheck, Search, X } from "lucide-react"
+import { Loader2, Save, Trash2, AlertTriangle, ArrowRight, ArrowLeft, Info, Lightbulb, ShieldCheck, Search, X, ChevronLeft, ChevronRight, SkipForward, Check, LogOut } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 
 export interface RuleReviewWizardProps {
@@ -212,22 +212,22 @@ function ScopeWeeksEditor({ sw, onChange }: { sw: any; onChange: (newSw: any) =>
   }
 
   return (
-    <div className="space-y-1.5 p-2.5 rounded-lg bg-blue-50 border border-blue-200">
-      <div className="flex items-center gap-2">
-        <Info className="h-4 w-4 shrink-0 text-blue-500" />
-        <span className="text-xs font-medium text-blue-700">Hafta kapsamı</span>
+    <div className="p-2 rounded-lg bg-blue-50 border border-blue-200">
+      <div className="flex items-center gap-1.5 mb-1">
+        <Info className="h-3 w-3 shrink-0 text-blue-500" />
+        <span className="text-[11px] font-medium text-blue-700">Hafta kapsamı</span>
+        {label && <span className="text-[10px] text-blue-600 ml-auto">{label}</span>}
       </div>
       <Input
         value={input}
         onChange={e => setInput(e.target.value)}
         onBlur={handleBlur}
         placeholder="ör: 1,2,5-9 veya 3..."
-        className="h-7 text-sm bg-white border-blue-200"
+        className="h-7 text-xs bg-white border-blue-200"
       />
-      <p className="text-[10px] text-blue-500 leading-snug">
-        Virgül ile hafta numarası: <strong>1,2,5-9</strong> &nbsp;|&nbsp; Belirli haftadan itibaren: <strong>5...</strong> &nbsp;|&nbsp; Boş bırakın = tüm haftalarda
+      <p className="text-[9px] text-blue-500 mt-1 leading-snug">
+        <strong>1,2,5-9</strong> · Belirli haftadan: <strong>5...</strong> · Boş = tüm haftalarda
       </p>
-      {label && <p className="text-[11px] text-blue-700 font-medium">Şu an: {label}</p>}
     </div>
   )
 }
@@ -425,48 +425,48 @@ function FrequencyEditor({ rule, lockedMeals, draft, onChange, warnings, setWarn
   const maxOccOpts = [{ value: "same", label: "Sabit" }, ...occOpts.map(o => ({ ...o, disabled: parseInt(o.value) <= parseInt(minOcc) }))]
 
   return (
-    <div className="space-y-4">
-      <p className="text-[15px] text-gray-700 leading-relaxed">
+    <div className="space-y-3">
+      <p className="text-[13px] text-gray-700 leading-relaxed">
         Haftada{" "}
         <InlineSelect value={minDays} onChange={setMinDays} options={daysOpts} />
-        {maxDays !== "same" ? (
-          <> ile <InlineSelect value={maxDays} onChange={setMaxDays} options={maxDaysOpts} /> arası</>
+        {maxDays !== "same" && maxDays !== minDays ? (
+          <> – <InlineSelect value={maxDays} onChange={setMaxDays} options={maxDaysOpts} /> arası</>
         ) : (
-          <>{" "}<InlineSelect value={maxDays} onChange={setMaxDays} options={maxDaysOpts} /></>
+          <>{" "}<InlineSelect value="same" onChange={setMaxDays} options={maxDaysOpts.map(o => o.value === "same" ? { ...o, label: `(sabit)` } : o)} /></>
         )}
         {" "}gün <strong className="text-emerald-800">{targetLabel}</strong> menünüze eklenir.
       </p>
 
       {(period === "daily" || period === "per_meal") && (
-        <p className="text-[15px] text-gray-700 leading-relaxed">
+        <p className="text-[13px] text-gray-700 leading-relaxed">
           {period === "daily" ? "Günde toplam " : "Her öğünde "}
           <InlineSelect value={minOcc} onChange={setMinOcc} options={occOpts} />
-          {maxOcc !== "same" ? (
-            <> ile <InlineSelect value={maxOcc} onChange={setMaxOcc} options={maxOccOpts} /> arası</>
+          {maxOcc !== "same" && maxOcc !== minOcc ? (
+            <> – <InlineSelect value={maxOcc} onChange={setMaxOcc} options={maxOccOpts} /> arası</>
           ) : (
-            <>{" "}<InlineSelect value={maxOcc} onChange={setMaxOcc} options={maxOccOpts} /></>
+            <>{" "}<InlineSelect value="same" onChange={setMaxOcc} options={maxOccOpts.map(o => o.value === "same" ? { ...o, label: `(sabit)` } : o)} /></>
           )}
           {" "}kez.
         </p>
       )}
 
       <div>
-        <p className="text-sm text-gray-600 mb-1">Hangi öğünlerde yer alsın?</p>
+        <p className="text-xs text-gray-600 mb-1">Hangi öğünlerde?</p>
         <MealPills selected={selectedMeals} onChange={setSelectedMeals} locked={lockedMeals} />
-        {selectedMeals.length === 0 && <p className="text-[11px] text-gray-400 mt-1">Seçim yapılmazsa tüm öğünlerde geçerli olur.</p>}
+        {selectedMeals.length === 0 && <p className="text-[10px] text-gray-400 mt-0.5">Boş bırakılırsa tüm öğünlerde geçerli.</p>}
       </div>
 
       {(selectedDays.length > 0 || def.scope_days?.length > 0) && (
         <div>
-          <p className="text-sm text-gray-600 mb-1">Hangi günlerde?</p>
+          <p className="text-xs text-gray-600 mb-1">Hangi günlerde?</p>
           <DayPills selected={selectedDays} onChange={setSelectedDays} />
           {exclusiveScope && selectedDays.length > 0 && (
-            <p className="text-[11px] text-amber-600 mt-1">Seçili günler dışında bu yemek hiç verilmez.</p>
+            <p className="text-[10px] text-amber-600 mt-0.5">Seçili günler dışında bu yemek hiç verilmez.</p>
           )}
         </div>
       )}
 
-      <p className="text-[15px] text-gray-700 leading-relaxed">
+      <p className="text-[13px] text-gray-700 leading-relaxed">
         Aynı gün içinde en fazla{" "}
         <InlineSelect value={dailyMax} onChange={setDailyMax} options={[
           { value: "0", label: "Sınır yok" },
@@ -476,18 +476,17 @@ function FrequencyEditor({ rule, lockedMeals, draft, onChange, warnings, setWarn
         {" "}tekrarlanabilir.
       </p>
 
-      <div className={`flex items-start gap-3 p-3 rounded-lg border transition-colors ${forceInclusion ? "bg-orange-50 border-orange-200" : "bg-gray-50 border-gray-200"}`}>
-        <Checkbox id={`force_${rule.id}`} checked={forceInclusion}
-          onCheckedChange={(c) => setForceInclusion(c === true)}
-          className={`mt-0.5 ${forceInclusion ? "data-[state=checked]:bg-orange-500 border-orange-300" : ""}`} />
-        <Label htmlFor={`force_${rule.id}`} className="text-sm cursor-pointer leading-relaxed">
-          <span className="font-medium">{forceInclusion ? "Kesinlikle uygulanıyor" : "Kalori sınırlarına uyulsun"}</span>
-          <span className="block text-[11px] text-gray-500 mt-0.5">
-            {forceInclusion
-              ? "Makro hedefler aşılsa bile bu yiyecek menüye zorla eklenir."
-              : "Kalori/makro limitleri aşılacaksa bu yemek atlanabilir."}
-          </span>
-        </Label>
+      <div className="p-2.5 rounded-lg border border-gray-200 bg-gray-50">
+        <p className="text-xs text-gray-600 mb-1.5">Kalori limiti aşılırsa ne olsun?</p>
+        <Select value={forceInclusion ? "force" : "respect"} onValueChange={(v) => setForceInclusion(v === "force")}>
+          <SelectTrigger className="h-8 text-xs bg-white border-gray-300">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="respect">Atlanabilir — limitlere uyulsun</SelectItem>
+            <SelectItem value="force">Mutlaka eklensin — limit aşılsa bile</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       <ScopeWeeksEditor sw={scopeWeeks} onChange={setScopeWeeks} />
@@ -504,15 +503,28 @@ function AffinityEditor({ rule, draft, onChange, warnings, setWarnings, categori
   const trigger = def.trigger || { type: "tag", value: "" }
   const outcome = def.outcome || { type: "tag", value: "" }
 
-  const [association, setAssociation] = useState<string>(draft?.association || def.association || "boost")
+  const inferAssociation = (prob: number) => {
+    if (prob === 0) return "forbidden"
+    if (prob <= 15) return "reduce"
+    if (prob >= 100) return "mandatory"
+    return "boost"
+  }
+  const rawProb = def.probability ?? 50
+  const [association, setAssociation] = useState<string>(draft?.association || def.association || inferAssociation(rawProb))
+  const [probability, setProbability] = useState<number>(draft?.probability ?? rawProb)
   const [direction, setDirection] = useState<string>(draft?.direction || def.direction || "one-way")
   const [triggerVal, setTriggerVal] = useState(draft?.triggerVal || trigger)
   const [outcomeVal, setOutcomeVal] = useState(draft?.outcomeVal || outcome)
 
   useEffect(() => {
+    if (association === "mandatory") setProbability(100)
+    else if (association === "forbidden") setProbability(0)
+  }, [association])
+
+  useEffect(() => {
     setWarnings([])
-    onChange({ type: "affinity", association, direction, triggerVal, outcomeVal })
-  }, [association, direction, triggerVal, outcomeVal])
+    onChange({ type: "affinity", association, probability, direction, triggerVal, outcomeVal })
+  }, [association, probability, direction, triggerVal, outcomeVal])
 
   const triggerLabel = triggerVal.type === "category"
     ? (triggerVal.value?.charAt(0)?.toUpperCase() + triggerVal.value?.slice(1)?.toLowerCase())
@@ -524,35 +536,53 @@ function AffinityEditor({ rule, draft, onChange, warnings, setWarnings, categori
     : `${outcomeVal.value} türleri`
 
   return (
-    <div className="space-y-4">
-      <p className="text-[15px] text-gray-700 leading-relaxed">
+    <div className="space-y-3">
+      <p className="text-[13px] text-gray-700 leading-relaxed">
         Menünüzde <strong className="text-emerald-800">{triggerLabel}</strong> yer aldığında,
-        yanında{" "}
+        yanında <strong className="text-emerald-800">{outcomeLabel}</strong>{" "}
         <InlineSelect value={association} onChange={setAssociation} options={[
-          { value: "mandatory", label: "mutlaka" },
-          { value: "boost", label: "tercihen" },
-          { value: "forbidden", label: "kesinlikle olmadan" },
-          { value: "reduce", label: "mümkünse olmadan" },
+          { value: "mandatory", label: "mutlaka bulunsun" },
+          { value: "boost", label: "tercihen bulunsun" },
+          { value: "forbidden", label: "kesinlikle bulunmasın" },
+          { value: "reduce", label: "mümkünse bulunmasın" },
         ]} />
-        {" "}<strong className="text-emerald-800">{outcomeLabel}</strong>{" "}
-        {association === "forbidden" || association === "reduce" ? "bulunmasın." : "bulunsun."}
+      </p>
+      <p className="text-[10px] text-gray-400 leading-snug">
+        {association === "mandatory" && "Her zaman birlikte yer alır — istisnasız."}
+        {association === "boost" && "Sistem bu eşleşmeyi tercih eder ama zorunlu tutmaz."}
+        {association === "forbidden" && "Aynı öğünde asla birlikte yer almaz."}
+        {association === "reduce" && "Sistem bu eşleşmeden kaçınmaya çalışır."}
       </p>
 
-      <p className="text-[15px] text-gray-700 leading-relaxed">
+      {(association === "boost" || association === "reduce") && (
+        <div className="flex items-center gap-2 pt-1">
+          <span className="text-[11px] text-gray-500 shrink-0">Etki:</span>
+          <input type="range" min={association === "boost" ? 51 : 1} max={association === "boost" ? 99 : 49}
+            value={probability} onChange={(e) => setProbability(Number(e.target.value))}
+            className="flex-1 h-1.5 accent-emerald-600" />
+          <span className={`text-[12px] font-bold min-w-[32px] text-right ${
+            association === "boost"
+              ? probability >= 85 ? "text-emerald-700" : "text-blue-600"
+              : probability <= 15 ? "text-red-600" : "text-orange-500"
+          }`}>%{probability}</span>
+        </div>
+      )}
+
+      <p className="text-[13px] text-gray-700 leading-relaxed">
         Bu kural{" "}
         <InlineSelect value={direction} onChange={setDirection} options={[
           { value: "one-way", label: "tek yönlü" },
           { value: "two-way", label: "çift yönlü" },
         ]} />
         {" "}geçerlidir.
-        <span className="block text-[11px] text-gray-400 mt-0.5">
+        <span className="block text-[10px] text-gray-400 mt-0.5">
           {direction === "two-way"
             ? `${outcomeLabel} varsa ${triggerLabel} için de aynı kural işler.`
             : `Sadece ${triggerLabel} varken ${outcomeLabel} etkilenir.`}
         </span>
       </p>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-gray-100">
+      <div className="grid grid-cols-2 gap-2 pt-2 border-t border-gray-100">
         <TargetEditor target={triggerVal} categories={categories} onChange={setTriggerVal} label="Tetikleyici" />
         <TargetEditor target={outcomeVal} categories={categories} onChange={setOutcomeVal} label="Hedef" />
       </div>
@@ -576,25 +606,25 @@ function ConsistencyEditor({ rule, draft, onChange, warnings, setWarnings }: {
   }, [lockDuration, selectedMeals])
 
   return (
-    <div className="space-y-4">
-      <p className="text-[15px] text-gray-700 leading-relaxed">
+    <div className="space-y-3">
+      <p className="text-[13px] text-gray-700 leading-relaxed">
         Listede yer alan <strong className="text-emerald-800">{targetLabel}</strong>{" "}
         <InlineSelect value={lockDuration} onChange={setLockDuration} options={[
           { value: "weekly", label: "tüm hafta" },
           { value: "daily", label: "o gün" },
         ]} />
-        {" "}boyunca aynı tür olarak belirlenir. Farklı bir çeşit eklenmez.
+        {" "}boyunca aynı tür olarak belirlenir.
       </p>
 
-      <p className="text-sm text-gray-500 leading-relaxed">
+      <p className="text-[11px] text-gray-500 leading-relaxed">
         {lockDuration === "weekly"
-          ? "Pazartesi seçilen yemek Pazar'a kadar her gün tekrarlanır — çeşitlilik değil tutarlılık hedeflenir."
-          : "Aynı gün içindeki tüm öğünlerde aynı seçim korunur, sonraki gün farklı olabilir."}
+          ? "Pazartesi seçilen yemek Pazar'a kadar her gün tekrar eder."
+          : "Aynı gün içinde tüm öğünlerde aynı seçim korunur."}
       </p>
 
       {(selectedMeals.length > 0 || def.scope_meals?.length > 0) && (
         <div>
-          <p className="text-sm text-gray-600 mb-1">Hangi öğünlerde geçerli?</p>
+          <p className="text-xs text-gray-600 mb-1">Hangi öğünlerde?</p>
           <MealPills selected={selectedMeals} onChange={setSelectedMeals} locked={[]} />
         </div>
       )}
@@ -656,8 +686,8 @@ function FixedMealEditor({ rule, draft, onChange, warnings, setWarnings, foodsDb
   const slotLabel = MEAL_LABELS[targetSlot] || targetSlot
 
   return (
-    <div className="space-y-4">
-      <p className="text-[15px] text-gray-700 leading-relaxed">
+    <div className="space-y-3">
+      <p className="text-[13px] text-gray-700 leading-relaxed">
         <strong className="text-emerald-800">{slotLabel}</strong> öğününe aşağıdaki yemekler{" "}
         <InlineSelect value={mode} onChange={setMode} options={[
           { value: "all", label: "hepsi birlikte" },
@@ -665,25 +695,25 @@ function FixedMealEditor({ rule, draft, onChange, warnings, setWarnings, foodsDb
           { value: "rotate", label: "sırayla dönüşümlü" },
           { value: "by_day", label: "güne göre atanmış" },
         ]} />
-        {" "}olarak sabit eklenir.
+        {" "}olarak eklenir.
       </p>
 
-      <div className="text-[11px] text-gray-400 bg-gray-50 rounded-md px-2.5 py-1.5 border border-gray-100">
+      <div className="text-[10px] text-gray-400 bg-gray-50 rounded px-2 py-1 border border-gray-100">
         {mode === "all" && "Her gün listedeki tüm yemekler birlikte eklenir."}
-        {mode === "random" && "Her gün listeden rastgele bir tanesi seçilir."}
-        {mode === "rotate" && "Listeden sırayla birer tane seçilir: Pazartesi birincisi, Salı ikincisi…"}
-        {mode === "by_day" && "Her gün için hangi yemeğin geleceği önceden belirlenmiştir."}
+        {mode === "random" && "Her gün listeden rastgele biri seçilir."}
+        {mode === "rotate" && "Sırayla birer tane: Pzt birincisi, Sal ikincisi…"}
+        {mode === "by_day" && "Her gün için hangi yemeğin geleceği belirlenmiştir."}
       </div>
 
       <div>
-        <p className="text-sm text-gray-600 mb-1">Sabit yemekler:</p>
+        <p className="text-xs text-gray-600 mb-1">Yemekler:</p>
         <FoodSearchInline foodsDb={foodsDb} selectedIds={foodIds} onChange={setFoodIds} fallbackNames={fallbackNames} />
       </div>
 
       <div>
-        <p className="text-sm text-gray-600 mb-1">Hangi günlerde geçerli?</p>
+        <p className="text-xs text-gray-600 mb-1">Hangi günlerde?</p>
         <DayPills selected={scopeDays} onChange={setScopeDays} />
-        {scopeDays.length === 0 && <p className="text-[11px] text-gray-400 mt-1">Seçim yapılmazsa her gün uygulanır.</p>}
+        {scopeDays.length === 0 && <p className="text-[10px] text-gray-400 mt-0.5">Boş bırakılırsa her gün uygulanır.</p>}
       </div>
 
       <ScopeWeeksEditor sw={scopeWeeks} onChange={setScopeWeeks} />
@@ -701,6 +731,7 @@ function RotationEditor({ rule, draft, onChange, warnings, setWarnings, foodsDb 
 
   const [mode, setMode] = useState<string>(draft?.mode || def.mode || "sequential")
   const [nonConsecutive, setNonConsecutive] = useState<boolean>(draft?.nonConsecutive ?? def.non_consecutive ?? true)
+  const [excludedIndices, setExcludedIndices] = useState<Set<number>>(new Set(draft?.excludedIndices || []))
 
   const resolvedItems = useMemo(() =>
     items.map((it: any) => {
@@ -709,14 +740,23 @@ function RotationEditor({ rule, draft, onChange, warnings, setWarnings, foodsDb 
     })
   , [items, foodsDb])
 
+  const toggleExclude = (idx: number) => {
+    setExcludedIndices(prev => {
+      const next = new Set(prev)
+      if (next.has(idx)) next.delete(idx)
+      else next.add(idx)
+      return next
+    })
+  }
+
   useEffect(() => {
     setWarnings([])
-    onChange({ type: "rotation", mode, nonConsecutive })
-  }, [mode, nonConsecutive])
+    onChange({ type: "rotation", mode, nonConsecutive, excludedIndices: [...excludedIndices] })
+  }, [mode, nonConsecutive, excludedIndices])
 
   return (
-    <div className="space-y-4">
-      <p className="text-[15px] text-gray-700 leading-relaxed">
+    <div className="space-y-3">
+      <p className="text-[13px] text-gray-700 leading-relaxed">
         <strong className="text-emerald-800">{targetLabel}</strong> haftalararası{" "}
         <InlineSelect value={mode} onChange={setMode} options={[
           { value: "sequential", label: "sırayla" },
@@ -727,21 +767,31 @@ function RotationEditor({ rule, draft, onChange, warnings, setWarnings, foodsDb 
 
       {resolvedItems.length > 0 && (
         <div>
-          <p className="text-sm text-gray-600 mb-1">Rotasyondaki yemekler:</p>
+          <p className="text-xs text-gray-600 mb-1">Rotasyondaki yemekler <span className="text-[10px] text-gray-400">(istemediğinizi kaldırın)</span></p>
           <div className="flex flex-wrap gap-1">
-            {resolvedItems.slice(0, 10).map((it: any, i: number) => (
-              <Badge key={i} variant="outline" className="text-xs bg-white">{it.resolvedName}</Badge>
-            ))}
-            {resolvedItems.length > 10 && <Badge variant="outline" className="text-xs">+{resolvedItems.length - 10}</Badge>}
+            {resolvedItems.map((it: any, i: number) => {
+              const excluded = excludedIndices.has(i)
+              return (
+                <button key={i} type="button" onClick={() => toggleExclude(i)}
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] border transition-colors ${
+                    excluded
+                      ? "bg-red-50 border-red-200 text-red-400 line-through"
+                      : "bg-white border-gray-200 text-gray-700 hover:border-emerald-300"
+                  }`}>
+                  {excluded ? <X className="h-2.5 w-2.5" /> : <Check className="h-2.5 w-2.5 text-emerald-500" />}
+                  {it.resolvedName}
+                </button>
+              )
+            })}
           </div>
         </div>
       )}
 
-      <div className="flex items-start gap-3 p-3 rounded-lg border bg-gray-50 border-gray-200">
+      <div className="flex items-center gap-2 p-2 rounded-lg border bg-gray-50 border-gray-200">
         <Checkbox id={`nc_${rule.id}`} checked={nonConsecutive}
           onCheckedChange={(c) => setNonConsecutive(c === true)}
-          className="mt-0.5 data-[state=checked]:bg-emerald-600" />
-        <Label htmlFor={`nc_${rule.id}`} className="text-sm cursor-pointer">
+          className="data-[state=checked]:bg-emerald-600" />
+        <Label htmlFor={`nc_${rule.id}`} className="text-xs cursor-pointer">
           Ardışık haftalarda aynı yemek tekrarlanmasın
         </Label>
       </div>
@@ -760,7 +810,10 @@ function NutritionalEditor({ rule, draft, onChange, warnings, setWarnings, foods
   const opLabel: Record<string, string> = { "<": "altına düştüğünde", ">": "üstüne çıktığında" }
 
   const [urgency, setUrgency] = useState<string>(draft?.urgency || "normal")
-  const [foodIds, setFoodIds] = useState<string[]>(draft?.foodIds || action.foods || [])
+  const fallbackFoods = action.foods && action.foods.length > 0
+    ? action.foods
+    : action.target?.value ? [action.target.value] : []
+  const [foodIds, setFoodIds] = useState<string[]>(draft?.foodIds || fallbackFoods)
   const [extraFoods, setExtraFoods] = useState<Record<string, string>>({})
 
   useEffect(() => {
@@ -789,8 +842,8 @@ function NutritionalEditor({ rule, draft, onChange, warnings, setWarnings, foods
   const targetSlot = MEAL_LABELS[action.target_slot || def.target_slot] || ""
 
   return (
-    <div className="space-y-4">
-      <p className="text-[15px] text-gray-700 leading-relaxed">
+    <div className="space-y-3">
+      <p className="text-[13px] text-gray-700 leading-relaxed">
         Günlük <strong className="text-emerald-800">{macroLabel[condition.macro] || condition.macro || "besin değeri"}</strong> hedefiniz{" "}
         {condition.value ? `${condition.value}${condition.macro === "calories" ? " kcal" : "g"} ` : "belirlenen seviyenin "}
         {opLabel[condition.operator] || "sapma gösterdiğinde"}, sistem{" "}
@@ -801,19 +854,19 @@ function NutritionalEditor({ rule, draft, onChange, warnings, setWarnings, foods
         {" "}telafi yemeği ekler.
       </p>
 
-      <p className="text-sm text-gray-500 leading-relaxed">
+      <p className="text-[11px] text-gray-500 leading-relaxed">
         {urgency === "high"
-          ? "Hedeften %5 bile sapma olursa müdahale edilir — sıkı diyet dönemlerinde idealdir."
-          : "Hedeften %20+ sapma olursa müdahale edilir — günlük salınımlara toleranslıdır."}
+          ? <>Hedeften <strong className="text-orange-600">± %5</strong> bile sapma olursa müdahale edilir.</>
+          : <>Hedeften <strong className="text-blue-600">± %20</strong> sapma olursa müdahale edilir — günlük salınımlara toleranslı.</>}
       </p>
 
       <div>
-        <p className="text-sm text-gray-600 mb-1">Telafi için kullanılacak yemekler:</p>
+        <p className="text-xs text-gray-600 mb-1">Telafi yemekleri:</p>
         <FoodSearchInline foodsDb={foodsDb} selectedIds={foodIds} onChange={setFoodIds} fallbackNames={extraFoods} />
       </div>
 
       {targetSlot && (
-        <p className="text-xs text-gray-500">Hedef öğün: <strong>{targetSlot}</strong></p>
+        <p className="text-[11px] text-gray-500">Hedef öğün: <strong>{targetSlot}</strong></p>
       )}
     </div>
   )
@@ -825,29 +878,39 @@ function OrGroupEditor({ rule, draft, onChange, warnings, setWarnings }: {
 }) {
   const def = rule.definition?.data || rule.definition || {}
   const options = def.options || []
+  const [activeOption, setActiveOption] = useState<number | null>(draft?.activeOption ?? null)
 
   useEffect(() => {
     setWarnings([])
-    onChange({ type: "or_group" })
-  }, [])
+    onChange({ type: "or_group", activeOption })
+  }, [activeOption])
 
   return (
-    <div className="space-y-4">
-      <p className="text-[15px] text-gray-700 leading-relaxed">
-        Bu bir <strong className="text-emerald-800">VEYA grubu</strong> kuralıdır.
-        İçindeki {options.length} farklı sıklık kuralı haftalararası nöbetleşe uygulanır.
+    <div className="space-y-3">
+      <p className="text-[13px] text-gray-700 leading-relaxed">
+        Bu kuralda <strong className="text-emerald-800">{options.length} alternatif</strong> var.
+        Her hafta bunlardan biri dönüşümlü uygulanır.
       </p>
       {options.length > 0 && (
-        <div className="space-y-1.5">
-          {options.map((opt: any, i: number) => (
-            <div key={i} className="text-sm text-gray-600 bg-white rounded-lg border border-gray-100 p-2">
-              <span className="font-medium text-emerald-700">Seçenek {i + 1}:</span>{" "}
-              {humanizeTarget({ target: opt.target })} — {opt.min_count ?? "?"} ile {opt.max_count ?? "?"} arası
-            </div>
-          ))}
+        <div className="space-y-1">
+          {options.map((opt: any, i: number) => {
+            const target = humanizeTarget({ target: opt.target })
+            const count = opt.min_count === opt.max_count
+              ? `haftada ${opt.min_count ?? "?"} gün`
+              : `haftada ${opt.min_count ?? "?"} – ${opt.max_count ?? "?"} gün`
+            return (
+              <div key={i} className="text-[12px] text-gray-600 bg-white rounded-lg border border-gray-100 px-2.5 py-1.5 flex items-center gap-2">
+                <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 rounded px-1.5 py-0.5 shrink-0">{i + 1}</span>
+                <span><strong className="text-gray-800">{target}</strong> — {count}</span>
+              </div>
+            )
+          })}
         </div>
       )}
-      <p className="text-[11px] text-gray-400">VEYA grubu detayları şu anda düzenlenemez. Silip yeniden oluşturabilirsiniz.</p>
+      <div className="text-[10px] text-gray-400 bg-gray-50 rounded p-2 border border-gray-100">
+        Bu alternatifler diyetisyeniniz tarafından belirlenmiştir.
+        Grubu silmek isterseniz aşağıdaki sil butonunu kullanabilirsiniz.
+      </div>
     </div>
   )
 }
@@ -972,6 +1035,7 @@ export function RuleReviewWizard({ isOpen, onClose, rules, onRuleUpdated, onRule
           }
           else if (draft.data.type === "affinity") {
             def.association = draft.data.association
+            def.probability = draft.data.probability ?? def.probability ?? 50
             def.direction = draft.data.direction
             if (draft.data.triggerVal) def.trigger = draft.data.triggerVal
             if (draft.data.outcomeVal) def.outcome = draft.data.outcomeVal
@@ -989,6 +1053,9 @@ export function RuleReviewWizard({ isOpen, onClose, rules, onRuleUpdated, onRule
           else if (draft.data.type === "rotation") {
             def.mode = draft.data.mode
             def.non_consecutive = draft.data.nonConsecutive
+            if (draft.data.excludedIndices?.length > 0 && def.items) {
+              def.items = def.items.filter((_: any, i: number) => !draft.data.excludedIndices.includes(i))
+            }
           }
           else if (draft.data.type === "nutritional") {
             if (draft.data.foodIds && draft.data.foodIds.length > 0) {
@@ -1066,27 +1133,24 @@ export function RuleReviewWizard({ isOpen, onClose, rules, onRuleUpdated, onRule
   if (!isStarted) {
     return (
       <Dialog open={isOpen} onOpenChange={onClose}>
-        <DialogContent className="sm:max-w-[450px] p-6 sm:p-8">
+        <DialogContent className="sm:max-w-[400px] p-5">
           <DialogHeader>
-            <DialogTitle className="text-center text-xl text-emerald-800">Programınızı Gözden Geçirelim</DialogTitle>
-            <DialogDescription className="text-center text-sm leading-relaxed text-gray-600 mt-3">
-              Beslenme tercihlerinizi adım adım gözden geçireceğiz.
-              Her kuralı düzenleyebilir, atlayabilir veya silebilirsiniz.
-              <br /><br />Değişiklikler ancak <strong>son adımda</strong> kaydedilir.
+            <DialogTitle className="text-center text-lg text-emerald-800">Tercihlerinizi Gözden Geçirin</DialogTitle>
+            <DialogDescription className="text-center text-xs leading-relaxed text-gray-600 mt-2">
+              Beslenme kurallarınızı adım adım gözden geçirin.
+              Düzenleyin, atlayın veya silin — değişiklikler sonda kaydedilir.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2 mt-4">
-            <div className="flex justify-between text-xs text-gray-500 px-1">
-              <span>{activeRules.length} tercih gözden geçirilecek</span>
-              <span className="flex gap-1 flex-wrap justify-end">
-                {activeRules.filter(r => r.rule_type === "frequency").length > 0 && <Badge variant="outline" className="text-[10px]">Sıklık</Badge>}
-                {activeRules.filter(r => r.rule_type === "affinity").length > 0 && <Badge variant="outline" className="text-[10px]">Uyum</Badge>}
-                {activeRules.filter(r => r.rule_type === "consistency").length > 0 && <Badge variant="outline" className="text-[10px]">Kilit</Badge>}
-                {activeRules.filter(r => r.rule_type === "fixed_meal").length > 0 && <Badge variant="outline" className="text-[10px]">Sabit</Badge>}
-              </span>
-            </div>
+          <div className="flex justify-between text-[11px] text-gray-500 px-1 mt-3">
+            <span className="font-medium">{activeRules.length} tercih</span>
+            <span className="flex gap-1 flex-wrap justify-end">
+              {activeRules.filter(r => r.rule_type === "frequency").length > 0 && <Badge variant="outline" className="text-[9px] px-1.5 py-0">Sıklık</Badge>}
+              {activeRules.filter(r => r.rule_type === "affinity").length > 0 && <Badge variant="outline" className="text-[9px] px-1.5 py-0">Uyum</Badge>}
+              {activeRules.filter(r => r.rule_type === "consistency").length > 0 && <Badge variant="outline" className="text-[9px] px-1.5 py-0">Kilit</Badge>}
+              {activeRules.filter(r => r.rule_type === "fixed_meal").length > 0 && <Badge variant="outline" className="text-[9px] px-1.5 py-0">Sabit</Badge>}
+            </span>
           </div>
-          <Button onClick={() => setIsStarted(true)} className="w-full mt-4 bg-emerald-600 hover:bg-emerald-700 h-11">
+          <Button onClick={() => setIsStarted(true)} className="w-full mt-3 bg-emerald-600 hover:bg-emerald-700 h-10 text-sm">
             Başlayalım <ArrowRight className="w-4 h-4 ml-1" />
           </Button>
         </DialogContent>
@@ -1139,29 +1203,27 @@ export function RuleReviewWizard({ isOpen, onClose, rules, onRuleUpdated, onRule
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[580px] max-h-[92vh] min-h-[60vh] flex flex-col resize overflow-hidden" style={{ resize: "both" }}>
-        <DialogHeader className="shrink-0">
-          <div className="flex items-center justify-between">
-            <DialogTitle className="text-emerald-800 text-base">Gözden Geçir</DialogTitle>
-            <div className="flex items-center gap-2">
-              <Badge variant="outline" className="text-[10px] font-medium">{typeLabels[rt] || rt}</Badge>
-              <span className="text-xs font-bold bg-emerald-100 text-emerald-700 px-2.5 py-0.5 rounded-full border border-emerald-200">
-                {currentStep + 1} / {activeRules.length}
+      <DialogContent className="sm:max-w-[520px] max-h-[90vh] min-h-[50vh] flex flex-col overflow-hidden p-0">
+        <div className="shrink-0 px-4 pt-3 pb-2 border-b border-gray-100">
+          <div className="flex items-center justify-between mb-1.5">
+            <DialogTitle className="text-emerald-800 text-sm font-bold">Gözden Geçir</DialogTitle>
+            <div className="flex items-center gap-1.5">
+              <Badge variant="outline" className="text-[9px] font-medium px-1.5 py-0">{typeLabels[rt] || rt}</Badge>
+              <span className="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">
+                {currentStep + 1}/{activeRules.length}
               </span>
             </div>
           </div>
-          <div className="pt-2 pb-1 border-b">
-            <h3 className="text-lg font-semibold text-gray-900 text-center">{currentRule.name}</h3>
-            {currentRule.description && (
-              <p className="text-sm text-gray-500 text-center mt-0.5">{currentRule.description}</p>
-            )}
-          </div>
-        </DialogHeader>
+          <h3 className="text-[15px] font-semibold text-gray-900 leading-tight">{currentRule.name}</h3>
+          {currentRule.description && (
+            <p className="text-[11px] text-gray-500 mt-0.5 leading-snug">{currentRule.description}</p>
+          )}
+        </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto py-4 px-1" key={currentRule.id}>
-          <div className="bg-white p-4 sm:p-5 rounded-xl border border-emerald-100 shadow-sm relative">
+        <div className="flex-1 min-h-0 overflow-y-auto px-3 py-2.5" key={currentRule.id}>
+          <div className="bg-white p-3 rounded-lg border border-emerald-100/80 relative">
             {currentDraftAction && (
-              <div className="absolute top-2 right-2 text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-gray-200 text-gray-500">
+              <div className="absolute top-1.5 right-1.5 text-[8px] uppercase font-bold px-1 py-0.5 rounded bg-gray-200 text-gray-500">
                 {currentDraftAction === "delete" ? "Silinecek" : currentDraftAction === "skip" ? "Atlanacak" : "Güncellenecek"}
               </div>
             )}
@@ -1175,38 +1237,40 @@ export function RuleReviewWizard({ isOpen, onClose, rules, onRuleUpdated, onRule
             {rt === "or_group" && <OrGroupEditor {...editorProps} />}
 
             {forceBypassWarning && warnings.length > 0 && (
-              <div className="mt-3 p-3 bg-orange-50 border border-orange-200 rounded-lg flex items-start gap-2">
-                <AlertTriangle className="h-5 w-5 text-orange-500 shrink-0 mt-0.5" />
-                <div className="text-xs text-orange-800 leading-relaxed">
-                  <strong>Emin misiniz?</strong> Yukarıdaki uyarıları incelediyseniz, tekrar "Güncelle"ye basarak devam edebilirsiniz.
-                </div>
+              <div className="mt-2 p-2 bg-orange-50 border border-orange-200 rounded-lg flex items-start gap-1.5">
+                <AlertTriangle className="h-3.5 w-3.5 text-orange-500 shrink-0 mt-0.5" />
+                <span className="text-[11px] text-orange-800">Emin misiniz? Tekrar basarak devam edebilirsiniz.</span>
               </div>
             )}
           </div>
         </div>
 
-        <DialogFooter className="shrink-0 flex-col sm:flex-row sm:justify-between gap-2 pt-2 border-t">
-          <div className="flex gap-2 w-full sm:w-auto">
-            <Button variant="outline" size="icon" onClick={() => { setCurrentStep(prev => Math.max(0, prev - 1)); setForceBypassWarning(false); setWarnings([]) }} disabled={currentStep === 0} className="w-10 h-10 shrink-0">
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
-            <Button variant="destructive" size="sm" onClick={() => handleNext("delete")} disabled={!!currentRule.source_rule_id} className="flex-1 sm:flex-none opacity-90 hover:opacity-100" title={currentRule.source_rule_id ? "Sistem kuralı silinemez" : "Sil"}>
-              <Trash2 className="h-4 w-4 mr-1" /> Sil
-            </Button>
+        <div className="shrink-0 flex items-center justify-between px-3 py-2 border-t border-gray-100 bg-gray-50/50">
+          <div className="flex items-center gap-1">
+            <button onClick={() => { setCurrentStep(prev => Math.max(0, prev - 1)); setForceBypassWarning(false); setWarnings([]) }} disabled={currentStep === 0}
+              className="w-8 h-8 rounded-lg border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-white disabled:opacity-30 transition-colors" title="Geri">
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <button onClick={() => handleNext("delete")} disabled={!!currentRule.source_rule_id}
+              className="w-8 h-8 rounded-lg border border-red-200 flex items-center justify-center text-red-500 hover:bg-red-50 disabled:opacity-30 transition-colors" title="Sil">
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
           </div>
-          <div className="flex gap-2 w-full sm:w-auto">
-            <Button variant="outline" size="sm" onClick={() => handleNext("skip")} className="flex-1 sm:flex-none bg-white">
-              Atla
-            </Button>
-            <Button onClick={() => handleNext("update")} size="sm" className="flex-1 sm:flex-none bg-emerald-600 hover:bg-emerald-700 shadow-sm">
-              <Save className="h-4 w-4 mr-1" /> Güncelle
-            </Button>
-            <Button variant="outline" size="sm" onClick={handleSaveAndExit} disabled={isSaving} className="flex-1 sm:flex-none text-emerald-700 border-emerald-300 hover:bg-emerald-50" title="Şu ana kadarki değişiklikleri kaydet ve çık">
-              {isSaving ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Save className="h-3 w-3 mr-1" />}
-              Kaydet ve Çık
-            </Button>
+          <div className="flex items-center gap-1">
+            <button onClick={() => handleNext("skip")}
+              className="w-8 h-8 rounded-lg border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-white transition-colors" title="Atla">
+              <SkipForward className="h-3.5 w-3.5" />
+            </button>
+            <button onClick={() => handleNext("update")}
+              className="h-8 px-3 rounded-lg bg-emerald-600 text-white text-xs font-medium flex items-center gap-1 hover:bg-emerald-700 transition-colors" title="Güncelle">
+              <Check className="h-3.5 w-3.5" /> Kaydet
+            </button>
+            <button onClick={handleSaveAndExit} disabled={isSaving}
+              className="h-8 px-2.5 rounded-lg border border-emerald-300 text-emerald-700 text-xs font-medium flex items-center gap-1 hover:bg-emerald-50 disabled:opacity-50 transition-colors" title="Kaydet ve Çık">
+              {isSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <LogOut className="h-3.5 w-3.5" />}
+            </button>
           </div>
-        </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
   )

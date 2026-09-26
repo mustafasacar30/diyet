@@ -8,36 +8,45 @@ import { SeraChat } from './sera-chat'
 interface SeraFloatingChatProps {
   patientId: string
   patientName?: string
+  forceOpen?: boolean
+  onClose?: () => void
 }
 
-export function SeraFloatingChat({ patientId, patientName }: SeraFloatingChatProps) {
-  const [isOpen, setIsOpen] = useState(false)
+export function SeraFloatingChat({ patientId, patientName, forceOpen, onClose }: SeraFloatingChatProps) {
+  const [isOpen, setIsOpen] = useState(forceOpen ?? false)
   const [hasInteracted, setHasInteracted] = useState(false)
 
   useEffect(() => {
-    const timer = setTimeout(() => setHasInteracted(true), 3000)
-    return () => clearTimeout(timer)
-  }, [])
+    if (forceOpen !== undefined) setIsOpen(forceOpen)
+  }, [forceOpen])
+
+  const handleClose = () => {
+    setIsOpen(false)
+    onClose?.()
+  }
+
+  useEffect(() => {
+    if (!forceOpen) {
+      const timer = setTimeout(() => setHasInteracted(true), 3000)
+      return () => clearTimeout(timer)
+    }
+  }, [forceOpen])
 
   return (
     <>
-      {/* Floating button */}
-      {!isOpen && (
+      {/* Floating button — hidden when opened via forceOpen (bottom nav handles it) */}
+      {!isOpen && !forceOpen && (
         <button
           onClick={() => setIsOpen(true)}
           className="fixed bottom-24 right-4 z-40 group"
         >
           <div className="relative">
-            {/* Pulse ring */}
             <span className="absolute inset-0 rounded-full bg-emerald-400/40 animate-ping" style={{ animationDuration: '2.5s' }} />
-            {/* Glow */}
             <span className="absolute inset-0 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 opacity-0 group-hover:opacity-30 blur-lg transition-opacity duration-500" />
-            {/* Button */}
             <div className="relative w-14 h-14 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 shadow-lg shadow-emerald-200/50 flex items-center justify-center transition-all duration-300 group-hover:scale-110 group-active:scale-95">
               <Leaf className="h-6 w-6 text-white" />
             </div>
           </div>
-          {/* Tooltip */}
           {!hasInteracted && (
             <div className="absolute right-16 top-1/2 -translate-y-1/2 bg-white rounded-xl px-3 py-2 shadow-lg border border-slate-100 whitespace-nowrap animate-fade-in">
               <p className="text-xs font-medium text-slate-700">Bana sor! 🌿</p>
@@ -53,7 +62,7 @@ export function SeraFloatingChat({ patientId, patientName }: SeraFloatingChatPro
           {/* Backdrop */}
           <div
             className="absolute inset-0 bg-black/30 backdrop-blur-sm"
-            onClick={() => setIsOpen(false)}
+            onClick={handleClose}
           />
 
           {/* Modal — mobile: üstten 2.5rem + safe area, alttan bottom nav üstünde */}
@@ -71,7 +80,7 @@ export function SeraFloatingChat({ patientId, patientName }: SeraFloatingChatPro
                 <span className="text-[10px] text-slate-400">Lipödem asistanınız</span>
               </div>
               <button
-                onClick={() => setIsOpen(false)}
+                onClick={handleClose}
                 className="w-7 h-7 rounded-lg hover:bg-slate-100 flex items-center justify-center transition-colors"
               >
                 <X className="h-4 w-4 text-slate-500" />

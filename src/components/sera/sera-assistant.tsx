@@ -284,6 +284,7 @@ export function SeraAssistant({
 
   // ─── Kuralları Çekme ───
   const fetchPatientRules = useCallback(async () => {
+    if (!patientId) return
     try {
       const { supabase } = await import('@/lib/supabase')
       const { data, error } = await supabase
@@ -1308,16 +1309,14 @@ export function SeraAssistant({
       {patientRules.length > 0 && (
         <div className={`border border-emerald-100 bg-white rounded-xl overflow-hidden shadow-sm ${compact ? "mt-3" : "mt-6"}`}>
           <div className="bg-emerald-50/50 px-4 py-3 border-b border-emerald-100 flex flex-col gap-3">
-            {!compact && (
-              <div className="flex items-center justify-between gap-2">
-                <Button size="sm" variant="outline" className="flex-1 h-9 text-xs bg-emerald-100 text-emerald-800 border-emerald-300 hover:bg-emerald-200" onClick={handleSummarize}>
-                  Programımı Özetle
-                </Button>
-                <Button size="sm" variant="outline" className="flex-1 h-9 text-xs bg-white text-emerald-700 border-emerald-200 hover:bg-emerald-50" onClick={() => setIsWizardOpen(true)}>
-                  Gözden Geçir
-                </Button>
-              </div>
-            )}
+            <div className="flex items-center justify-between gap-2">
+              <Button size="sm" variant="outline" className="flex-1 h-9 text-xs bg-emerald-100 text-emerald-800 border-emerald-300 hover:bg-emerald-200" onClick={handleSummarize}>
+                Programımı Özetle
+              </Button>
+              <Button size="sm" variant="outline" className="flex-1 h-9 text-xs bg-white text-emerald-700 border-emerald-200 hover:bg-emerald-50" onClick={() => setIsWizardOpen(true)}>
+                Gözden Geçir
+              </Button>
+            </div>
             <div
               className="flex items-center justify-between cursor-pointer hover:bg-emerald-100/50 transition-colors py-1 -mx-2 px-2 rounded-lg"
               onClick={() => setIsRulesExpanded(!isRulesExpanded)}
