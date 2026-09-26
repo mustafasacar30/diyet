@@ -7024,7 +7024,7 @@ export default function PatientPlanPage() {
             />
 
             {/* Floating chart toggle button — draggable */}
-            <DraggableFab isDashboardVisible={isDashboardVisible} onToggle={toggleDashboard} totals={dailyTotals} targets={dailyTargets} />
+            <DraggableFab isDashboardVisible={isDashboardVisible} onToggle={toggleDashboard} totals={dailyTotals} targets={{ calories: (dailyTargets as any)?.calories || 0, protein: (dailyTargets as any)?.protein || 0, carb: (dailyTargets as any)?.carb || (dailyTargets as any)?.carbs || 0, fat: (dailyTargets as any)?.fat || 0 }} />
 
         </div>
     )
